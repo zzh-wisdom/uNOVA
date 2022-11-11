@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "random": "cpp",
+        "system_error": "cpp",
+        "compare": "cpp",
+        "istream": "cpp",
+        "ostream": "cpp",
+        "type_traits": "cpp",
+        "utility": "cpp"
+    }
+}

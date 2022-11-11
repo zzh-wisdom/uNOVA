@@ -1,0 +1,44 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/zzh/uNOVA/syscall-intercept-demo/hooks.cc
+syscall.h
+-
+libsyscall_intercept_hook_point.h
+-
+sys/stat.h
+-
+string
+-
+dlfcn.h
+-
+sys/types.h
+-
+assert.h
+-
+hooks.h
+/home/zzh/uNOVA/syscall-intercept-demo/hooks.h
+dirent.h
+-
+linux/kernel.h
+-
+linux/const.h
+-
+sys/statfs.h
+-
+sys/statvfs.h
+-
+
+/home/zzh/uNOVA/syscall-intercept-demo/hooks.h
+sys/types.h
+-
+fcntl.h
+-
+unordered_map
+-
+
