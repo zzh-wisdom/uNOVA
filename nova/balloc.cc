@@ -1,11 +1,15 @@
 #include <errno.h>
 
 #include "nova/nova.h"
+#include "nova/nova_cfg.h"
 #include "util/mem.h"
 #include "util/log.h"
 #include "util/util.h"
+#include "util/lock.h"
+#include "util/rbtree.h"
+#include "util/cpu.h"
 
-// 分配逐个cpu的block free list
+// 分配逐个cpu的block free list结构体空间
 int nova_alloc_block_free_lists(struct super_block *sb)
 {
 	struct nova_sb_info *sbi = NOVA_SB(sb);
@@ -36,6 +40,7 @@ void nova_delete_free_lists(struct super_block *sb)
 }
 
 // 初始化每个cpu的free list，即用红黑树管理page
+// 完成整个NVM空间的每个cpu划分
 void nova_init_blockmap(struct super_block *sb, int recovery)
 {
 	struct nova_sb_info *sbi = NOVA_SB(sb);
@@ -60,7 +65,7 @@ void nova_init_blockmap(struct super_block *sb, int recovery)
 						per_list_blocks - 1;
 
 		/* For recovery, update these fields later */
-		if (recovery == 0) {
+		if (recovery == 0) {  // 此时是没有恢复的情况
 			free_list->num_free_blocks = per_list_blocks;
 			if (i == 0) {  // 第一个要减去预留的block个数
 				free_list->block_start += num_used_block;
@@ -192,6 +197,7 @@ inline int nova_insert_blocktree(struct nova_sb_info *sbi,
 	return ret;
 }
 
+// 将一个范围插入inode的红黑树
 inline int nova_insert_inodetree(struct nova_sb_info *sbi,
 	struct nova_range_node *new_node, int cpu)
 {
@@ -201,7 +207,7 @@ inline int nova_insert_inodetree(struct nova_sb_info *sbi,
 	tree = &sbi->inode_maps[cpu].inode_inuse_tree;
 	ret = nova_insert_range_node(sbi, tree, new_node);
 	if (ret)
-		nova_dbg("ERROR: %s failed %d\n", __func__, ret);
+		rd_error("ERROR: %s failed %d\n", __func__, ret);
 
 	return ret;
 }
@@ -401,6 +407,9 @@ int nova_free_log_blocks(struct super_block *sb, struct nova_inode *pi,
 	return ret;
 }
 
+// 从free list中分配空闲空间
+// btype 枚举 4k 2m 1G NOVA_BLOCK_TYPE_4K
+// 按照指定的大小，分一个连续的空间，返回实际分配的block个数
 static unsigned long nova_alloc_blocks_in_free_list(struct super_block *sb,
 	struct free_list *free_list, unsigned short btype,
 	unsigned long num_blocks, unsigned long *new_blocknr)
@@ -423,6 +432,7 @@ static unsigned long nova_alloc_blocks_in_free_list(struct super_block *sb,
 
 		if (num_blocks >= curr_blocks) {
 			/* Superpage allocation must succeed */
+			// NOVA_BLOCK_TYPE_4K = 0
 			if (btype > 0 && num_blocks > curr_blocks) {
 				temp = rb_next(temp);
 				continue;
@@ -455,6 +465,7 @@ static unsigned long nova_alloc_blocks_in_free_list(struct super_block *sb,
 
 	free_list->num_free_blocks -= num_blocks;
 
+	// 统计分配block时红黑树的node跳转次数
 	NOVA_STATS_ADD(alloc_steps, step);
 
 	if (found == 0)
@@ -464,6 +475,7 @@ static unsigned long nova_alloc_blocks_in_free_list(struct super_block *sb,
 }
 
 /* Find out the free list with most free blocks */
+// 找到具有最多空闲空间的cpu free list
 static int nova_get_candidate_free_list(struct super_block *sb)
 {
 	struct nova_sb_info *sbi = NOVA_SB(sb);
@@ -484,6 +496,10 @@ static int nova_get_candidate_free_list(struct super_block *sb)
 }
 
 /* Return how many blocks allocated */
+// btype 枚举 4k 2m 1G  NOVA_BLOCK_TYPE_4K
+// blocknr 分配区间
+// zero 是否清零
+// 返回分配指定btype类型的block个数
 static int nova_new_blocks(struct super_block *sb, unsigned long *blocknr,
 	unsigned int num, unsigned short btype, int zero,
 	enum alloc_type atype)
@@ -502,27 +518,29 @@ static int nova_new_blocks(struct super_block *sb, unsigned long *blocknr,
 	if (num_blocks == 0)
 		return -EINVAL;
 
-	cpuid = smp_processor_id();
+	cpuid = get_processor_id();
 
 retry:
 	free_list = nova_get_free_list(sb, cpuid);
 	spin_lock(&free_list->s_lock);
 
 	if (free_list->num_free_blocks < num_blocks || !free_list->first_node) {
-		nova_dbgv("%s: cpu %d, free_blocks %lu, required %lu, "
+		rd_info("%s: cpu %d, free_blocks %lu, required %lu, "
 			"blocknode %lu\n", __func__, cpuid,
 			free_list->num_free_blocks, num_blocks,
 			free_list->num_blocknode);
 		if (free_list->num_free_blocks >= num_blocks) {
-			nova_dbg("first node is NULL "
+			// 只是缓存的first node为null，但红黑树还是管理有空闲的block
+			rd_info("first node is NULL "
 				"but still has free blocks\n");
 			temp = rb_first(&free_list->block_free_tree);
 			first = container_of(temp, struct nova_range_node, node);
 			free_list->first_node = first;
 		} else {
 			spin_unlock(&free_list->s_lock);
-			if (retried >= 3)
+			if (retried >= ALLOC_BLOCK_RETRY)
 				return -ENOSPC;
+			// 从其他cpu分配空闲空间
 			cpuid = nova_get_candidate_free_list(sb);
 			retried++;
 			goto retry;
@@ -532,6 +550,7 @@ retry:
 	ret_blocks = nova_alloc_blocks_in_free_list(sb, free_list, btype,
 						num_blocks, &new_blocknr);
 
+	// 统计信息
 	if (atype == LOG) {
 		free_list->alloc_log_count++;
 		free_list->alloc_log_pages += ret_blocks;
@@ -552,7 +571,7 @@ retry:
 	}
 	*blocknr = new_blocknr;
 
-	nova_dbg_verbose("Alloc %lu NVMM blocks 0x%lx\n", ret_blocks, *blocknr);
+	rdv_proc("Alloc %lu NVMM blocks 0x%lx\n", ret_blocks, *blocknr);
 	return ret_blocks / nova_get_numblocks(btype);
 }
 
@@ -573,6 +592,8 @@ inline int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 	return allocated;
 }
 
+// 分配新的用于log的block
+// 返回分配指定inode类型的block个数
 inline int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
 	unsigned long *blocknr, unsigned int num, int zero)
 {
@@ -582,7 +603,7 @@ inline int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
 	allocated = nova_new_blocks(sb, blocknr, num,
 					pi->i_blk_type, zero, LOG);
 	NOVA_END_TIMING(new_log_blocks_t, alloc_time);
-	nova_dbgv("Inode %llu, alloc %d log blocks from %lu to %lu\n",
+	rdv_proc("Inode %llu, alloc %d log blocks from %lu to %lu\n",
 			pi->nova_ino, allocated, *blocknr,
 			*blocknr + allocated - 1);
 	return allocated;

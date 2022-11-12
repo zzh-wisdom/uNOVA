@@ -14,7 +14,7 @@
  * more details.
  *
  * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 
+ * this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -109,31 +109,34 @@ enum stats_category {
 	STATS_NUM,
 };
 
-extern const char *Timingstring[TIMING_NUM];
-extern u64 Timingstats[TIMING_NUM];
-DECLARE_PER_CPU(u64[TIMING_NUM], Timingstats_percpu);
-extern u64 Countstats[TIMING_NUM];
-DECLARE_PER_CPU(u64[TIMING_NUM], Countstats_percpu);
-extern u64 IOstats[STATS_NUM];
-DECLARE_PER_CPU(u64[STATS_NUM], IOstats_percpu);
+// extern const char *Timingstring[TIMING_NUM];
+// extern u64 Timingstats[TIMING_NUM];
+// DECLARE_PER_CPU(u64[TIMING_NUM], Timingstats_percpu);
+// extern u64 Countstats[TIMING_NUM];
+// DECLARE_PER_CPU(u64[TIMING_NUM], Countstats_percpu);
+// extern u64 IOstats[STATS_NUM];
+// DECLARE_PER_CPU(u64[STATS_NUM], IOstats_percpu);
 
-typedef struct timespec timing_t;
+// typedef struct timespec timing_t;
+typedef int timing_t;
 
-#define NOVA_START_TIMING(name, start) \
-	{if (measure_timing) getrawmonotonic(&start);}
+// #define NOVA_START_TIMING(name, start) \
+// 	{if (measure_timing) getrawmonotonic(&start);}
 
-#define NOVA_END_TIMING(name, start) \
-	{if (measure_timing) { \
-		timing_t end; \
-		getrawmonotonic(&end); \
-		__this_cpu_add(Timingstats_percpu[name], \
-			(end.tv_sec - start.tv_sec) * 1000000000 + \
-			(end.tv_nsec - start.tv_nsec)); \
-	} \
-	__this_cpu_add(Countstats_percpu[name], 1); \
-	}
+// #define NOVA_END_TIMING(name, start) \
+// 	{if (measure_timing) { \
+// 		timing_t end; \
+// 		getrawmonotonic(&end); \
+// 		__this_cpu_add(Timingstats_percpu[name], \
+// 			(end.tv_sec - start.tv_sec) * 1000000000 + \
+// 			(end.tv_nsec - start.tv_nsec)); \
+// 	} \
+// 	__this_cpu_add(Countstats_percpu[name], 1); \
+// 	}
 
-#define NOVA_STATS_ADD(name, value) \
-	{__this_cpu_add(IOstats_percpu[name], value);}
+// #define NOVA_STATS_ADD(name, value) \
+// 	{__this_cpu_add(IOstats_percpu[name], value);}
 
-
+#define NOVA_START_TIMING(name, start) void(0)
+#define NOVA_END_TIMING(name, start) void(0)
+#define NOVA_STATS_ADD(name, value) void(0)

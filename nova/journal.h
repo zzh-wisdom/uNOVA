@@ -25,9 +25,10 @@
 #include "nova/nova_com.h"
 
 /* Lite journal */
+// 刚好一个cacheline
 struct nova_lite_journal_entry {
 	/* The highest byte of addr is type */
-	u64 addrs[4];
+	u64 addrs[4];  // 最大存储4个地址
 	u64 values[4];
 };
 

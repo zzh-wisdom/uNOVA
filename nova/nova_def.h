@@ -79,7 +79,7 @@ struct nova_inode {
 	/* first 48 bytes */
 	__le16	i_rsvd;		/* reserved. used to be checksum */
 	u8	valid;		/* Is this inode valid? */
-	u8	i_blk_type;	/* data block size this inode uses */
+	u8	i_blk_type;	/* data block size this inode uses ,是一个枚举值*/
 	__le32	i_flags;	/* Inode flags */
 	__le64	i_size;		/* Size of data in bytes */
 	__le32	i_ctime;	/* Inode modification time */
@@ -115,7 +115,6 @@ struct nova_inode {
 
 
 #define NOVA_SB_SIZE 512       /* must be power of two */
-
 
 /*
  * Structure of the super block in NOVA
@@ -155,11 +154,18 @@ struct nova_super_block {
 /* the above fast mount fields take total 32 bytes in the super block */
 #define NOVA_FAST_MOUNT_FIELD_SIZE  (36)
 
+// 实际上为了方便空间管理，空间管理器只实现了按照inode来分配空间的接口。
+// 为了分配其他类型的空间，这里预留了几个ino
+
 /* The root inode follows immediately after the redundant super block */
 #define NOVA_ROOT_INO		(1)
+// 用于分配innode table空间(每次2MB)的inode
 #define NOVA_INODETABLE_INO	(2)	/* Temporaty inode table */
+// 用于分配 数据block ?
 #define NOVA_BLOCKNODE_INO	(3)
+
 #define NOVA_INODELIST_INO	(4)
+// 用于分配journal的空间（每次4KB）
 #define NOVA_LITEJOURNAL_INO	(5)
 #define NOVA_INODELIST1_INO	(6)
 

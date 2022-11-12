@@ -6,6 +6,8 @@
         "istream": "cpp",
         "ostream": "cpp",
         "type_traits": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "nova.h": "c",
+        "typeinfo": "cpp"
     }
 }

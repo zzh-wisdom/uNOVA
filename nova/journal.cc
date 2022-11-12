@@ -33,7 +33,7 @@ static u64 next_lite_journal(u64 curr_p)
 	size_t size = sizeof(struct nova_lite_journal_entry);
 
 	/* One page holds 64 entries with cacheline size */
-	if ((curr_p & (PAGE_SIZE - 1)) + size >= PAGE_SIZE)
+	if ((curr_p & (PAGE_SIZE - 1)) + size >= PAGE_SIZE)  // 回环
 		return (curr_p & PAGE_MASK);
 
 	return curr_p + size;
@@ -56,7 +56,7 @@ static void nova_recover_lite_journal_entry(struct super_block *sb,
 			*(u64 *)nova_get_block(sb, addr) = (u64)value;
 			break;
 		default:
-			nova_dbg("%s: unknown data type %u\n",
+			rd_info("%s: unknown data type %u\n",
 					__func__, type);
 			break;
 	}
@@ -131,13 +131,15 @@ static void nova_undo_lite_journal_entry(struct super_block *sb,
 	for (i = 0; i < 4; i++) {
 		type = entry->addrs[i] >> 56;
 		if (entry->addrs[i] && type) {
-			nova_dbg("%s: recover entry %d\n", __func__, i);
+			rd_info("%s: recover entry %d\n", __func__, i);
 			nova_recover_lite_journal_entry(sb, entry->addrs[i],
 					entry->values[i], type);
 		}
 	}
 }
 
+// 恢复存活的journal
+// undo log，恢复完成后，head = tail
 static int nova_recover_lite_journal(struct super_block *sb,
 	struct ptr_pair *pair, int recover)
 {
@@ -161,6 +163,8 @@ static int nova_recover_lite_journal(struct super_block *sb,
 	return 0;
 }
 
+// 初始化跟journal相关的一些dram结构
+// 并进行journal的undo恢复
 int nova_lite_journal_soft_init(struct super_block *sb)
 {
 	struct nova_sb_info *sbi = NOVA_SB(sb);
@@ -168,8 +172,7 @@ int nova_lite_journal_soft_init(struct super_block *sb)
 	int i;
 	u64 temp;
 
-	sbi->journal_locks = kzalloc(sbi->cpus * sizeof(spinlock_t),
-					GFP_KERNEL);
+	sbi->journal_locks = (spinlock_t *)ZALLOC(sbi->cpus * sizeof(spinlock_t));
 	if (!sbi->journal_locks)
 		return -ENOMEM;
 
@@ -195,7 +198,7 @@ int nova_lite_journal_soft_init(struct super_block *sb)
 		}
 
 		/* We are in trouble if we get here*/
-		nova_err(sb, "%s: lite journal %d error: head 0x%llx, "
+		r_error("%s: lite journal %d error: head 0x%llx, "
 				"tail 0x%llx\n", __func__, i,
 				pair->journal_head, pair->journal_tail);
 		return -EINVAL;
@@ -204,6 +207,8 @@ int nova_lite_journal_soft_init(struct super_block *sb)
 	return 0;
 }
 
+// durable初始化 journal，即会修改对应的NVM区域
+// 里面会调用soft init，即初始化dram中的易失结构部分
 int nova_lite_journal_hard_init(struct super_block *sb)
 {
 	struct nova_sb_info *sbi = NOVA_SB(sb);
@@ -223,8 +228,9 @@ int nova_lite_journal_hard_init(struct super_block *sb)
 			return -EINVAL;
 
 		allocated = nova_new_log_blocks(sb, &fake_pi, &blocknr, 1, 1);
-		nova_dbg_verbose("%s: allocate log @ 0x%lx\n", __func__,
-							blocknr);
+		rdv_proc("%s: allocate log @ 0x%lx\n", __func__, blocknr);
+
+		// 检查
 		if (allocated != 1 || blocknr == 0)
 			return -ENOSPC;
 

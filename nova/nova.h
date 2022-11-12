@@ -20,6 +20,8 @@
 #include "nova/nova_def.h"
 #include "nova/journal.h"
 #include "nova/stats.h"
+#include "util/lock.h"
+#include "util/atomic.h"
 
 #define PAGE_SHIFT_2M 21
 #define PAGE_SHIFT_1G 30
@@ -321,19 +323,19 @@ struct scan_bitmap {
 struct free_list {
 	spinlock_t s_lock;
 	struct rb_root	block_free_tree;
-	struct nova_range_node *first_node;
+	struct nova_range_node *first_node;  // 红黑树按序的第一个node？
 	unsigned long	block_start;
 	unsigned long	block_end;
-	unsigned long	num_free_blocks;
-	unsigned long	num_blocknode;
+	unsigned long	num_free_blocks; // 初始化 sbi->num_blocks / sbi->cpus
+	unsigned long	num_blocknode;  // 红黑树的node个数
 
 	/* Statistics */
-	unsigned long	alloc_log_count;
-	unsigned long	alloc_data_count;
+	unsigned long	alloc_log_count;  // 分配的log个数
+	unsigned long	alloc_data_count; // 分配data的次数
 	unsigned long	free_log_count;
 	unsigned long	free_data_count;
-	unsigned long	alloc_log_pages;
-	unsigned long	alloc_data_pages;
+	unsigned long	alloc_log_pages;  // 用于分配log的page总数
+	unsigned long	alloc_data_pages; // 用于分配data的page总数
 	unsigned long	freed_log_pages;
 	unsigned long	freed_data_pages;
 
@@ -348,12 +350,25 @@ struct free_list {
 #define	RESERVED_BLOCKS	3
 
 struct inode_map {
-	struct mutex inode_table_mutex;
+	mutex_t inode_table_mutex;
 	struct rb_root	inode_inuse_tree;
-	unsigned long	num_range_node_inode;
-	struct nova_range_node *first_inode_range;
+	unsigned long	num_range_node_inode; // 红黑树中节点个数
+	struct nova_range_node *first_inode_range;  // 红黑树中按顺序的第一个节点
 	int allocated;
 	int freed;
+};
+
+struct nova_sb_info;
+
+struct super_block {
+	struct nova_sb_info* s_fs_info;
+	int s_blocksize_bits;
+	int s_blocksize;
+
+	__le32		s_magic;
+	size_t s_maxbytes;  // 最大文件大小
+	int s_time_gran;
+	int s_root;
 };
 
 /*
@@ -373,7 +388,7 @@ struct nova_sb_info {
 	// phys_addr_t	phys_addr;
 	void		*virt_addr;  // NVM映射的虚拟地址
 
-	unsigned long	num_blocks;  // page的个数
+	unsigned long	num_blocks;  // 整个NVM的page的个数
 
 	/*
 	 * Backing store option:
@@ -393,7 +408,7 @@ struct nova_sb_info {
 	umode_t		mode;   /* Mount mode for root directory */
 	atomic_t	next_generation;
 	/* inode tracking */
-	unsigned long	s_inodes_used_count;
+	unsigned long	s_inodes_used_count;  // 已使用的inode个数
 	unsigned long	reserved_blocks;  // 保留的block个数
 
 	mutex_t 	s_lock;	/* protects the SB's buffer-head */
@@ -449,11 +464,12 @@ static inline struct nova_super_block *nova_get_redund_super(struct super_block 
 
 /* If this is part of a read-modify-write of the block,
  * nova_memunlock_block() before calling! */
+// 获取block的映射地址
 static inline void *nova_get_block(struct super_block *sb, u64 block)
 {
 	struct nova_super_block *ps = nova_get_super(sb);
 
-	return block ? ((void *)ps + block) : NULL;
+	return block ? ((char *)ps + block) : NULL;
 }
 
 static inline u64
@@ -464,6 +480,7 @@ nova_get_addr_off(struct nova_sb_info *sbi, void *addr)
 	return (u64)(addr - sbi->virt_addr);
 }
 
+// 获取block的nvm相对偏移
 static inline u64
 nova_get_block_off(struct super_block *sb, unsigned long blocknr,
 		    unsigned short btype)
@@ -569,6 +586,7 @@ static inline int memcpy_to_pmem_nocache(void *dst, const void *src,
 {
 	int ret;
 
+	// 从用户空间拷贝数据
 	ret = __copy_from_user_inatomic_nocache(dst, src, size);
 
 	return ret;
@@ -725,6 +743,7 @@ static inline struct nova_inode *nova_get_inode(struct super_block *sb,
 	return (struct nova_inode *)nova_get_block(sb, sih->pi_addr);
 }
 
+// 获取该枚举类型，对应的block个数
 static inline unsigned long
 nova_get_numblocks(unsigned short btype)
 {

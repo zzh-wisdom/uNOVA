@@ -29,6 +29,7 @@
 #include "util/log.h"
 
 /* nova_memunlock_super() before calling! */
+// 同步冗余的super block
 static inline void nova_sync_super(struct nova_super_block *ps)
 {
 	u16 crc = 0;

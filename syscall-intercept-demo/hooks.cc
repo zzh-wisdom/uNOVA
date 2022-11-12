@@ -103,7 +103,7 @@ int hook_statfs(const char *path, struct statfs *sf, long *res) {
     // TODO: RPC get fs info
     sf->f_type = 0;
     sf->f_bsize = 0;
-    sf->f_blocks = 40960; // TODO: need to modify
+    sf->f_blocks = 40960;
     sf->f_bfree = 40960;
     sf->f_bavail = sf->f_bfree;
     sf->f_files = 0;

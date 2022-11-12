@@ -6,6 +6,8 @@
 #include "util/common.h"
 #include "util/mem.h"
 
+#define MAX_LFS_FILESIZE (128ul*1024*1024*1024)
+
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -44,9 +46,11 @@ typedef u64 umode_t;
 
 #else //小端模式
 
-#define cpu_to_le64(v) (v);
-#define cpu_to_le32(v) (v);
-#define cpu_to_le16(v) (v);
+#define cpu_to_le64(v) (v)
+#define cpu_to_le32(v) (v)
+#define cpu_to_le16(v) (v)
+
+#define le32_to_cpu(v) (v)
 
 #endif
 
