@@ -27,7 +27,7 @@
 #include "nova/nova_def.h"
 #include "nova/nova.h"
 #include "nova/nova_cfg.h"
-#include "nova/vfs.h"
+#include "nova/wprotect.h"
 
 #include "util/mem.h"
 #include "util/log.h"
@@ -319,7 +319,7 @@ static struct nova_inode *nova_init(struct super_block *sb,
 	if (nova_init_inode_inuse_list(sb) < 0)
 		return nullptr;
 
-	// 分配每个cpu的inode table
+	// 分配每个cpu的NVM inode table
 	if (nova_init_inode_table(sb) < 0)
 		return nullptr;
 
@@ -381,64 +381,64 @@ static void nova_root_check(struct super_block *sb, struct nova_inode *root_pi)
 		nova_warn("root is not a directory!\n");
 }
 
-int nova_check_integrity(struct super_block *sb,
-			  struct nova_super_block *super)
-{
-	struct nova_super_block *super_redund;
+// int nova_check_integrity(struct super_block *sb,
+// 			  struct nova_super_block *super)
+// {
+// 	struct nova_super_block *super_redund;
 
-	super_redund =
-		(struct nova_super_block *)((char *)super + NOVA_SB_SIZE);
+// 	super_redund =
+// 		(struct nova_super_block *)((char *)super + NOVA_SB_SIZE);
 
-	/* Do sanity checks on the superblock */
-	if (le32_to_cpu(super->s_magic) != NOVA_SUPER_MAGIC) {
-		if (le32_to_cpu(super_redund->s_magic) != NOVA_SUPER_MAGIC) {
-			printk(KERN_ERR "Can't find a valid nova partition\n");
-			goto out;
-		} else {
-			nova_warn
-				("Error in super block: try to repair it with "
-				"the redundant copy");
-			/* Try to auto-recover the super block */
-			if (sb)
-				nova_memunlock_super(sb, super);
-			memcpy(super, super_redund,
-				sizeof(struct nova_super_block));
-			if (sb)
-				nova_memlock_super(sb, super);
-			nova_flush_buffer(super, sizeof(*super), false);
-			nova_flush_buffer((char *)super + NOVA_SB_SIZE,
-				sizeof(*super), false);
+// 	/* Do sanity checks on the superblock */
+// 	if (le32_to_cpu(super->s_magic) != NOVA_SUPER_MAGIC) {
+// 		if (le32_to_cpu(super_redund->s_magic) != NOVA_SUPER_MAGIC) {
+// 			printk(KERN_ERR "Can't find a valid nova partition\n");
+// 			goto out;
+// 		} else {
+// 			nova_warn
+// 				("Error in super block: try to repair it with "
+// 				"the redundant copy");
+// 			/* Try to auto-recover the super block */
+// 			if (sb)
+// 				nova_memunlock_super(sb, super);
+// 			memcpy(super, super_redund,
+// 				sizeof(struct nova_super_block));
+// 			if (sb)
+// 				nova_memlock_super(sb, super);
+// 			nova_flush_buffer(super, sizeof(*super), false);
+// 			nova_flush_buffer((char *)super + NOVA_SB_SIZE,
+// 				sizeof(*super), false);
 
-		}
-	}
+// 		}
+// 	}
 
-	/* Read the superblock */
-	if (nova_calc_checksum((u8 *)super, NOVA_SB_STATIC_SIZE(super))) {
-		if (nova_calc_checksum((u8 *)super_redund,
-					NOVA_SB_STATIC_SIZE(super_redund))) {
-			printk(KERN_ERR "checksum error in super block\n");
-			goto out;
-		} else {
-			nova_warn
-				("Error in super block: try to repair it with "
-				"the redundant copy");
-			/* Try to auto-recover the super block */
-			if (sb)
-				nova_memunlock_super(sb, super);
-			memcpy(super, super_redund,
-				sizeof(struct nova_super_block));
-			if (sb)
-				nova_memlock_super(sb, super);
-			nova_flush_buffer(super, sizeof(*super), false);
-			nova_flush_buffer((char *)super + NOVA_SB_SIZE,
-				sizeof(*super), false);
-		}
-	}
+// 	/* Read the superblock */
+// 	if (nova_calc_checksum((u8 *)super, NOVA_SB_STATIC_SIZE(super))) {
+// 		if (nova_calc_checksum((u8 *)super_redund,
+// 					NOVA_SB_STATIC_SIZE(super_redund))) {
+// 			printk(KERN_ERR "checksum error in super block\n");
+// 			goto out;
+// 		} else {
+// 			nova_warn
+// 				("Error in super block: try to repair it with "
+// 				"the redundant copy");
+// 			/* Try to auto-recover the super block */
+// 			if (sb)
+// 				nova_memunlock_super(sb, super);
+// 			memcpy(super, super_redund,
+// 				sizeof(struct nova_super_block));
+// 			if (sb)
+// 				nova_memlock_super(sb, super);
+// 			nova_flush_buffer(super, sizeof(*super), false);
+// 			nova_flush_buffer((char *)super + NOVA_SB_SIZE,
+// 				sizeof(*super), false);
+// 		}
+// 	}
 
-	return 1;
-out:
-	return 0;
-}
+// 	return 1;
+// out:
+// 	return 0;
+// }
 
 static int nova_fill_super(struct super_block *sb, void *data, int silent)
 {

@@ -16,6 +16,10 @@
  */
 
 #include "nova/nova.h"
+#include "nova/wprotect.h"
+
+#include "util/log.h"
+#include "util/cpu.h"
 
 unsigned int blk_type_to_shift[NOVA_BLOCK_TYPE_MAX] = {12, 21, 30};
 uint32_t blk_type_to_size[NOVA_BLOCK_TYPE_MAX] = {0x1000, 0x200000, 0x40000000};
@@ -97,6 +101,10 @@ int nova_init_inode_table(struct super_block *sb)
 	return 0;
 }
 
+// 需要读取nvm中的结构索引来找到对应inode在nvm中的资质
+// 索引信息能否搬迁到dram
+// extendable 为1时表示，当查到超过最后一个block返回时，是否分配新的block进行扩展
+// pi_addr 带回inode的NVM地址
 int nova_get_inode_address(struct super_block *sb, u64 ino,
 	u64 *pi_addr, int extendable)
 {
@@ -117,14 +125,14 @@ int nova_get_inode_address(struct super_block *sb, u64 ino,
 
 	pi = nova_get_inode_by_ino(sb, NOVA_INODETABLE_INO);
 	data_bits = blk_type_to_shift[pi->i_blk_type];
-	num_inodes_bits = data_bits - NOVA_INODE_BITS;
+	num_inodes_bits = data_bits - NOVA_INODE_BITS;  // 一个block可以容纳的inode个数的bit
 
 	cpuid = ino % sbi->cpus;
 	internal_ino = ino / sbi->cpus;
 
 	inode_table = nova_get_inode_table(sb, cpuid);
-	superpage_count = internal_ino >> num_inodes_bits;
-	index = internal_ino & ((1 << num_inodes_bits) - 1);
+	superpage_count = internal_ino >> num_inodes_bits; // block的个数，即2MB的跳转次数
+	index = internal_ino & ((1 << num_inodes_bits) - 1); // 所在block的内部index
 
 	curr = inode_table->log_head;
 	if (curr == 0)
@@ -146,8 +154,10 @@ int nova_get_inode_address(struct super_block *sb, u64 ino,
 			allocated = nova_new_log_blocks(sb, pi, &blocknr,
 							1, 1);
 
-			if (allocated != 1)
-				return allocated;
+			if (allocated != 1) {
+				// return allocated;
+				return -ENOMEM;
+			}
 
 			curr = nova_get_block_off(sb, blocknr,
 						NOVA_BLOCK_TYPE_2M);
@@ -162,6 +172,8 @@ int nova_get_inode_address(struct super_block *sb, u64 ino,
 	return 0;
 }
 
+// 释放连续的数据块
+// 返回实质释放的page个数
 static inline int nova_free_contiguous_data_blocks(struct super_block *sb,
 	struct nova_inode_info_header *sih, struct nova_inode *pi,
 	struct nova_file_write_entry *entry, unsigned long pgoff,
@@ -172,7 +184,7 @@ static inline int nova_free_contiguous_data_blocks(struct super_block *sb,
 	unsigned long nvmm;
 
 	if (entry->num_pages < entry->invalid_pages + num_pages) {
-		nova_err(sb, "%s: inode %lu, entry pgoff %llu, %llu pages, "
+		r_error("%s: inode %lu, entry pgoff %llu, %llu pages, "
 				"invalid %llu, try to free %lu, pgoff %lu\n",
 				__func__, sih->ino, entry->pgoff,
 				entry->num_pages, entry->invalid_pages,
@@ -180,19 +192,21 @@ static inline int nova_free_contiguous_data_blocks(struct super_block *sb,
 		return freed;
 	}
 
+	// TODO: 这个又是NVM本地写，随机性很严重
 	entry->invalid_pages += num_pages;
+	//
 	nvmm = get_nvmm(sb, sih, entry, pgoff);
 
 	if (*start_blocknr == 0) {
 		*start_blocknr = nvmm;
 		*num_free = num_pages;
 	} else {
-		if (nvmm == *start_blocknr + *num_free) {
+		if (nvmm == *start_blocknr + *num_free) {  // 这里是连续的
 			(*num_free) += num_pages;
 		} else {
 			/* A new start */
 			nova_free_data_blocks(sb, pi, *start_blocknr,
-						*num_free);
+						*num_free); // 把之前的合并一起释放
 			freed = *num_free;
 			*start_blocknr = nvmm;
 			*num_free = num_pages;
@@ -202,6 +216,8 @@ static inline int nova_free_contiguous_data_blocks(struct super_block *sb,
 	return freed;
 }
 
+// 释放一个用链表连接起来的log page
+// 返回实质释放的page个数
 static int nova_free_contiguous_log_blocks(struct super_block *sb,
 	struct nova_inode *pi, u64 head)
 {
@@ -214,7 +230,7 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb,
 
 	while (curr_block) {
 		if (curr_block & INVALID_MASK) {
-			nova_dbg("%s: ERROR: invalid block %llu\n",
+			r_error("%s: ERROR: invalid block %llu\n",
 					__func__, curr_block);
 			break;
 		}
@@ -223,7 +239,7 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb,
 
 		blocknr = nova_get_blocknr(sb, le64_to_cpu(curr_block),
 				    btype);
-		nova_dbg_verbose("%s: free page %llu\n", __func__, curr_block);
+		rdv_proc("%s: free page %llu\n", __func__, curr_block);
 		curr_block = curr_page->page_tail.next_page;
 
 		if (start_blocknr == 0) {
@@ -250,68 +266,69 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb,
 	return freed;
 }
 
-static int nova_delete_cache_tree(struct super_block *sb,
-	struct nova_inode *pi, struct nova_inode_info_header *sih,
-	unsigned long start_blocknr, unsigned long last_blocknr)
-{
-	unsigned long addr;
-	unsigned long i;
-	int deleted = 0;
-	void *ret;
+// static int nova_delete_cache_tree(struct super_block *sb,
+// 	struct nova_inode *pi, struct nova_inode_info_header *sih,
+// 	unsigned long start_blocknr, unsigned long last_blocknr)
+// {
+// 	unsigned long addr;
+// 	unsigned long i;
+// 	int deleted = 0;
+// 	void *ret;
 
-	nova_dbgv("%s: inode %lu, mmap pages %lu, start %lu, last %lu\n",
-			__func__, sih->ino, sih->mmap_pages,
-			start_blocknr, last_blocknr);
+// 	nova_dbgv("%s: inode %lu, mmap pages %lu, start %lu, last %lu\n",
+// 			__func__, sih->ino, sih->mmap_pages,
+// 			start_blocknr, last_blocknr);
 
-	for (i = start_blocknr; i <= last_blocknr; i++) {
-		addr = (unsigned long)radix_tree_lookup(&sih->cache_tree, i);
-		if (addr) {
-			ret = radix_tree_delete(&sih->cache_tree, i);
-			nova_free_data_blocks(sb, pi, addr >> PAGE_SHIFT, 1);
-			sih->mmap_pages--;
-			deleted++;
-		}
-	}
+// 	for (i = start_blocknr; i <= last_blocknr; i++) {
+// 		addr = (unsigned long)radix_tree_lookup(&sih->cache_tree, i);
+// 		if (addr) {
+// 			ret = radix_tree_delete(&sih->cache_tree, i);
+// 			nova_free_data_blocks(sb, pi, addr >> PAGE_SHIFT, 1);
+// 			sih->mmap_pages--;
+// 			deleted++;
+// 		}
+// 	}
 
-	nova_dbgv("%s: inode %lu, deleted mmap pages %d\n",
-			__func__, sih->ino, deleted);
+// 	nova_dbgv("%s: inode %lu, deleted mmap pages %d\n",
+// 			__func__, sih->ino, deleted);
 
-	if (sih->mmap_pages == 0) {
-		sih->low_dirty = ULONG_MAX;
-		sih->high_dirty = 0;
-	}
+// 	if (sih->mmap_pages == 0) {
+// 		sih->low_dirty = ULONG_MAX;
+// 		sih->high_dirty = 0;
+// 	}
 
-	return 0;
-}
+// 	return 0;
+// }
 
-static int nova_zero_cache_tree(struct super_block *sb,
-	struct nova_inode *pi, struct nova_inode_info_header *sih,
-	unsigned long start_blocknr)
-{
-	unsigned long block;
-	unsigned long i;
-	void *addr;
+// static int nova_zero_cache_tree(struct super_block *sb,
+// 	struct nova_inode *pi, struct nova_inode_info_header *sih,
+// 	unsigned long start_blocknr)
+// {
+// 	unsigned long block;
+// 	unsigned long i;
+// 	void *addr;
 
-	nova_dbgv("%s: inode %lu, mmap pages %lu, start %lu, last %lu, "
-			"size %lu", __func__, sih->ino, sih->mmap_pages,
-			start_blocknr, sih->high_dirty, sih->i_size);
+// 	nova_dbgv("%s: inode %lu, mmap pages %lu, start %lu, last %lu, "
+// 			"size %lu", __func__, sih->ino, sih->mmap_pages,
+// 			start_blocknr, sih->high_dirty, sih->i_size);
 
-	for (i = start_blocknr; i <= sih->high_dirty; i++) {
-		block = (unsigned long)radix_tree_lookup(&sih->cache_tree, i);
-		if (block) {
-			addr = nova_get_block(sb, block);
-			memset(addr, 0, PAGE_SIZE);
-		}
-	}
+// 	for (i = start_blocknr; i <= sih->high_dirty; i++) {
+// 		block = (unsigned long)radix_tree_lookup(&sih->cache_tree, i);
+// 		if (block) {
+// 			addr = nova_get_block(sb, block);
+// 			memset(addr, 0, PAGE_SIZE);
+// 		}
+// 	}
 
-	return 0;
-}
+// 	return 0;
+// }
 
-
+// 删除[start_blocknr, last_blocknr]的数据块
 int nova_delete_file_tree(struct super_block *sb,
 	struct nova_inode_info_header *sih, unsigned long start_blocknr,
 	unsigned long last_blocknr, bool delete_nvmm, bool delete_mmap)
 {
+	r_error("%s unexpected reach!\n", __func__);
 	struct nova_file_write_entry *entry;
 	struct nova_inode *pi;
 	unsigned long free_blocknr = 0, num_free = 0;
@@ -324,16 +341,19 @@ int nova_delete_file_tree(struct super_block *sb,
 
 	NOVA_START_TIMING(delete_file_tree_t, delete_time);
 
-	if (delete_mmap && sih->mmap_pages)
-		nova_delete_cache_tree(sb, pi, sih, start_blocknr,
-						last_blocknr);
+	if (delete_mmap && sih->mmap_pages) {
+		r_error("un support mmap\n");
+		// nova_delete_cache_tree(sb, pi, sih, start_blocknr,
+		// 				last_blocknr);
+	}
 
-	if (sih->mmap_pages && start_blocknr <= sih->high_dirty)
-		nova_zero_cache_tree(sb, pi, sih, start_blocknr);
+
+	// if (sih->mmap_pages && start_blocknr <= sih->high_dirty)
+	// 	nova_zero_cache_tree(sb, pi, sih, start_blocknr);
 
 	pgoff = start_blocknr;
 	while (pgoff <= last_blocknr) {
-		entry = radix_tree_lookup(&sih->tree, pgoff);
+		entry = (struct nova_file_write_entry*)radix_tree_lookup(&sih->tree, pgoff);
 		if (entry) {
 			ret = radix_tree_delete(&sih->tree, pgoff);
 			BUG_ON(!ret || ret != entry);
@@ -358,7 +378,7 @@ int nova_delete_file_tree(struct super_block *sb,
 	}
 
 	NOVA_END_TIMING(delete_file_tree_t, delete_time);
-	nova_dbgv("Inode %llu: delete file tree from pgoff %lu to %lu, "
+	rd_info("Inode %llu: delete file tree from pgoff %lu to %lu, "
 			"%d blocks freed\n",
 			pi->nova_ino, start_blocknr, last_blocknr, freed);
 
@@ -488,6 +508,7 @@ done:
 	return blocks;
 }
 
+// file 写操作时，更新radix tree
 int nova_assign_write_entry(struct super_block *sb,
 	struct nova_inode *pi,
 	struct nova_inode_info_header *sih,
@@ -510,7 +531,7 @@ int nova_assign_write_entry(struct super_block *sb,
 
 		pentry = radix_tree_lookup_slot(&sih->tree, curr_pgoff);
 		if (pentry) {
-			old_entry = radix_tree_deref_slot(pentry);
+			old_entry = (struct nova_file_write_entry *)radix_tree_deref_slot(pentry);
 			old_nvmm = get_nvmm(sb, sih, old_entry, curr_pgoff);
 			if (free) {
 				old_entry->invalid_pages++;
@@ -519,9 +540,10 @@ int nova_assign_write_entry(struct super_block *sb,
 			}
 			radix_tree_replace_slot(pentry, entry);
 		} else {
+			// 之前是hole
 			ret = radix_tree_insert(&sih->tree, curr_pgoff, entry);
 			if (ret) {
-				nova_dbg("%s: ERROR %d\n", __func__, ret);
+				rd_info("%s: ERROR %d\n", __func__, ret);
 				goto out;
 			}
 		}
@@ -620,8 +642,8 @@ static void nova_update_inode(struct inode *inode, struct nova_inode *pi)
 {
 	nova_memunlock_inode(inode->i_sb, pi);
 	pi->i_mode = cpu_to_le16(inode->i_mode);
-	pi->i_uid = cpu_to_le32(i_uid_read(inode));
-	pi->i_gid = cpu_to_le32(i_gid_read(inode));
+	// pi->i_uid = cpu_to_le32(i_uid_read(inode));
+	// pi->i_gid = cpu_to_le32(i_gid_read(inode));
 	pi->i_links_count = cpu_to_le16(inode->i_nlink);
 	pi->i_size = cpu_to_le64(inode->i_size);
 	pi->i_blocks = cpu_to_le64(inode->i_blocks);
@@ -631,8 +653,8 @@ static void nova_update_inode(struct inode *inode, struct nova_inode *pi)
 	pi->i_generation = cpu_to_le32(inode->i_generation);
 	nova_get_inode_flags(inode, pi);
 
-	if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode))
-		pi->dev.rdev = cpu_to_le32(inode->i_rdev);
+	// if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode))
+	// 	pi->dev.rdev = cpu_to_le32(inode->i_rdev);
 
 	nova_memlock_inode(inode->i_sb, pi);
 }
@@ -650,7 +672,7 @@ static int nova_alloc_unused_inode(struct super_block *sb, int cpuid,
 
 	inode_map = &sbi->inode_maps[cpuid];
 	i = inode_map->first_inode_range;
-	NOVA_ASSERT(i);
+	dlog_assert(i);
 	temp = &i->node;
 	next = rb_next(temp);
 
@@ -674,7 +696,7 @@ static int nova_alloc_unused_inode(struct super_block *sb, int cpuid,
 		/* Aligns to left */
 		i->range_high = new_ino;
 	} else {
-		nova_dbg("%s: ERROR: new ino %lu, next low %lu\n", __func__,
+		r_error("%s: ERROR: new ino %lu, next low %lu\n", __func__,
 			new_ino, next_range_low);
 		return -ENOSPC;
 	}
@@ -683,7 +705,7 @@ static int nova_alloc_unused_inode(struct super_block *sb, int cpuid,
 	sbi->s_inodes_used_count++;
 	inode_map->allocated++;
 
-	nova_dbg_verbose("Alloc ino %lu\n", *ino);
+	rdv_proc("Alloc ino %lu\n", *ino);
 	return 0;
 }
 
@@ -959,6 +981,8 @@ out:
 }
 
 /* Returns 0 on failure */
+// pi_addr: inode在NVM中的地址
+// 返回分配的inumber
 u64 nova_new_nova_inode(struct super_block *sb, u64 *pi_addr)
 {
 	struct nova_sb_info *sbi = NOVA_SB(sb);
@@ -971,6 +995,7 @@ u64 nova_new_nova_inode(struct super_block *sb, u64 *pi_addr)
 
 	NOVA_START_TIMING(new_nova_inode_t, new_inode_time);
 	map_id = sbi->map_id;
+	// TODO: 原子递增才行
 	sbi->map_id = (sbi->map_id + 1) % sbi->cpus;
 
 	inode_map = &sbi->inode_maps[map_id];
@@ -978,14 +1003,14 @@ u64 nova_new_nova_inode(struct super_block *sb, u64 *pi_addr)
 	mutex_lock(&inode_map->inode_table_mutex);
 	ret = nova_alloc_unused_inode(sb, map_id, &free_ino);
 	if (ret) {
-		nova_dbg("%s: alloc inode number failed %d\n", __func__, ret);
+		rd_info("%s: alloc inode number failed %d\n", __func__, ret);
 		mutex_unlock(&inode_map->inode_table_mutex);
 		return 0;
 	}
 
 	ret = nova_get_inode_address(sb, free_ino, pi_addr, 1);
 	if (ret) {
-		nova_dbg("%s: get inode address failed %d\n", __func__, ret);
+		rd_info("%s: get inode address failed %d\n", __func__, ret);
 		mutex_unlock(&inode_map->inode_table_mutex);
 		return 0;
 	}
@@ -998,6 +1023,8 @@ u64 nova_new_nova_inode(struct super_block *sb, u64 *pi_addr)
 	return ino;
 }
 
+// 新建一个内存inode
+// TODO: 想个办法把内存的inode管理起来
 struct inode *nova_new_vfs_inode(enum nova_new_inode_type type,
 	struct inode *dir, u64 pi_addr, u64 ino, umode_t mode,
 	size_t size, dev_t rdev, const struct qstr *qstr)
@@ -1023,10 +1050,10 @@ struct inode *nova_new_vfs_inode(enum nova_new_inode_type type,
 
 	inode_init_owner(inode, dir, mode);
 	inode->i_blocks = inode->i_size = 0;
-	inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;
+	inode->i_mtime = inode->i_atime = inode->i_ctime = get_cur_time_spec();
 
-	inode->i_generation = atomic_add_return(1, &sbi->next_generation);
-	inode->i_size = size;
+	inode->i_generation = atomic_add_fetch(&sbi->next_generation, 1);
+	inode->i_size = size;  // 初始化是0
 
 	diri = nova_get_inode(sb, dir);
 	if (!diri) {
@@ -1035,7 +1062,7 @@ struct inode *nova_new_vfs_inode(enum nova_new_inode_type type,
 	}
 
 	pi = (struct nova_inode *)nova_get_block(sb, pi_addr);
-	nova_dbg_verbose("%s: allocating inode %llu @ 0x%llx\n",
+	rdv_proc("%s: allocating inode %llu @ 0x%llx\n",
 					__func__, ino, pi_addr);
 
 	/* chosen inode is in ino */
@@ -1044,25 +1071,27 @@ struct inode *nova_new_vfs_inode(enum nova_new_inode_type type,
 	switch (type) {
 		case TYPE_CREATE:
 			inode->i_op = &nova_file_inode_operations;
-			inode->i_mapping->a_ops = &nova_aops_dax;
+			// inode->i_mapping->a_ops = &nova_aops_dax;
 			inode->i_fop = &nova_dax_file_operations;
 			break;
 		case TYPE_MKNOD:
-			init_special_inode(inode, mode, rdev);
-			inode->i_op = &nova_special_inode_operations;
+			r_error("Un support TYPE_MKNOD\n");
+			// init_special_inode(inode, mode, rdev);
+			// inode->i_op = &nova_special_inode_operations;
 			break;
-		case TYPE_SYMLINK:
+		case TYPE_SYMLINK: // 符号链接
+			r_error("Un support TYPE_SYMLINK\n");
 			inode->i_op = &nova_symlink_inode_operations;
-			inode->i_mapping->a_ops = &nova_aops_dax;
+			// inode->i_mapping->a_ops = &nova_aops_dax;
 			break;
 		case TYPE_MKDIR:
 			inode->i_op = &nova_dir_inode_operations;
 			inode->i_fop = &nova_dir_operations;
-			inode->i_mapping->a_ops = &nova_aops_dax;
+			// inode->i_mapping->a_ops = &nova_aops_dax;
 			set_nlink(inode, 2);
 			break;
 		default:
-			nova_dbg("Unknown new inode type %d\n", type);
+			r_warning("Unknown new inode type %d\n", type);
 			break;
 	}
 
@@ -1088,21 +1117,22 @@ struct inode *nova_new_vfs_inode(enum nova_new_inode_type type,
 
 	nova_set_inode_flags(inode, pi, le32_to_cpu(pi->i_flags));
 
-	if (insert_inode_locked(inode) < 0) {
-		nova_err(sb, "nova_new_inode failed ino %lx\n", inode->i_ino);
-		errval = -EINVAL;
-		goto fail1;
-	}
+	// if (insert_inode_locked(inode) < 0) {
+	// 	r_error(sb, "nova_new_inode failed ino %lx\n", inode->i_ino);
+	// 	errval = -EINVAL;
+	// 	goto fail1;
+	// }
 
 	nova_flush_buffer(&pi, NOVA_INODE_SIZE, 0);
 	NOVA_END_TIMING(new_vfs_inode_t, new_inode_time);
 	return inode;
 fail1:
-	make_bad_inode(inode);
-	iput(inode);
+// 	make_bad_inode(inode);
+// 	iput(inode);
 fail2:
 	NOVA_END_TIMING(new_vfs_inode_t, new_inode_time);
-	return ERR_PTR(errval);
+	// return ERR_PTR(errval);
+	return nullptr;
 }
 
 int nova_write_inode(struct inode *inode, struct writeback_control *wbc)
@@ -1246,6 +1276,7 @@ static void nova_update_setattr_entry(struct inode *inode,
 	nova_flush_buffer(entry, sizeof(struct nova_setattr_logentry), 0);
 }
 
+// 属性还包括文件大小（截断/扩展）
 void nova_apply_setattr_entry(struct super_block *sb, struct nova_inode *pi,
 	struct nova_inode_info_header *sih,
 	struct nova_setattr_logentry *entry)
@@ -1278,7 +1309,7 @@ void nova_apply_setattr_entry(struct super_block *sb, struct nova_inode *pi,
 
 		if (first_blocknr > last_blocknr)
 			goto out;
-
+		// 说明大小被截断了
 		freed = nova_delete_file_tree(sb, sih, first_blocknr,
 						last_blocknr, 0, 0);
 	}
@@ -1387,8 +1418,8 @@ void nova_set_inode_flags(struct inode *inode, struct nova_inode *pi,
 		inode->i_flags |= S_NOATIME;
 	if (flags & FS_DIRSYNC_FL)
 		inode->i_flags |= S_DIRSYNC;
-	if (!pi->i_xattr)
-		inode_has_no_xattr(inode);
+	// if (!pi->i_xattr)
+	// 	inode_has_no_xattr(inode);
 	inode->i_flags |= S_DAX;
 }
 
@@ -1458,6 +1489,10 @@ static ssize_t nova_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
 	return ret;
 }
 
+// 将prev_blocknr和first_blocknr对应的log page连接在一起
+// prev_blocknr为0表示first_blocknr是链表的首个节点
+// num_pages 需要链接的page个数
+// 最后一个page的tail设置为0，fence落盘
 static int nova_coalesce_log_pages(struct super_block *sb,
 	unsigned long prev_blocknr, unsigned long first_blocknr,
 	unsigned long num_pages)
@@ -1497,6 +1532,9 @@ static int nova_coalesce_log_pages(struct super_block *sb,
 }
 
 /* Log block resides in NVMM */
+// 循环的方式逐一分配，共分配num_pages个页
+// new_block 返回分配的第一个page的nvm偏移
+// 返回值是实际分配的page个数，分配好的page已经用链表连接好
 int nova_allocate_inode_log_pages(struct super_block *sb,
 	struct nova_inode *pi, unsigned long num_pages,
 	u64 *new_block)
@@ -1511,13 +1549,13 @@ int nova_allocate_inode_log_pages(struct super_block *sb,
 					num_pages, 0);
 
 	if (allocated <= 0) {
-		nova_err(sb, "ERROR: no inode log page available: %d %d\n",
+		r_error("ERROR: no inode log page available: %d %d\n",
 			num_pages, allocated);
 		return allocated;
 	}
 	ret_pages += allocated;
 	num_pages -= allocated;
-	nova_dbg_verbose("Pi %llu: Alloc %d log blocks @ 0x%lx\n",
+	rdv_proc("Pi %llu: Alloc %d log blocks @ 0x%lx\n",
 			pi->nova_ino, allocated, new_inode_blocknr);
 
 	/* Coalesce the pages */
@@ -1530,10 +1568,10 @@ int nova_allocate_inode_log_pages(struct super_block *sb,
 		allocated = nova_new_log_blocks(sb, pi,
 					&new_inode_blocknr, num_pages, 0);
 
-		nova_dbg_verbose("Alloc %d log blocks @ 0x%lx\n",
+		rdv_proc("Alloc %d log blocks @ 0x%lx\n",
 					allocated, new_inode_blocknr);
 		if (allocated <= 0) {
-			nova_dbg("%s: no inode log page available: "
+			r_error("%s: no inode log page available: "
 				"%lu %d\n", __func__, num_pages, allocated);
 			/* Return whatever we have */
 			break;
@@ -1551,6 +1589,8 @@ int nova_allocate_inode_log_pages(struct super_block *sb,
 	return ret_pages;
 }
 
+// curr_p位置的entry是不是无效
+// length 带回entry的长度
 static bool curr_log_entry_invalid(struct super_block *sb,
 	struct nova_inode *pi, struct nova_inode_info_header *sih,
 	u64 curr_p, size_t *length)
@@ -1569,6 +1609,7 @@ static bool curr_log_entry_invalid(struct super_block *sb,
 			if (sih->last_setattr == curr_p)
 				ret = false;
 			/* Do not invalidate setsize entries */
+			// TODO: 这是为什么
 			setattr_entry = (struct nova_setattr_logentry *)addr;
 			if (setattr_entry->attr & ATTR_SIZE)
 				ret = false;
@@ -1596,9 +1637,9 @@ static bool curr_log_entry_invalid(struct super_block *sb,
 			*length = PAGE_SIZE - ENTRY_LOC(curr_p);;
 			break;
 		default:
-			nova_dbg("%s: unknown type %d, 0x%llx\n",
+			rd_error("%s: unknown type %d, 0x%llx\n",
 						__func__, type, curr_p);
-			NOVA_ASSERT(0);
+			log_assert(0);
 			*length = PAGE_SIZE - ENTRY_LOC(curr_p);;
 			break;
 	}
@@ -1606,6 +1647,8 @@ static bool curr_log_entry_invalid(struct super_block *sb,
 	return ret;
 }
 
+// 判断一个log page是不是全部无效
+// 同时统计当前有效的entry的总字节数
 static bool curr_page_invalid(struct super_block *sb,
 	struct nova_inode *pi, struct nova_inode_info_header *sih,
 	u64 page_head)
@@ -1618,7 +1661,7 @@ static bool curr_page_invalid(struct super_block *sb,
 	NOVA_START_TIMING(check_invalid_t, check_time);
 	while (curr_p < page_head + LAST_ENTRY) {
 		if (curr_p == 0) {
-			nova_err(sb, "File inode %lu log is NULL!\n",
+			r_error("File inode %lu log is NULL!\n",
 					sih->ino);
 			BUG();
 		}
@@ -1636,6 +1679,7 @@ static bool curr_page_invalid(struct super_block *sb,
 	return ret;
 }
 
+// 指示当前log已经结束，最后设置一个flag（一个字节）
 static void nova_set_next_page_flag(struct super_block *sb, u64 curr_p)
 {
 	void *p;
@@ -1648,6 +1692,7 @@ static void nova_set_next_page_flag(struct super_block *sb, u64 curr_p)
 	nova_flush_buffer(p, CACHELINE_SIZE, 1);
 }
 
+// 释放一个log page
 static void free_curr_page(struct super_block *sb, struct nova_inode *pi,
 	struct nova_inode_log_page *curr_page,
 	struct nova_inode_log_page *last_page, u64 curr_head)
@@ -1678,7 +1723,7 @@ int nova_gc_assign_file_entry(struct super_block *sb,
 
 		pentry = radix_tree_lookup_slot(&sih->tree, curr_pgoff);
 		if (pentry) {
-			temp = radix_tree_deref_slot(pentry);
+			temp = (struct nova_file_write_entry *)radix_tree_deref_slot(pentry);
 			if (temp == old_entry)
 				radix_tree_replace_slot(pentry, new_entry);
 		}
@@ -1697,13 +1742,13 @@ static int nova_gc_assign_dentry(struct super_block *sb,
 	int ret = 0;
 
 	hash = BKDRHash(old_dentry->name, old_dentry->name_len);
-	nova_dbgv("%s: assign %s hash %lu\n", __func__,
+	rdv_proc("%s: assign %s hash %lu\n", __func__,
 			old_dentry->name, hash);
 
 	/* FIXME: hash collision ignored here */
 	pentry = radix_tree_lookup_slot(&sih->tree, hash);
 	if (pentry) {
-		temp = radix_tree_deref_slot(pentry);
+		temp = (struct nova_dentry *)radix_tree_deref_slot(pentry);
 		if (temp == old_dentry)
 			radix_tree_replace_slot(pentry, new_dentry);
 	}
@@ -1725,7 +1770,7 @@ static int nova_gc_assign_new_entry(struct super_block *sb,
 	type = nova_get_entry_type(addr);
 	switch (type) {
 		case SET_ATTR:
-			sih->last_setattr = new_curr;
+			sih->last_setattr = new_curr;  // tail page不回收，这里不会有问题？
 			break;
 		case LINK_CHANGE:
 			sih->last_link_change = new_curr;
@@ -1734,10 +1779,12 @@ static int nova_gc_assign_new_entry(struct super_block *sb,
 			new_addr = (void *)nova_get_block(sb, new_curr);
 			old_entry = (struct nova_file_write_entry *)addr;
 			new_entry = (struct nova_file_write_entry *)new_addr;
+			// 修改文件数据的dram radix tree 索引
 			ret = nova_gc_assign_file_entry(sb, sih, old_entry,
 							new_entry);
 			break;
 		case DIR_LOG:
+			// 修改目录的dram radix tree 索引
 			new_addr = (void *)nova_get_block(sb, new_curr);
 			old_dentry = (struct nova_dentry *)addr;
 			new_dentry = (struct nova_dentry *)new_addr;
@@ -1745,9 +1792,9 @@ static int nova_gc_assign_new_entry(struct super_block *sb,
 							new_dentry);
 			break;
 		default:
-			nova_dbg("%s: unknown type %d, 0x%llx\n",
+			rdv_proc("%s: unknown type %d, 0x%llx\n",
 						__func__, type, curr_p);
-			NOVA_ASSERT(0);
+			log_assert(0);
 			break;
 	}
 
@@ -1778,7 +1825,7 @@ static int nova_inode_log_thorough_gc(struct super_block *sb,
 	curr_p = pi->log_head;
 	old_curr_p = curr_p;
 	old_head = pi->log_head;
-	nova_dbg_verbose("Log head 0x%llx, tail 0x%llx\n",
+	rdv_proc("Log head 0x%llx, tail 0x%llx\n",
 				curr_p, pi->log_tail);
 	if (curr_p == 0 && pi->log_tail == 0)
 		goto out;
@@ -1796,7 +1843,7 @@ static int nova_inode_log_thorough_gc(struct super_block *sb,
 
 	new_curr = new_head;
 	while (curr_p != pi->log_tail) {
-		old_curr_p = curr_p;
+		old_curr_p = curr_p;  // 保存被回收log 链表中的最后一个page
 		if (goto_next_page(sb, curr_p))
 			curr_p = next_log_page(sb, curr_p);
 
@@ -1806,21 +1853,26 @@ static int nova_inode_log_thorough_gc(struct super_block *sb,
 		}
 
 		if (curr_p == 0) {
-			nova_err(sb, "File inode %llu log is NULL!\n", ino);
+			r_error("File inode %llu log is NULL!\n", ino);
 			BUG();
 		}
 
 		length = 0;
 		ret = curr_log_entry_invalid(sb, pi, sih, curr_p, &length);
 		if (!ret) {
+			// 有效，进行搬迁
 			extended = 0;
 			new_curr = nova_get_append_head(sb, pi, NULL,
 						new_curr, length, &extended);
-			if (extended)
+			if (extended) {
+				r_warning("%s extent gc log! blocks: %u\n", __func__, blocks);
 				blocks++;
+			}
+
 			/* Copy entry to the new log */
 			memcpy_to_pmem_nocache(nova_get_block(sb, new_curr),
 				nova_get_block(sb, curr_p), length);
+			// 搬迁log后，需要修改内存中对应的索引
 			nova_gc_assign_new_entry(sb, pi, sih, curr_p, new_curr);
 			new_curr += length;
 		}
@@ -1833,10 +1885,12 @@ static int nova_inode_log_thorough_gc(struct super_block *sb,
 	curr_page = (struct nova_inode_log_page *)nova_get_block(sb,
 							BLOCK_OFF(new_curr));
 	next = curr_page->page_tail.next_page;
-	if (next)
+	if (next) // 多分配的空间进行释放
 		nova_free_contiguous_log_blocks(sb, pi, next);
 	nova_set_next_page_flag(sb, new_curr);
 	nova_set_next_page_address(sb, curr_page, tail_block, 0);
+	// TODO: 这里需要flush这么多？entry是通过ntstore的，flag也flush了，
+	// 这里感觉不需要flush了
 	nova_flush_buffer(curr_page, PAGE_SIZE, 0);
 
 	/* Step 2: Atomically switch to the new log */
@@ -1844,11 +1898,12 @@ static int nova_inode_log_thorough_gc(struct super_block *sb,
 	nova_flush_buffer(pi, sizeof(struct nova_inode), 1);
 
 	/* Step 3: Unlink the old log */
+	// 将旧log从链表中断开
 	curr_page = (struct nova_inode_log_page *)nova_get_block(sb,
 							BLOCK_OFF(old_curr_p));
 	next = curr_page->page_tail.next_page;
 	if (next != tail_block) {
-		nova_err(sb, "Old log error: old curr_p 0x%lx, next 0x%lx ",
+		r_error("Old log error: old curr_p 0x%lx, next 0x%lx ",
 			"curr_p 0x%lx, tail block 0x%lx\n", old_curr_p,
 			next, curr_p, tail_block);
 		BUG();
@@ -1858,6 +1913,7 @@ static int nova_inode_log_thorough_gc(struct super_block *sb,
 	/* Step 4: Free the old log */
 	nova_free_contiguous_log_blocks(sb, pi, old_head);
 
+	// blocks是新分配的，checked_pages是释放的
 	sih->log_pages = sih->log_pages + blocks - checked_pages;
 	NOVA_STATS_ADD(thorough_gc_pages, checked_pages - blocks);
 	NOVA_STATS_ADD(thorough_checked_pages, checked_pages);
@@ -1876,6 +1932,8 @@ static int need_thorough_gc(struct super_block *sb,
 	return 0;
 }
 
+// new_block：新分配log page的第一个page的偏移
+// num_pages: 新分配page的个数
 static int nova_inode_log_fast_gc(struct super_block *sb,
 	struct nova_inode *pi, struct nova_inode_info_header *sih,
 	u64 curr_tail, u64 new_block, int num_pages)
@@ -1895,11 +1953,11 @@ static int nova_inode_log_fast_gc(struct super_block *sb,
 	curr = pi->log_head;
 	sih->valid_bytes = 0;
 
-	nova_dbg_verbose("%s: log head 0x%llx, tail 0x%llx\n",
+	rdv_proc("%s: log head 0x%llx, tail 0x%llx\n",
 				__func__, curr, curr_tail);
 	while (1) {
 		if (curr >> PAGE_SHIFT == pi->log_tail >> PAGE_SHIFT) {
-			/* Don't recycle tail page */
+			/* Don't recycle tail page 不回收最后一个page，避免即修改head又修改tail，不能原子*/
 			if (found_head == 0)
 				possible_head = cpu_to_le64(curr);
 			break;
@@ -1908,15 +1966,17 @@ static int nova_inode_log_fast_gc(struct super_block *sb,
 		curr_page = (struct nova_inode_log_page *)
 					nova_get_block(sb, curr);
 		next = curr_page->page_tail.next_page;
-		nova_dbg_verbose("curr 0x%llx, next 0x%llx\n", curr, next);
+		rdv_proc("curr 0x%llx, next 0x%llx\n", curr, next);
 		if (curr_page_invalid(sb, pi, sih, curr)) {
-			nova_dbg_verbose("curr page %p invalid\n", curr_page);
+			rdv_proc("curr page %p invalid\n", curr_page);
 			if (curr == pi->log_head) {
 				/* Free first page later */
 				first_need_free = 1;
 				last_page = curr_page;
-			} else {
-				nova_dbg_verbose("Free log block 0x%llx\n",
+			} else { // TODO: 不释放第一个log page只是为了后面便于删除中间page的处理
+			// 这里可以优化，减少不必要的多次flush+fence
+			// 方法，记录从个有效page当前page之间无效的page个数，如果不为0，才进行next指针改变
+				rdv_proc("Free log block 0x%llx\n",
 						curr >> PAGE_SHIFT);
 				free_curr_page(sb, pi, curr_page, last_page,
 						curr);
@@ -1947,16 +2007,17 @@ static int nova_inode_log_fast_gc(struct super_block *sb,
 	curr = pi->log_head;
 
 	pi->log_head = possible_head;
-	nova_dbg_verbose("%s: %d new head 0x%llx\n", __func__,
+	rdv_proc("%s: %d new head 0x%llx\n", __func__,
 					found_head, possible_head);
-	nova_dbg_verbose("Num pages %d, freed %d\n", num_pages, freed_pages);
+	rdv_proc("Num pages %d, freed %d\n", num_pages, freed_pages);
 	sih->log_pages += num_pages - freed_pages;
 	pi->i_blocks += num_pages - freed_pages;
 	/* Don't update log tail pointer here */
+	// TODO: 这个不一定需要把，如果第一个log page 没有释放，那head没必要改
 	nova_flush_buffer(&pi->log_head, CACHELINE_SIZE, 1);
 
 	if (first_need_free) {
-		nova_dbg_verbose("Free log head block 0x%llx\n",
+		rdv_proc("Free log head block 0x%llx\n",
 					curr >> PAGE_SHIFT);
 		nova_free_log_blocks(sb, pi,
 				nova_get_blocknr(sb, curr, btype), 1);
@@ -1968,8 +2029,9 @@ static int nova_inode_log_fast_gc(struct super_block *sb,
 
 	NOVA_END_TIMING(fast_gc_t, gc_time);
 
+	// 有效率低于50%，开启彻底gc
 	if (need_thorough_gc(sb, sih, blocks, checked_pages)) {
-		nova_dbgv("Thorough GC for inode %lu: checked pages %lu, "
+		rd_info("Thorough GC for inode %lu: checked pages %lu, "
 				"valid pages %lu\n", sih->ino,
 				checked_pages, blocks);
 		nova_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
@@ -1978,6 +2040,9 @@ static int nova_inode_log_fast_gc(struct super_block *sb,
 	return 0;
 }
 
+// 分配新的log page
+// 返回新分配log page的偏移地址
+// curr_p = 0 表示为inode分配第一个log page
 static u64 nova_extend_inode_log(struct super_block *sb, struct nova_inode *pi,
 	struct nova_inode_info_header *sih, u64 curr_p)
 {
@@ -1985,7 +2050,7 @@ static u64 nova_extend_inode_log(struct super_block *sb, struct nova_inode *pi,
 	int allocated;
 	unsigned long num_pages;
 
-	if (curr_p == 0) {
+	if (curr_p == 0) {  // 第一个分配1个
 		allocated = nova_allocate_inode_log_pages(sb, pi,
 					1, &new_block);
 		if (allocated != 1) {
@@ -1999,20 +2064,20 @@ static u64 nova_extend_inode_log(struct super_block *sb, struct nova_inode *pi,
 		sih->log_pages = 1;
 		pi->i_blocks++;
 		nova_flush_buffer(&pi->log_head, CACHELINE_SIZE, 1);
-	} else {
+	} else {  // 按倍数分配新page，直到256后，每次只256个log page
 		num_pages = sih->log_pages >= EXTEND_THRESHOLD ?
 				EXTEND_THRESHOLD : sih->log_pages;
 //		nova_dbg("Before append log pages:\n");
 //		nova_print_inode_log_page(sb, inode);
 		allocated = nova_allocate_inode_log_pages(sb, pi,
 					num_pages, &new_block);
-		nova_dbg_verbose("Link block %llu to block %llu\n",
+		rdv_proc("Link block %llu to block %llu\n",
 					curr_p >> PAGE_SHIFT,
 					new_block >> PAGE_SHIFT);
 		if (allocated <= 0) {
-			nova_err(sb, "%s ERROR: no inode log page "
+			r_error("%s ERROR: no inode log page "
 					"available\n", __func__);
-			nova_dbg("curr_p 0x%llx, %lu pages\n", curr_p,
+			rd_info("curr_p 0x%llx, %lu pages\n", curr_p,
 					sih->log_pages);
 			return 0;
 		}
@@ -2057,6 +2122,9 @@ static u64 nova_append_one_log_page(struct super_block *sb,
 	return curr_p;
 }
 
+// 传入tail=0,表示使用inode当前的log tail，否则判断tail位置能够放入size大小的log entry
+// extended指示是否扩展了
+// size 要append的log entry大小
 u64 nova_get_append_head(struct super_block *sb, struct nova_inode *pi,
 	struct nova_inode_info_header *sih, u64 tail, size_t size, int *extended)
 {
@@ -2072,9 +2140,12 @@ u64 nova_get_append_head(struct super_block *sb, struct nova_inode *pi,
 		if (is_last_entry(curr_p, size))
 			nova_set_next_page_flag(sb, curr_p);
 
+		// 当前log的空间不足，需要分配新的log page
 		if (sih) {
 			curr_p = nova_extend_inode_log(sb, pi, sih, curr_p);
 		} else {
+			// 用于GC时的append log，GC应该到不了这里吧，因为一次就分配足够的page了
+			// 不不不，之前分配的空间只是预判而已，可能预测少了
 			curr_p = nova_append_one_log_page(sb, pi, curr_p);
 			/* For thorough GC */
 			*extended = 1;
@@ -2084,7 +2155,7 @@ u64 nova_get_append_head(struct super_block *sb, struct nova_inode *pi,
 			return 0;
 	}
 
-	if (is_last_entry(curr_p, size)) {
+	if (is_last_entry(curr_p, size)) { // 感觉这才是给gc用的
 		nova_set_next_page_flag(sb, curr_p);
 		curr_p = next_log_page(sb, curr_p);
 	}
@@ -2097,6 +2168,7 @@ u64 nova_get_append_head(struct super_block *sb, struct nova_inode *pi,
  * blocknr and start_blk are pgoff.
  * We cannot update pi->log_tail here because a transaction may contain
  * multiple entries.
+ * 返回当前entry写入的地址
  */
 u64 nova_append_file_write_entry(struct super_block *sb, struct nova_inode *pi,
 	struct inode *inode, struct nova_file_write_entry *data, u64 tail)
@@ -2118,7 +2190,7 @@ u64 nova_append_file_write_entry(struct super_block *sb, struct nova_inode *pi,
 	entry = (struct nova_file_write_entry *)nova_get_block(sb, curr_p);
 	memcpy_to_pmem_nocache(entry, data,
 			sizeof(struct nova_file_write_entry));
-	nova_dbg_verbose("file %lu entry @ 0x%llx: pgoff %llu, num %u, "
+	rdv_proc("file %lu entry @ 0x%llx: pgoff %llu, num %u, "
 			"block %llu, size %llu\n", inode->i_ino,
 			curr_p, entry->pgoff, entry->num_pages,
 			entry->block >> PAGE_SHIFT, entry->size);

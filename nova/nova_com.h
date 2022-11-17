@@ -51,6 +51,13 @@ typedef u64 umode_t;
 #define cpu_to_le16(v) (v)
 
 #define le32_to_cpu(v) (v)
+#define le16_to_cpu(v) (v)
+#define le64_to_cpu(v) (v)
+
+static inline void le64_add_cpu(__le64 *var, u64 val)
+{
+	*var = cpu_to_le64(le64_to_cpu(*var) + val);
+}
 
 #endif
 

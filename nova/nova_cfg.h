@@ -4,7 +4,10 @@
 #include <libpmem2.h>
 #include <numa.h>
 
+#include "util/util.h"
 #include "util/common.h"
+
+#define NOVA_CUT_OUT
 
 #define ALLOC_BLOCK_RETRY 3
 
@@ -36,8 +39,23 @@ force_inline void *pmem_memset_nt(void *pmem, int c, size_t n) {
     return pmem_memset_func(pmem, c, n, PMEM2_F_MEM_NONTEMPORAL);
 }
 
+force_inline void *pmem_memcpy_nt(void *pmem, const void *src, unsigned int size) {
+    return pmem_memcpy_func(pmem, src, size, PMEM2_F_MEM_NONTEMPORAL);
+}
+
 force_inline int __copy_from_user_inatomic_nocache(void *dst, const void *src, unsigned int size) {
+    pmem_memcpy_nt(dst, src, size);
+    return 0;
+}
+
+// 返回未成功拷贝的字节数
+force_inline int __copy_to_user(void *dst, const void *src, unsigned int size) {
     memcpy(dst, src, size);
+    return 0;
+}
+
+force_inline int __clear_user(void *dst, unsigned int size) {
+    memset(dst, 0, size);
     return 0;
 }
 

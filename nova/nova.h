@@ -17,11 +17,21 @@
 #ifndef __NOVA_H
 #define __NOVA_H
 
-#include "nova/nova_def.h"
+#include <stdlib.h>
+
+#include "nova/nova_cfg.h"
 #include "nova/journal.h"
+// #include "nova/wprotect.h"
 #include "nova/stats.h"
+#include "nova/vfs.h"
+#include "nova/nova_def.h"
+
 #include "util/lock.h"
 #include "util/atomic.h"
+#include "util/util.h"
+#include "util/rbtree.h"
+#include "util/log.h"
+#include "util/radix-tree.h"
 
 #define PAGE_SHIFT_2M 21
 #define PAGE_SHIFT_1G 30
@@ -125,7 +135,7 @@ extern unsigned int blk_type_to_size[NOVA_BLOCK_TYPE_MAX];
 
 enum nova_entry_type {
 	FILE_WRITE = 1,
-	DIR_LOG,
+	DIR_LOG,  // 新建一个dir
 	SET_ATTR,
 	LINK_CHANGE,
 	NEXT_PAGE,
@@ -141,16 +151,17 @@ static inline void nova_set_entry_type(void *p, enum nova_entry_type type)
 	*(u8 *)p = type;
 }
 
+// 40B
 struct nova_file_write_entry {
 	/* ret of find_nvmm_block, the lowest byte is entry type */
-	__le64	block;
-	__le64	pgoff;
-	__le32	num_pages;
-	__le32	invalid_pages;
+	__le64	block;   // 起始block的NVM偏移地址
+	__le64	pgoff;   // page 偏移
+	__le32	num_pages;  // 写的page个数
+	__le32	invalid_pages; // 为什么这两个不相等就是有效的，其他原因导致无效的page个数？
 	/* For both ctime and mtime */
 	__le32	mtime;
 	__le32	padding;
-	__le64	size;
+	__le64	size;  // 文件的大小
 } __attribute((__packed__));
 
 struct nova_inode_page_tail {
@@ -180,11 +191,11 @@ struct nova_dentry {
 	u8	name_len;               /* length of the dentry name */
 	u8	file_type;              /* file type */
 	u8	invalid;		/* Invalid now? */
-	__le16	de_len;                 /* length of this dentry */
+	__le16	de_len;                 /* length of this dentry 即log entry大小*/
 	__le16	links_count;
 	__le32	mtime;			/* For both mtime and ctime */
 	__le64	ino;                    /* inode no pointed to by this entry */
-	__le64	size;
+	__le64	size;             // 这个是什么大小？文件吗
 	char	name[NOVA_NAME_LEN + 1];	/* File name */
 } __attribute((__packed__));
 
@@ -194,6 +205,7 @@ struct nova_dentry {
 				      ~NOVA_DIR_ROUND)
 
 /* Struct of inode attributes change log (setattr) */
+// 32B
 struct nova_setattr_logentry {
 	u8	entry_type;
 	u8	attr;
@@ -282,9 +294,11 @@ struct nova_range_node {
 	unsigned long range_high;
 };
 
+// 这是inode的在内存中的数据结构
 struct nova_inode_info_header {
-	struct radix_tree_root tree;	/* Dir name entry tree root */
-	struct radix_tree_root cache_tree;	/* Mmap cache tree root */
+	// 文件数据是按照blocknr来索引的？感觉还是红黑树，或者跳表好
+	struct radix_tree_root tree;	/* Dir name entry tree root 或者文件数据*/
+	// struct radix_tree_root cache_tree;	/* Mmap cache tree root */
 	unsigned short i_mode;		/* Dir or file? */
 	unsigned long log_pages;	/* Num of log pages */
 	unsigned long i_size;
@@ -293,8 +307,9 @@ struct nova_inode_info_header {
 	unsigned long mmap_pages;	/* Num of mmap pages */
 	unsigned long low_dirty;	/* Mmap dirty low range */
 	unsigned long high_dirty;	/* Mmap dirty high range */
-	unsigned long valid_bytes;	/* For thorough GC */
-	u64 last_setattr;		/* Last setattr entry */
+	unsigned long valid_bytes;	/* For thorough GC, log page中有效entry的总字节数*/
+	// 随着 GC/op 的进行而修改
+	u64 last_setattr;		/* Last setattr entry ,当前已经应用的setattr log地址*/
 	u64 last_link_change;		/* Last link change entry */
 };
 
@@ -326,7 +341,7 @@ struct free_list {
 	struct nova_range_node *first_node;  // 红黑树按序的第一个node？
 	unsigned long	block_start;
 	unsigned long	block_end;
-	unsigned long	num_free_blocks; // 初始化 sbi->num_blocks / sbi->cpus
+	unsigned long	num_free_blocks; // 初始化 sbi->num_blocks / sbi->cpus。空闲的page个数
 	unsigned long	num_blocknode;  // 红黑树的node个数
 
 	/* Statistics */
@@ -354,21 +369,8 @@ struct inode_map {
 	struct rb_root	inode_inuse_tree;
 	unsigned long	num_range_node_inode; // 红黑树中节点个数
 	struct nova_range_node *first_inode_range;  // 红黑树中按顺序的第一个节点
-	int allocated;
+	int allocated;  // 统计信息，分配的个数
 	int freed;
-};
-
-struct nova_sb_info;
-
-struct super_block {
-	struct nova_sb_info* s_fs_info;
-	int s_blocksize_bits;
-	int s_blocksize;
-
-	__le32		s_magic;
-	size_t s_maxbytes;  // 最大文件大小
-	int s_time_gran;
-	int s_root;
 };
 
 /*
@@ -426,6 +428,7 @@ struct nova_sb_info {
 	struct inode_map	*inode_maps;
 
 	/* Decide new inode map id */
+	// TODO： 需要原子变量递增吧
 	unsigned long map_id;
 
 	/* Per-CPU free block list */
@@ -476,7 +479,7 @@ static inline u64
 nova_get_addr_off(struct nova_sb_info *sbi, void *addr)
 {
 	NOVA_ASSERT((addr >= sbi->virt_addr) &&
-			(addr < (sbi->virt_addr + sbi->initsize)));
+			((char*)addr < ((char*)(sbi->virt_addr) + sbi->initsize)));
 	return (u64)(addr - sbi->virt_addr);
 }
 
@@ -495,8 +498,10 @@ struct free_list *nova_get_free_list(struct super_block *sb, int cpu)
 
 	if (cpu < sbi->cpus)
 		return &sbi->free_lists[cpu];
-	else
+	else {
+		rdv_verb("%s: cpu:%d, sbi->cpus:%d\n", __func__, cpu, sbi->cpus);
 		return &sbi->shared_free_list;
+	}
 }
 
 struct ptr_pair {
@@ -649,6 +654,7 @@ int nova_get_nova_log_pages(struct super_block *sb,
 void nova_print_nova_log_pages(struct super_block *sb,
 	struct nova_inode_info_header *sih, struct nova_inode *pi);
 
+// 获取偏移 pgoff 对应的块号
 static inline unsigned long get_nvmm(struct super_block *sb,
 	struct nova_inode_info_header *sih,
 	struct nova_file_write_entry *data, unsigned long pgoff)
@@ -660,13 +666,13 @@ static inline unsigned long get_nvmm(struct super_block *sb,
 		u64 curr;
 
 		curr = nova_get_addr_off(sbi, data);
-		nova_dbg("Entry ERROR: inode %lu, curr 0x%llx, pgoff %lu, "
+		rd_info("Entry ERROR: inode %lu, curr 0x%llx, pgoff %lu, "
 			"entry pgoff %llu, num %u\n", sih->ino,
 			curr, pgoff, data->pgoff, data->num_pages);
-		pi = nova_get_block(sb, sih->pi_addr);
+		pi = (struct nova_inode *)nova_get_block(sb, sih->pi_addr);
 		nova_print_nova_log_pages(sb, sih, pi);
 		nova_print_nova_log(sb, sih, pi);
-		NOVA_ASSERT(0);
+		log_assert(0);
 	}
 
 	return (unsigned long)(data->block >> PAGE_SHIFT) + pgoff
@@ -734,6 +740,8 @@ static inline struct nova_inode *nova_get_inode_by_ino(struct super_block *sb,
 	return nova_get_basic_inode(sb, ino);
 }
 
+// 获取NVM中对应的inode地址
+// inode存储着偏移，可以直接加上base得到地址
 static inline struct nova_inode *nova_get_inode(struct super_block *sb,
 	struct inode *inode)
 {
@@ -793,6 +801,7 @@ enum nova_new_inode_type {
 	TYPE_MKDIR
 };
 
+// 返回下一个log的指针
 static inline u64 next_log_page(struct super_block *sb, u64 curr_p)
 {
 	void *curr_addr = nova_get_block(sb, curr_p);
@@ -813,6 +822,7 @@ static inline void nova_set_next_page_address(struct super_block *sb,
 
 #define	CACHE_ALIGN(p)	((p) & ~(CACHELINE_SIZE - 1))
 
+// 判断能否容下size大小的entry
 static inline bool is_last_entry(u64 curr_p, size_t size)
 {
 	unsigned int entry_end;
@@ -822,6 +832,7 @@ static inline bool is_last_entry(u64 curr_p, size_t size)
 	return entry_end > LAST_ENTRY;
 }
 
+// 判断curr_p位置是否到达log page的尾部，需要跳转到下一个page了？
 static inline bool goto_next_page(struct super_block *sb, u64 curr_p)
 {
 	void *addr;
@@ -850,7 +861,7 @@ static inline int is_dir_init_entry(struct super_block *sb,
 	return 0;
 }
 
-#include "wprotect.h"
+// #include "nova/wprotect.h"
 
 /* Function Prototypes */
 extern void nova_error_mng(struct super_block *sb, const char *fmt, ...);
@@ -906,9 +917,9 @@ int nova_recovery(struct super_block *sb);
 int nova_reassign_file_tree(struct super_block *sb,
 	struct nova_inode *pi, struct nova_inode_info_header *sih,
 	u64 begin_tail);
-ssize_t nova_dax_file_read(struct file *filp, char __user *buf, size_t len,
+ssize_t nova_dax_file_read(struct file *filp, char *buf, size_t len,
 			    loff_t *ppos);
-ssize_t nova_dax_file_write(struct file *filp, const char __user *buf,
+ssize_t nova_dax_file_write(struct file *filp, const char *buf,
 		size_t len, loff_t *ppos);
 int nova_dax_get_block(struct inode *inode, sector_t iblock,
 	struct buffer_head *bh, int create);
@@ -1010,8 +1021,8 @@ extern struct super_block *nova_read_super(struct super_block *sb, void *data,
 	int silent);
 extern int nova_statfs(struct dentry *d, struct kstatfs *buf);
 extern int nova_remount(struct super_block *sb, int *flags, char *data);
-int nova_check_integrity(struct super_block *sb,
-	struct nova_super_block *super);
+// int nova_check_integrity(struct super_block *sb,
+// 	struct nova_super_block *super);
 void *nova_ioremap(struct super_block *sb, phys_addr_t phys_addr,
 	ssize_t size);
 

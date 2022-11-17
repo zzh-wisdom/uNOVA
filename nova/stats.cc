@@ -249,87 +249,87 @@ const char *Timingstring[TIMING_NUM] =
 // 	nova_clear_IO_stats();
 // }
 
-// static inline void nova_print_file_write_entry(struct super_block *sb,
-// 	u64 curr, struct nova_file_write_entry *entry)
-// {
-// 	nova_dbg("file write entry @ 0x%llx: paoff %llu, pages %u, "
-// 			"blocknr %llu, invalid count %u, size %llu\n",
-// 			curr, entry->pgoff, entry->num_pages,
-// 			entry->block >> PAGE_SHIFT,
-// 			entry->invalid_pages, entry->size);
-// }
+static inline void nova_print_file_write_entry(struct super_block *sb,
+	u64 curr, struct nova_file_write_entry *entry)
+{
+	rd_info("file write entry @ 0x%llx: paoff %llu, pages %u, "
+			"blocknr %llu, invalid count %u, size %llu\n",
+			curr, entry->pgoff, entry->num_pages,
+			entry->block >> PAGE_SHIFT,
+			entry->invalid_pages, entry->size);
+}
 
-// static inline void nova_print_set_attr_entry(struct super_block *sb,
-// 	u64 curr, struct nova_setattr_logentry *entry)
-// {
-// 	nova_dbg("set attr entry @ 0x%llx: mode %u, size %llu\n",
-// 			curr, entry->mode, entry->size);
-// }
+static inline void nova_print_set_attr_entry(struct super_block *sb,
+	u64 curr, struct nova_setattr_logentry *entry)
+{
+	rd_info("set attr entry @ 0x%llx: mode %u, size %llu\n",
+			curr, entry->mode, entry->size);
+}
 
-// static inline void nova_print_link_change_entry(struct super_block *sb,
-// 	u64 curr, struct nova_link_change_entry *entry)
-// {
-// 	nova_dbg("link change entry @ 0x%llx: links %u, flags %u\n",
-// 			curr, entry->links, entry->flags);
-// }
+static inline void nova_print_link_change_entry(struct super_block *sb,
+	u64 curr, struct nova_link_change_entry *entry)
+{
+	rd_info("link change entry @ 0x%llx: links %u, flags %u\n",
+			curr, entry->links, entry->flags);
+}
 
-// static inline size_t nova_print_dentry(struct super_block *sb,
-// 	u64 curr, struct nova_dentry *entry)
-// {
-// 	nova_dbg("dir logentry @ 0x%llx: inode %llu, "
-// 			"namelen %u, rec len %u\n", curr,
-// 			le64_to_cpu(entry->ino),
-// 			entry->name_len, le16_to_cpu(entry->de_len));
+static inline size_t nova_print_dentry(struct super_block *sb,
+	u64 curr, struct nova_dentry *entry)
+{
+	rd_info("dir logentry @ 0x%llx: inode %llu, "
+			"namelen %u, rec len %u\n", curr,
+			le64_to_cpu(entry->ino),
+			entry->name_len, le16_to_cpu(entry->de_len));
 
-// 	return le16_to_cpu(entry->de_len);
-// }
+	return le16_to_cpu(entry->de_len);
+}
 
-// static u64 nova_print_log_entry(struct super_block *sb, u64 curr)
-// {
-// 	void *addr;
-// 	size_t size;
-// 	u8 type;
+static u64 nova_print_log_entry(struct super_block *sb, u64 curr)
+{
+	void *addr;
+	size_t size;
+	u8 type;
 
-// 	addr = (void *)nova_get_block(sb, curr);
-// 	type = nova_get_entry_type(addr);
-// 	switch (type) {
-// 		case SET_ATTR:
-// 			nova_print_set_attr_entry(sb, curr, addr);
-// 			curr += sizeof(struct nova_setattr_logentry);
-// 			break;
-// 		case LINK_CHANGE:
-// 			nova_print_link_change_entry(sb, curr, addr);
-// 			curr += sizeof(struct nova_link_change_entry);
-// 			break;
-// 		case FILE_WRITE:
-// 			nova_print_file_write_entry(sb, curr, addr);
-// 			curr += sizeof(struct nova_file_write_entry);
-// 			break;
-// 		case DIR_LOG:
-// 			size = nova_print_dentry(sb, curr, addr);
-// 			curr += size;
-// 			if (size == 0) {
-// 				nova_dbg("%s: dentry with size 0 @ 0x%llx\n",
-// 						__func__, curr);
-// 				curr += sizeof(struct nova_file_write_entry);
-// 				NOVA_ASSERT(0);
-// 			}
-// 			break;
-// 		case NEXT_PAGE:
-// 			nova_dbg("%s: next page sign @ 0x%llx\n",
-// 						__func__, curr);
-// 			curr = PAGE_TAIL(curr);
-// 			break;
-// 		default:
-// 			nova_dbg("%s: unknown type %d, 0x%llx\n",
-// 						__func__, type, curr);
-// 			curr += sizeof(struct nova_file_write_entry);
-// 			NOVA_ASSERT(0);
-// 			break;
-// 	}
+	addr = (void *)nova_get_block(sb, curr);
+	type = nova_get_entry_type(addr);
+	switch (type) {
+		case SET_ATTR:
+			nova_print_set_attr_entry(sb, curr, (struct nova_setattr_logentry *)addr);
+			curr += sizeof(struct nova_setattr_logentry);
+			break;
+		case LINK_CHANGE:
+			nova_print_link_change_entry(sb, curr, (struct nova_link_change_entry *)addr);
+			curr += sizeof(struct nova_link_change_entry);
+			break;
+		case FILE_WRITE:
+			nova_print_file_write_entry(sb, curr, (struct nova_file_write_entry *)addr);
+			curr += sizeof(struct nova_file_write_entry);
+			break;
+		case DIR_LOG:
+			size = nova_print_dentry(sb, curr, (struct nova_dentry *)addr);
+			curr += size;
+			if (size == 0) {
+				rd_info("%s: dentry with size 0 @ 0x%llx\n",
+						__func__, curr);
+				curr += sizeof(struct nova_file_write_entry);
+				log_assert(0);
+			}
+			break;
+		case NEXT_PAGE:
+			rd_info("%s: next page sign @ 0x%llx\n",
+						__func__, curr);
+			curr = PAGE_TAIL(curr);
+			break;
+		default:
+			rd_info("%s: unknown type %d, 0x%llx\n",
+						__func__, type, curr);
+			curr += sizeof(struct nova_file_write_entry);
+			log_assert(0);
+			break;
+	}
 
-// 	return curr;
-// }
+	return curr;
+}
 
 // void nova_print_curr_log_page(struct super_block *sb, u64 curr)
 // {
@@ -348,29 +348,29 @@ const char *Timingstring[TIMING_NUM] =
 // 			start, tail->next_page);
 // }
 
-// void nova_print_nova_log(struct super_block *sb,
-// 	struct nova_inode_info_header *sih, struct nova_inode *pi)
-// {
-// 	u64 curr;
+void nova_print_nova_log(struct super_block *sb,
+	struct nova_inode_info_header *sih, struct nova_inode *pi)
+{
+	u64 curr;
 
-// 	if (pi->log_tail == 0)
-// 		return;
+	if (pi->log_tail == 0)
+		return;
 
-// 	curr = pi->log_head;
-// 	nova_dbg("Pi %lu: log head 0x%llx, tail 0x%llx\n",
-// 			sih->ino, curr, pi->log_tail);
-// 	while (curr != pi->log_tail) {
-// 		if ((curr & (PAGE_SIZE - 1)) == LAST_ENTRY) {
-// 			struct nova_inode_page_tail *tail =
-// 					nova_get_block(sb, curr);
-// 			nova_dbg("Log tail, curr 0x%llx, next page 0x%llx\n",
-// 					curr, tail->next_page);
-// 			curr = tail->next_page;
-// 		} else {
-// 			curr = nova_print_log_entry(sb, curr);
-// 		}
-// 	}
-// }
+	curr = pi->log_head;
+	rd_info("Pi %lu: log head 0x%llx, tail 0x%llx\n",
+			sih->ino, curr, pi->log_tail);
+	while (curr != pi->log_tail) {
+		if ((curr & (PAGE_SIZE - 1)) == LAST_ENTRY) {
+			struct nova_inode_page_tail *tail =
+					(struct nova_inode_page_tail *)nova_get_block(sb, curr);
+			rd_info("Log tail, curr 0x%llx, next page 0x%llx\n",
+					curr, tail->next_page);
+			curr = tail->next_page;
+		} else {
+			curr = nova_print_log_entry(sb, curr);
+		}
+	}
+}
 
 // void nova_print_inode_log(struct super_block *sb, struct inode *inode)
 // {
@@ -406,39 +406,39 @@ const char *Timingstring[TIMING_NUM] =
 // 	return count;
 // }
 
-// void nova_print_nova_log_pages(struct super_block *sb,
-// 	struct nova_inode_info_header *sih, struct nova_inode *pi)
-// {
-// 	struct nova_inode_log_page *curr_page;
-// 	u64 curr, next;
-// 	int count = 1;
-// 	int used = count;
+void nova_print_nova_log_pages(struct super_block *sb,
+	struct nova_inode_info_header *sih, struct nova_inode *pi)
+{
+	struct nova_inode_log_page *curr_page;
+	u64 curr, next;
+	int count = 1;
+	int used = count;
 
-// 	if (pi->log_head == 0 || pi->log_tail == 0) {
-// 		nova_dbg("Pi %lu has no log\n", sih->ino);
-// 		return;
-// 	}
+	if (pi->log_head == 0 || pi->log_tail == 0) {
+		rd_info("Pi %lu has no log\n", sih->ino);
+		return;
+	}
 
-// 	curr = pi->log_head;
-// 	nova_dbg("Pi %lu: log head @ 0x%llx, tail @ 0x%llx\n",
-// 			sih->ino, curr, pi->log_tail);
-// 	curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr);
-// 	while ((next = curr_page->page_tail.next_page) != 0) {
-// 		nova_dbg("Current page 0x%llx, next page 0x%llx\n",
-// 			curr >> PAGE_SHIFT, next >> PAGE_SHIFT);
-// 		if (pi->log_tail >> PAGE_SHIFT == curr >> PAGE_SHIFT)
-// 			used = count;
-// 		curr = next;
-// 		curr_page = (struct nova_inode_log_page *)
-// 			nova_get_block(sb, curr);
-// 		count++;
-// 	}
-// 	if (pi->log_tail >> PAGE_SHIFT == curr >> PAGE_SHIFT)
-// 		used = count;
-// 	nova_dbg("Pi %lu: log used %d pages, has %d pages, "
-// 		"si reports %lu pages\n", sih->ino, used, count,
-// 		sih->log_pages);
-// }
+	curr = pi->log_head;
+	rd_info("Pi %lu: log head @ 0x%llx, tail @ 0x%llx\n",
+			sih->ino, curr, pi->log_tail);
+	curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr);
+	while ((next = curr_page->page_tail.next_page) != 0) {
+		rd_info("Current page 0x%llx, next page 0x%llx\n",
+			curr >> PAGE_SHIFT, next >> PAGE_SHIFT);
+		if (pi->log_tail >> PAGE_SHIFT == curr >> PAGE_SHIFT)
+			used = count;
+		curr = next;
+		curr_page = (struct nova_inode_log_page *)
+			nova_get_block(sb, curr);
+		count++;
+	}
+	if (pi->log_tail >> PAGE_SHIFT == curr >> PAGE_SHIFT)
+		used = count;
+	rd_info("Pi %lu: log used %d pages, has %d pages, "
+		"si reports %lu pages\n", sih->ino, used, count,
+		sih->log_pages);
+}
 
 // void nova_print_inode_log_pages(struct super_block *sb, struct inode *inode)
 // {

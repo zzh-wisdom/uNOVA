@@ -224,7 +224,7 @@ int nova_find_free_slot(struct nova_sb_info *sbi,
 
 	ret = nova_find_range_node(sbi, tree, range_low, &ret_node);
 	if (ret) {
-		nova_dbg("%s ERROR: %lu - %lu already in free list\n",
+		rd_error("%s ERROR: %lu - %lu already in free list\n",
 			__func__, range_low, range_high);
 		return -EINVAL;
 	}
@@ -246,7 +246,7 @@ int nova_find_free_slot(struct nova_sb_info *sbi,
 		else
 			*prev = NULL;
 	} else {
-		nova_dbg("%s ERROR: %lu - %lu overlaps with existing node "
+		rd_error("%s ERROR: %lu - %lu overlaps with existing node "
 			"%lu - %lu\n", __func__, range_low,
 			range_high, ret_node->range_low,
 			ret_node->range_high);
@@ -256,6 +256,7 @@ int nova_find_free_slot(struct nova_sb_info *sbi,
 	return 0;
 }
 
+// log_page 是否为log page
 static int nova_free_blocks(struct super_block *sb, unsigned long blocknr,
 	int num, unsigned short btype, int log_page)
 {
@@ -273,7 +274,7 @@ static int nova_free_blocks(struct super_block *sb, unsigned long blocknr,
 	int ret;
 
 	if (num <= 0) {
-		nova_dbg("%s ERROR: free %d\n", __func__, num);
+		rd_error("%s ERROR: free %d\n", __func__, num);
 		return -EINVAL;
 	}
 
@@ -297,13 +298,13 @@ static int nova_free_blocks(struct super_block *sb, unsigned long blocknr,
 	block_low = blocknr;
 	block_high = blocknr + num_blocks - 1;
 
-	nova_dbgv("Free: %lu - %lu\n", block_low, block_high);
+	rdv_proc("Free: %lu - %lu\n", block_low, block_high);
 
 	ret = nova_find_free_slot(sbi, tree, block_low,
 					block_high, &prev, &next);
 
 	if (ret) {
-		nova_dbg("%s: find free slot fail: %d\n", __func__, ret);
+		rd_info("%s: find free slot fail: %d\n", __func__, ret);
 		spin_unlock(&free_list->s_lock);
 		nova_free_blocknode(sb, curr_node);
 		return ret;
@@ -367,10 +368,10 @@ int nova_free_data_blocks(struct super_block *sb, struct nova_inode *pi,
 	int ret;
 	timing_t free_time;
 
-	nova_dbgv("Inode %llu: free %d data block from %lu to %lu\n",
+	rd_info("Inode %llu: free %d data block from %lu to %lu\n",
 			pi->nova_ino, num, blocknr, blocknr + num - 1);
 	if (blocknr == 0) {
-		nova_dbg("%s: ERROR: %lu, %d\n", __func__, blocknr, num);
+		r_error("%s: ERROR: %lu, %d\n", __func__, blocknr, num);
 		return -EINVAL;
 	}
 	NOVA_START_TIMING(free_data_t, free_time);
@@ -390,10 +391,10 @@ int nova_free_log_blocks(struct super_block *sb, struct nova_inode *pi,
 	int ret;
 	timing_t free_time;
 
-	nova_dbgv("Inode %llu: free %d log block from %lu to %lu\n",
+	rd_info("Inode %llu: free %d log block from %lu to %lu\n",
 			pi->nova_ino, num, blocknr, blocknr + num - 1);
 	if (blocknr == 0) {
-		nova_dbg("%s: ERROR: %lu, %d\n", __func__, blocknr, num);
+		rd_error("%s: ERROR: %lu, %d\n", __func__, blocknr, num);
 		return -EINVAL;
 	}
 	NOVA_START_TIMING(free_log_t, free_time);
@@ -575,6 +576,7 @@ retry:
 	return ret_blocks / nova_get_numblocks(btype);
 }
 
+// 分配文件数据块
 inline int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 	unsigned long *blocknr,	unsigned int num, unsigned long start_blk,
 	int zero, int cow)
@@ -585,7 +587,7 @@ inline int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 	allocated = nova_new_blocks(sb, blocknr, num,
 					pi->i_blk_type, zero, DATA);
 	NOVA_END_TIMING(new_data_blocks_t, alloc_time);
-	nova_dbgv("Inode %llu, start blk %lu, cow %d, "
+	rdv_proc("Inode %llu, start blk %lu, cow %d, "
 			"alloc %d data blocks from %lu to %lu\n",
 			pi->nova_ino, start_blk, cow, allocated, *blocknr,
 			*blocknr + allocated - 1);
@@ -594,6 +596,7 @@ inline int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 
 // 分配新的用于log的block
 // 返回分配指定inode类型的block个数
+// zero为1表示新分配的空间需要清零
 inline int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
 	unsigned long *blocknr, unsigned int num, int zero)
 {

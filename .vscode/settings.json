@@ -8,6 +8,16 @@
         "type_traits": "cpp",
         "utility": "cpp",
         "nova.h": "c",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "fs.h": "c",
+        "wprotect.h": "c",
+        "log.h": "c",
+        "logging.h": "c",
+        "raw_logging.h": "c",
+        "stdlib.h": "c",
+        "nova_def.h": "c",
+        "nova_com.h": "c",
+        "common.h": "c",
+        "mem.h": "c"
     }
 }

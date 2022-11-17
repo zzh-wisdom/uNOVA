@@ -78,7 +78,7 @@
 struct nova_inode {
 	/* first 48 bytes */
 	__le16	i_rsvd;		/* reserved. used to be checksum */
-	u8	valid;		/* Is this inode valid? */
+	u8	valid;		/* Is this inode valid? 新建inode时和父母tail一起journal方式写*/
 	u8	i_blk_type;	/* data block size this inode uses ,是一个枚举值*/
 	__le32	i_flags;	/* Inode flags */
 	__le64	i_size;		/* Size of data in bytes */
@@ -92,9 +92,10 @@ struct nova_inode {
 	 * Blocks count. This field is updated in-place;
 	 * We just make sure it is consistent upon clean umount,
 	 * and it is recovered in DFS recovery if power failure occurs.
+	 * 持有的block个数，包括log page
 	 */
 	__le64	i_blocks;
-	__le64	i_xattr;	/* Extended attribute block */
+	// __le64	i_xattr;	/* Extended attribute block */
 
 	/* second 48 bytes */
 	__le32	i_uid;		/* Owner Uid */
@@ -106,9 +107,9 @@ struct nova_inode {
 	__le64	log_head;	/* Log head pointer */
 	__le64	log_tail;	/* Log tail pointer */
 
-	struct {
-		__le32 rdev;	/* major/minor # */
-	} dev;			/* device inode */
+	// struct {
+	// 	__le32 rdev;	/* major/minor # */
+	// } dev;			/* device inode */
 
 	/* Leave 8 bytes for inode table tail pointer */
 } __attribute((__packed__));

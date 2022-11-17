@@ -47,6 +47,12 @@ static force_inline uint64_t GetTsNsec() {
     return tp.tv_sec * 1000000000ULL + tp.tv_nsec;
 }
 
+static force_inline struct timespec get_cur_time_spec() {
+    struct timespec tp;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &tp);
+    return tp;
+}
+
 // 由于cpu频率不定，这个很难转换成时间
 static force_inline uint64_t GetTsTick() {
     uint32_t lo, hi;

@@ -7,6 +7,4 @@
 #define ATTR_CONSTRUCTOR __attribute__((constructor)) static
 #define ATTR_DESTRUCTOR __attribute__((destructor)) static
 
-#define unlikely(cond) __glibc_unlikely(cond)
-
 #endif

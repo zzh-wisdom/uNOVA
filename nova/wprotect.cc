@@ -18,7 +18,7 @@
  * warranty of any kind, whether express or implied.
  */
 
-#include "nova/nova.h"
+#include "nova/wprotect.h"
 
 // static inline void wprotect_disable(void)
 // {

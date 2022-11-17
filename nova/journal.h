@@ -28,6 +28,7 @@
 // 刚好一个cacheline
 struct nova_lite_journal_entry {
 	/* The highest byte of addr is type */
+	// 比如高位是8表示修改的是8字节
 	u64 addrs[4];  // 最大存储4个地址
 	u64 values[4];
 };

@@ -23,8 +23,11 @@
  * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <errno.h>
+
 #include "nova/nova.h"
 #include "nova/journal.h"
+#include "util/log.h"
 
 /**************************** Lite journal ******************************/
 
@@ -100,12 +103,12 @@ u64 nova_create_lite_transaction(struct super_block *sb,
 		entry = (struct nova_lite_journal_entry *)nova_get_block(sb,
 							temp);
 //		nova_print_lite_transaction(dram_entry2);
-		memcpy_to_pmem_nocache(entry, dram_entry2, size);
+		memcpy_to_pmem_nocache(entry, dram_entry2, size); // 这里的每一次拷贝都有fence
 	}
 
 	new_tail = next_lite_journal(temp);
 	pair->journal_tail = new_tail;
-	nova_flush_buffer(&pair->journal_head, CACHELINE_SIZE, 1);
+	nova_flush_buffer(&pair->journal_head, CACHELINE_SIZE, 1); //所以至少两个fence，最多三个fence
 
 	return new_tail;
 }
