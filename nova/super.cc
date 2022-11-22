@@ -79,7 +79,8 @@ static int nova_get_block_info(struct super_block *sb, struct nova_sb_info *sbi)
     sbi->virt_addr = virt_addr;
     sbi->initsize = size;
 
-    rd_info("%s: dev=%s, virt_addr=%p, size=%ld", __func__, sb->dev_name.c_str(), sbi->virt_addr, size);
+    rd_info("%s: dev=%s, virt_addr=%p, size=%ld", __func__, sb->dev_name.c_str(), sbi->virt_addr,
+            size);
 
     return 0;
 }
@@ -454,8 +455,7 @@ static void nova_put_super(struct super_block *sb) {
 
     for (i = 0; i < sbi->cpus; i++) {
         inode_map = &sbi->inode_maps[i];
-        rd_info("CPU %d: inode allocated %d, freed %d", i, inode_map->allocated,
-                  inode_map->freed);
+        rd_info("CPU %d: inode allocated %d, freed %d", i, inode_map->allocated, inode_map->freed);
     }
 
     FREE(sbi->inode_maps);
@@ -805,8 +805,6 @@ struct nova_range_node *nova_alloc_blocknode(struct super_block *sb) {
 struct nova_range_node *nova_alloc_inode_node(struct super_block *sb) {
     return nova_alloc_range_node(sb);
 }
-
-
 
 // static void nova_i_callback(struct rcu_head *head)
 // {

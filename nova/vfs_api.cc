@@ -144,7 +144,7 @@ static inline int find_next_slash(const char* pathname, int pos) {
 }
 
 // slash
-// 出去root path后剩余部分的起始下标，root path固定只有两个斜杠部分
+// 出去root path后剩余部分的起始下标，root path固定有三个斜杠部分
 // 返回-1，表示处理错误，路径不合法
 static inline int pathname_deal_root_prefix(const char* pathname) {
     int len = strlen(pathname);
@@ -210,6 +210,7 @@ static inline u64 hash_name(const void *salt, const char *name)
 static dentry* get_parent_entry(dentry* parent, const char* name, qstr *last) {
     dentry_ref(parent);
     for(;;) {
+        while(*name == '/') ++name;
         u64 hash_len = hash_name(parent, name);
         u32 hash = hashlen_hash(hash_len);
         u32 len = hashlen_len(hash_len);
@@ -241,8 +242,40 @@ err:
     return nullptr;
 }
 
+// 返回的dentry已经引用
+static dentry* get_dentry_by_name(dentry* parent, const char* name) {
+    dentry_ref(parent);
+    for(;;) {
+        while(*name == '/') ++name;
+        if(*name == '\0') break;
+        u64 hash_len = hash_name(parent, name);
+        u32 hash = hashlen_hash(hash_len);
+        u32 len = hashlen_len(hash_len);
+        qstr tmp = {
+            .hash = hash,
+            .len = len,
+            .name = name,
+        };
+        // go down child
+        dentry* child = get_dentry_by_hash(parent, tmp, false);
+        if(child == nullptr) {
+            r_error("dir %*s not exist.", len, name);
+            goto err;
+        }
+        dentry_unref(parent);
+        parent = child;
+        name += len;
+    }
+    return parent;
+
+err:
+    dentry_unref(parent);
+    return nullptr;
+}
+
 // pathname不能以 / 结尾
 int vfs_mkdir(const char* pathname, umode_t mode) {
+    rd_info("%s: %s", __func__, pathname);
     int name_start = pathname_deal_root_prefix(pathname);
     if(name_start < 0) return -1;
     std::string root_path(pathname, name_start-1);
@@ -269,4 +302,19 @@ int vfs_mkdir(const char* pathname, umode_t mode) {
     dentry_unref(parent);
     dentry_unref(new_d);
     return ret;
+}
+
+int vfs_ls(const char* pathname) {
+    rd_info("%s: %s", __func__, pathname);
+    int name_start = pathname_deal_root_prefix(pathname);
+    if(name_start < 0) return -1;
+    std::string root_path(pathname, name_start-1);
+    super_block* sb = get_mounted_fs(root_path);
+    log_assert(sb);
+
+    dentry* parent = get_dentry_by_name(sb->s_root, pathname+name_start);
+    if(parent == nullptr) return -1;
+    d_show(pathname+name_start, parent);
+    dentry_unref(parent);
+    return 0;
 }

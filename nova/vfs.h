@@ -349,7 +349,7 @@ struct inode {
 
     const struct inode_operations *i_op;
     const struct file_operations *i_fop; /* former ->i_op->default_file_ops */
-    struct dentry *i_dentry; // 不需要ref，和inode和dentry是一一对应的关系
+    struct dentry *i_dentry;             // 不需要ref，和inode和dentry是一一对应的关系
 
     struct super_block *i_sb;
     /* Stat data, not accessed from path walking */
@@ -627,7 +627,17 @@ struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name);
 struct dentry *d_alloc(struct dentry *parent, const struct qstr *name);
 void d_put(struct dentry *parent);
 void d_put_recursive(struct dentry *parent);
+int d_show(const char* path, struct dentry *parent);
 struct dentry *d_make_root(struct inode *root_inode);
+static force_inline bool is_dir(struct dentry *parent) {
+    if(S_ISDIR(parent->d_inode->i_mode)) {
+        return true;
+    }
+    if(S_ISREG(parent->d_inode->i_mode)) {
+        return true;
+    }
+    log_assert(0);
+}
 
 static inline int dname_external(const struct dentry *dentry) {
     return dentry->d_name.name != dentry->d_iname;
@@ -687,7 +697,7 @@ static force_inline void dentry_insert_child(dentry *parent, dentry *child) {
     dentry_ref(parent);
     dentry_ref(child);
     child->d_parent = parent;
-    struct qstr* name = &child->d_name;
+    struct qstr *name = &child->d_name;
     auto it = parent->d_subdirs.find(name->hash);
     struct list_head *head = nullptr;
     if (it != parent->d_subdirs.end()) {
@@ -719,9 +729,9 @@ static force_inline dentry *dentry_delete_child(dentry *parent, struct qstr *qs)
             break;
         }
     }
-    if(ret == nullptr) goto out;
+    if (ret == nullptr) goto out;
     list_del(&ret->d_child);
-    if(list_empty(head)) {
+    if (list_empty(head)) {
         parent->d_subdirs.erase(it);
     }
     dentry_unref(parent);

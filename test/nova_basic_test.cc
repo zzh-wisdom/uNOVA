@@ -27,11 +27,21 @@ int main(int argc, char* argv[]) {
 
     ret = vfs_mkdir("/tmp/nova/dir1", 0);
     log_assert(ret == 0);
+    ret = vfs_mkdir("/tmp/nova/dir1/d1", 0);
+    log_assert(ret == 0);
+    ret = vfs_mkdir("/tmp/nova/dir1/d2", 0);
+    log_assert(ret == 0);
     ret = vfs_mkdir("/tmp/nova/dir2", 0);
     log_assert(ret == 0);
     ret = vfs_mkdir("/tmp/nova/dir3/dir31", 0);
     log_assert(ret);
 
-    fs_unmount(&sb);
+    ret = vfs_ls("/tmp/nova/dir3");
+    log_assert(ret);
+    ret = vfs_ls("/tmp/nova/dir1");
+    log_assert(ret == 0);
+    ret = vfs_ls("/tmp/nova/");
+    log_assert(ret == 0);
+    // fs_unmount(&sb);
     return 0;
 }

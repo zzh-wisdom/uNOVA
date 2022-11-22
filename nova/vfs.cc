@@ -523,6 +523,38 @@ struct dentry *d_make_root(struct inode *root_inode) {
 // 	sb_end_write(inode->i_sb);
 // }
 
+void d_print(struct dentry* d, int space) {
+	printf("%*s%s", space, "", d->d_name.name);
+	if(!is_dir(d)) {
+		printf("\n");
+		return;
+	}
+	printf("/\n");
+	for (auto p : d->d_subdirs) {
+        struct list_head *head = &d->d_subdirs[p.first];
+        struct dentry *cur, *tmp;
+        list_for_each_entry_safe(cur, tmp, head, d_child) {
+            d_print(cur, space+2);
+        }
+    }
+}
+
+int d_show(const char* path, struct dentry *parent) {
+	printf("%s", path);
+	if(!is_dir(parent)) {
+		return 0;
+	}
+	printf("/\n");
+	for (auto p : parent->d_subdirs) {
+        struct list_head *head = &parent->d_subdirs[p.first];
+        struct dentry *cur, *tmp;
+        list_for_each_entry_safe(cur, tmp, head, d_child) {
+            d_print(cur, 2);
+        }
+    }
+	return 0;
+}
+
 void vfs_init() {
     int ret = 0;
     ret = init_dentry_cache();

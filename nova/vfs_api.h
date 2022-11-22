@@ -52,5 +52,6 @@ int fs_unmount(struct super_block** sb);
 
 // 0创建成功，-1创建失败
 int vfs_mkdir(const char* pathname, umode_t mode);
+int vfs_ls(const char* pathname);
 
 #endif
