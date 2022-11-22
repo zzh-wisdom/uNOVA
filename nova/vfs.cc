@@ -49,24 +49,24 @@ struct super_block *alloc_super(const std::string &dev_name, pmem2_map *pmap,
 }
 
 void destroy_super(struct super_block *sb) {
-	rd_info("%s", __func__);
-	spin_lock(&sb->s_fd_2_inode_lock);
-	for(auto p: sb->s_fd_2_inode) {
-		inode_unref(p.second);
-	}
-	sb->s_fd_2_inode.clear();
-	spin_unlock(&sb->s_fd_2_inode_lock);
+    rd_info("%s", __func__);
+    spin_lock(&sb->s_fd_2_inode_lock);
+    for (auto p : sb->s_fd_2_inode) {
+        inode_unref(p.second);
+    }
+    sb->s_fd_2_inode.clear();
+    spin_unlock(&sb->s_fd_2_inode_lock);
 
-	spin_lock(&sb->s_ino_2_inode_lock);
-	for(auto p: sb->s_ino_2_inode) {
-		inode_unref(p.second);
-	}
-	sb->s_ino_2_inode.clear();
-	spin_unlock(&sb->s_ino_2_inode_lock);
+    spin_lock(&sb->s_ino_2_inode_lock);
+    for (auto p : sb->s_ino_2_inode) {
+        inode_unref(p.second);
+    }
+    sb->s_ino_2_inode.clear();
+    spin_unlock(&sb->s_ino_2_inode_lock);
 
-	d_put_recursive(sb->s_root);
-	int ret = dentry_unref(sb->s_root);
-	rdv_proc("%s: ret %d", __func__, ret);
+    d_put_recursive(sb->s_root);
+    int ret = dentry_unref(sb->s_root);
+    dlog_assert(ret == 0);
     FREE(sb);
 }
 
@@ -353,7 +353,7 @@ struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name) {
     new (&new_dentry->d_subdirs) std::unordered_map<u32, struct list_head>();
     INIT_LIST_HEAD(&new_dentry->d_child);
 
-	rdv_proc("%s: %s", __func__, name->name);
+    rdv_proc("%s: %s", __func__, name->name);
 
     if (new_dentry->d_op && new_dentry->d_op->d_init) {
         err = new_dentry->d_op->d_init(new_dentry);
@@ -395,42 +395,44 @@ struct dentry *d_alloc(struct dentry *parent, const struct qstr *name) {
 
 // 内存中删除 dentry
 void d_put(struct dentry *parent) {
-	log_assert(parent->d_parent == nullptr);
-	log_assert(parent->d_inode == nullptr);
-	log_assert(list_empty(&parent->d_child));
-	log_assert(parent->d_subdirs.empty());
-	rdv_proc("%s: %s", __func__, parent->d_name.name);
+    log_assert(parent->d_parent == nullptr);
+    log_assert(parent->d_inode == nullptr);
+    log_assert(list_empty(&parent->d_child));
+    log_assert(parent->d_subdirs.empty());
+    rdv_proc("%s: %s", __func__, parent->d_name.name);
     if (dname_external(parent)) {
         FREE(external_name(parent));
     }
-	kmem_cache_free(dentry_cache, parent);
+    kmem_cache_free(dentry_cache, parent);
 }
 
 void d_put_recursive(struct dentry *parent) {
-	rdv_proc("%s: %s", __func__, parent->d_name.name);
-	if (parent->d_parent && parent->d_parent != parent) {
+    rdv_proc("%s: %s", __func__, parent->d_name.name);
+    if (parent->d_parent && parent->d_parent != parent) {
         dentry_unref(parent->d_parent);
     }
-	parent->d_parent = nullptr;
+    parent->d_parent = nullptr;
 
-	if(parent->d_inode) {
-    	inode_unref(parent->d_inode);
-		parent->d_inode = nullptr;
-	}
+    if (parent->d_inode) {
+        int ret = inode_unref(parent->d_inode);
+        dlog_assert(ret == 0);
+        parent->d_inode = nullptr;
+    }
 
-	spin_lock(&parent->d_lock);
+    spin_lock(&parent->d_lock);
     for (auto p : parent->d_subdirs) {
         struct list_head *head = &parent->d_subdirs[p.first];
         struct dentry *cur, *tmp;
-		rdv_proc("for %s: %s", __func__, parent->d_name.name);
+        rdv_proc("for %s: %s", __func__, parent->d_name.name);
         list_for_each_entry_safe(cur, tmp, head, d_child) {
-			rdv_proc("list_for_each_entry_safe: %s: %s", parent->d_name.name, cur->d_name.name);
+            rdv_proc("list_for_each_entry_safe: %s: %s", parent->d_name.name, cur->d_name.name);
             list_del_init(&cur->d_child);
-			d_put_recursive(cur);
-            dentry_unref(cur);
+            d_put_recursive(cur);
+            int ret = dentry_unref(cur);
+            dlog_assert(ret == 0);
         }
     }
-	parent->d_subdirs.clear();
+    parent->d_subdirs.clear();
     spin_unlock(&parent->d_lock);
 }
 
@@ -523,36 +525,79 @@ struct dentry *d_make_root(struct inode *root_inode) {
 // 	sb_end_write(inode->i_sb);
 // }
 
-void d_print(struct dentry* d, int space) {
-	printf("%*s%s", space, "", d->d_name.name);
-	if(!is_dir(d)) {
-		printf("\n");
-		return;
-	}
-	printf("/\n");
-	for (auto p : d->d_subdirs) {
+void d_print(struct dentry *d, int space) {
+    printf("%*s%s", space, "", d->d_name.name);
+    if (!is_dir(d)) {
+        printf("\n");
+        return;
+    }
+    printf("/\n");
+    for (auto p : d->d_subdirs) {
         struct list_head *head = &d->d_subdirs[p.first];
         struct dentry *cur, *tmp;
-        list_for_each_entry_safe(cur, tmp, head, d_child) {
-            d_print(cur, space+2);
-        }
+        list_for_each_entry_safe(cur, tmp, head, d_child) { d_print(cur, space + 2); }
     }
 }
 
-int d_show(const char* path, struct dentry *parent) {
-	printf("%s", path);
-	if(!is_dir(parent)) {
-		return 0;
-	}
-	printf("/\n");
-	for (auto p : parent->d_subdirs) {
+int d_show(const char *path, struct dentry *parent) {
+    printf("%s", path);
+    if (!is_dir(parent)) {
+        return 0;
+    }
+    printf("/\n");
+    for (auto p : parent->d_subdirs) {
         struct list_head *head = &parent->d_subdirs[p.first];
         struct dentry *cur, *tmp;
-        list_for_each_entry_safe(cur, tmp, head, d_child) {
-            d_print(cur, 2);
+        list_for_each_entry_safe(cur, tmp, head, d_child) { d_print(cur, 2); }
+    }
+    return 0;
+}
+
+static void dentry_unlink_inode(struct dentry *dentry) {
+    struct inode *inode = dentry->d_inode;
+    struct super_block *sb = inode->i_sb;
+    // 从sb中删除
+    inode_delete_from_sb(sb, inode);
+    dlog_assert(inode->i_count == 1);
+
+    if (dentry->d_op && dentry->d_op->d_iput) {
+		log_assert(0); // 暂不支持
+        dentry->d_op->d_iput(dentry, inode);
+	}
+    else {
+        dlog_assert(inode->i_nlink == 0);
+        dlog_assert(inode->i_state == 1);
+        if (inode->i_sb->s_op->drop_inode) {
+            int drop = inode->i_sb->s_op->drop_inode(inode);
+            dlog_assert(!drop);
+        }
+        if (inode->i_sb->s_op->evict_inode) {
+            inode->i_sb->s_op->evict_inode(inode);  // 真正从介质中删除
         }
     }
-	return 0;
+	// 内存中删除inode
+	int ret = inode_unref(inode);
+	log_assert(ret == 0);
+	dentry->d_inode = nullptr;
+}
+
+// 能删除成功，说明肯定没有孩子
+void d_delete(struct dentry *dentry) {
+    struct inode *inode = dentry->d_inode;
+    struct dentry *parent = dentry->d_parent;
+
+	// 父母中删除
+    struct dentry *tmp = dentry_delete_child(parent, &dentry->d_name, false);
+    dlog_assert(tmp == dentry);
+
+    // spin_lock(&inode->i_lock);
+    // we should be the only user,
+    dentry_unlink_inode(dentry);
+	// spin_unlock(&inode->i_lock);
+
+	// 内存中删除dentry
+	int ret = dentry_unref(dentry);
+	log_assert(ret == 0);
 }
 
 void vfs_init() {
@@ -561,6 +606,4 @@ void vfs_init() {
     assert(!ret);
 }
 
-void vfs_destroy() {
-    destroy_dentry_cache();
-}
+void vfs_destroy() { destroy_dentry_cache(); }

@@ -227,9 +227,8 @@ static dentry* get_parent_entry(dentry* parent, const char* name, qstr *last) {
             return parent;
         }
         // go down child
-        dentry* child = get_dentry_by_hash(parent, tmp, false);
+        dentry* child = get_dentry_by_hash(parent, tmp, false, true);
         if(child == nullptr) {
-            r_error("dir %*s not exist.", len, name);
             goto err;
         }
         dentry_unref(parent);
@@ -257,7 +256,7 @@ static dentry* get_dentry_by_name(dentry* parent, const char* name) {
             .name = name,
         };
         // go down child
-        dentry* child = get_dentry_by_hash(parent, tmp, false);
+        dentry* child = get_dentry_by_hash(parent, tmp, false, true);
         if(child == nullptr) {
             r_error("dir %*s not exist.", len, name);
             goto err;
@@ -274,6 +273,7 @@ err:
 }
 
 // pathname不能以 / 结尾
+// 参考 SYSCALL_DEFINE2(mkdir
 int vfs_mkdir(const char* pathname, umode_t mode) {
     rd_info("%s: %s", __func__, pathname);
     int name_start = pathname_deal_root_prefix(pathname);
@@ -287,23 +287,31 @@ int vfs_mkdir(const char* pathname, umode_t mode) {
     dentry* parent = get_parent_entry(root, pathname+name_start, &last);
     dentry_unref(root);
     if(parent == nullptr) {
+        r_error("%s fail, dir %s not exist.", __func__, pathname+name_start);
         return -1;
     }
     int ret = 0;
     struct inode *dir = parent->d_inode;
-    struct dentry* new_d = get_dentry_by_hash(parent, last, true);
-    log_assert(new_d && new_d->d_inode == nullptr);
+    struct dentry* new_d = get_dentry_by_hash(parent, last, true, true);
+    log_assert(new_d);
+    if(new_d->d_inode) {
+        r_error("%s fail, %s exist.", __func__, pathname + name_start);
+        ret = -1;
+        goto out;
+    }
     rd_info("fs mkdir: parent %s, child %s", parent->d_name.name, last.name);
     if(dir->i_op->mkdir(dir, new_d, mode)) {
         r_error("%s %s fail.", __func__, pathname);
         ret = -1;
     }
 
+out:
     dentry_unref(parent);
     dentry_unref(new_d);
     return ret;
 }
 
+// 自添加，为了调试
 int vfs_ls(const char* pathname) {
     rd_info("%s: %s", __func__, pathname);
     int name_start = pathname_deal_root_prefix(pathname);
@@ -317,4 +325,49 @@ int vfs_ls(const char* pathname) {
     d_show(pathname+name_start, parent);
     dentry_unref(parent);
     return 0;
+}
+
+// SYSCALL_DEFINE1(rmdir
+int vfs_rmdir( const char *dirname) {
+    rd_info("%s: %s", __func__, dirname);
+    int name_start = pathname_deal_root_prefix(dirname);
+    if(name_start < 0) return -1;
+    std::string root_path(dirname, name_start-1);
+    super_block* sb = get_mounted_fs(root_path);
+    log_assert(sb);
+    dentry* root = dentry_get_root(sb);
+    dlog_assert(root);
+    qstr last;
+    dentry* parent = get_parent_entry(root, dirname+name_start, &last);
+    dentry_unref(root);
+    if(parent == nullptr) {
+        r_error("%s fail, dir %s not exist.", __func__, dirname+name_start);
+        return -1;
+    }
+    int ret = 0;
+    struct inode *dir = parent->d_inode;
+    inode_lock(dir);
+    struct dentry* child = get_dentry_by_hash(parent, last, false, false);
+    if(child == nullptr) {
+        r_error("%s fail, dir %s not exist.", __func__, dirname + name_start);
+        ret = -1;
+        goto out;
+    }
+    dlog_assert(child->d_inode);
+    rd_info("%s: parent %s, child %s", __func__, parent->d_name.name, child->d_name.name);
+
+    inode_lock(child->d_inode);
+    if(dir->i_op->rmdir(dir, child)) {
+        r_error("%s %s fail, maybe has childs.", __func__, dirname);
+        ret = -1;
+    }
+    inode_unlock(child->d_inode);
+    dentry_unref(child);
+    if(!ret) {
+        d_delete(child);
+    }
+out:
+    inode_unlock(dir);
+    dentry_unref(parent);
+    return ret;
 }

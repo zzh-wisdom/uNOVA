@@ -863,8 +863,9 @@ unsigned long nova_get_last_blocknr(struct super_block *sb, struct nova_inode_in
     return last_blocknr;
 }
 
-// void nova_evict_inode(struct inode *inode)
-// {
+void nova_evict_inode(struct inode *inode)
+{
+    r_error("TODO");
 // 	struct super_block *sb = inode->i_sb;
 // 	struct nova_inode *pi = nova_get_inode(sb, inode);
 // 	struct nova_inode_info *si = NOVA_I(inode);
@@ -937,7 +938,7 @@ unsigned long nova_get_last_blocknr(struct super_block *sb, struct nova_inode_in
 
 // 	clear_inode(inode);
 // 	NOVA_END_TIMING(evict_inode_t, evict_time);
-// }
+}
 
 /* Returns 0 on failure */
 // pi_addr: inode在NVM中的地址
@@ -1081,6 +1082,7 @@ struct inode *nova_new_vfs_inode(enum nova_new_inode_type type, struct inode *di
     // }
 
     nova_flush_buffer(&pi, NOVA_INODE_SIZE, 0);
+    inode_set_valid(inode);
     NOVA_END_TIMING(new_vfs_inode_t, new_inode_time);
     return inode;
 fail1:

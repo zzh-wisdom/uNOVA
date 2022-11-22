@@ -33,6 +33,8 @@ int main(int argc, char* argv[]) {
     log_assert(ret == 0);
     ret = vfs_mkdir("/tmp/nova/dir2", 0);
     log_assert(ret == 0);
+    ret = vfs_mkdir("/tmp/nova/dir2", 0);
+    log_assert(ret);
     ret = vfs_mkdir("/tmp/nova/dir3/dir31", 0);
     log_assert(ret);
 
@@ -42,6 +44,14 @@ int main(int argc, char* argv[]) {
     log_assert(ret == 0);
     ret = vfs_ls("/tmp/nova/");
     log_assert(ret == 0);
-    // fs_unmount(&sb);
+
+    ret = vfs_rmdir("/tmp/nova/dir2");
+    log_assert(ret == 0);
+    ret = vfs_rmdir("/tmp/nova/dir1");
+    log_assert(ret);
+    ret = vfs_ls("/tmp/nova/");
+    log_assert(ret == 0);
+
+    fs_unmount(&sb);
     return 0;
 }

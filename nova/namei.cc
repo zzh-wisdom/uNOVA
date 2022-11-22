@@ -337,7 +337,7 @@ static void nova_lite_transaction_for_time_and_link(struct super_block *sb,
 	pidir->log_tail = pidir_tail;
 	nova_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
 	if (invalidate) {
-		pi->valid = 0;
+		pi->valid = 0;  // 可能需要等到垃圾回收时，才真正回收空间
 		nova_flush_buffer(&pi->valid, CACHELINE_SIZE, 0);
 	}
 	PERSISTENT_BARRIER();

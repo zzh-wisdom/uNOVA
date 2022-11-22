@@ -169,8 +169,8 @@ struct super_operations {
 
     // void (*dirty_inode) (struct inode *, int flags);
     // int (*write_inode) (struct inode *, struct writeback_control *wbc);
-    // int (*drop_inode) (struct inode *);
-    // void (*evict_inode) (struct inode *);
+    int (*drop_inode) (struct inode *);
+    void (*evict_inode) (struct inode *);
     void (*put_super)(struct super_block *);
     // int (*sync_fs)(struct super_block *sb, int wait);
     // int (*freeze_super) (struct super_block *);
@@ -445,7 +445,7 @@ force_inline static bool inode_insert(struct super_block *sb, struct inode *inod
     return ret;
 }
 
-force_inline static bool inode_delete_from_sb(struct super_block *sb, struct inode *inode) {
+force_inline static void inode_delete_from_sb(struct super_block *sb, struct inode *inode) {
     int ret = 0;
     spin_lock(&sb->s_ino_2_inode_lock);
     ret = sb->s_ino_2_inode.erase(inode->i_ino);
@@ -461,6 +461,12 @@ force_inline static bool inode_delete_from_sb(struct super_block *sb, struct ino
 }
 
 /************************inode*************************/
+static force_inline void inode_lock(struct inode *inode) {
+    spin_lock(&inode->i_lock);
+}
+static force_inline void inode_unlock(struct inode *inode) {
+    spin_unlock(&inode->i_lock);
+}
 static force_inline void inode_set_valid(struct inode *inode) {
     spin_lock(&inode->i_lock);
     inode->i_state = 1;
@@ -662,14 +668,14 @@ static force_inline int dentry_unref(struct dentry *dentry) {
     return ret;
 }
 
-static force_inline dentry *dentry_get_child(dentry *parent, qstr qs) {
+static force_inline dentry *dentry_get_child(dentry *parent, qstr qs, bool lock) {
     dentry *ret = nullptr;
     struct list_head *head;
     struct dentry *cur;
-    spin_lock(&parent->d_lock);
+    if(lock) spin_lock(&parent->d_lock);
     auto it = parent->d_subdirs.find(qs.hash);
     if (it == parent->d_subdirs.end()) goto out;
-    head = &it->second;
+    head = &parent->d_subdirs[qs.hash];
     list_for_each_entry(cur, head, d_child) {
         if (cur->d_name.len == qs.len && strncmp(cur->d_name.name, qs.name, qs.len) == 0) {
             ret = cur;
@@ -678,7 +684,7 @@ static force_inline dentry *dentry_get_child(dentry *parent, qstr qs) {
         }
     }
 out:
-    spin_unlock(&parent->d_lock);
+    if(lock) spin_unlock(&parent->d_lock);
     return ret;
 }
 
@@ -702,7 +708,7 @@ static force_inline void dentry_insert_child(dentry *parent, dentry *child) {
     struct list_head *head = nullptr;
     if (it != parent->d_subdirs.end()) {
         struct dentry *tmp = nullptr;
-        head = &it->second;
+        head = &parent->d_subdirs[name->hash];
         list_for_each_entry(tmp, head, d_child) {
             log_assert(tmp->d_name.len != name->len ||
                        strncmp(tmp->d_name.name, name->name, name->len) != 0);
@@ -715,14 +721,15 @@ static force_inline void dentry_insert_child(dentry *parent, dentry *child) {
     spin_unlock(&parent->d_lock);
 }
 
-static force_inline dentry *dentry_delete_child(dentry *parent, struct qstr *qs) {
+// 并取消对父母的引用
+static force_inline dentry *dentry_delete_child(dentry *parent, struct qstr *qs, bool lock) {
     struct dentry *ret = nullptr;
     struct dentry *tmp;
     struct list_head *head = nullptr;
-    spin_lock(&parent->d_lock);
+    if(lock) spin_lock(&parent->d_lock);
     auto it = parent->d_subdirs.find(qs->hash);
     if (it == parent->d_subdirs.end()) goto out;
-    head = &it->second;
+    head = &parent->d_subdirs[qs->hash];
     list_for_each_entry(tmp, head, d_child) {
         if (tmp->d_name.len == qs->len && strncmp(tmp->d_name.name, qs->name, qs->len) == 0) {
             ret = tmp;
@@ -730,15 +737,19 @@ static force_inline dentry *dentry_delete_child(dentry *parent, struct qstr *qs)
         }
     }
     if (ret == nullptr) goto out;
-    list_del(&ret->d_child);
+    list_del_init(&ret->d_child);
     if (list_empty(head)) {
         parent->d_subdirs.erase(it);
     }
+    ret->d_parent = nullptr;
     dentry_unref(parent);
 out:
-    spin_unlock(&parent->d_lock);
+    if(lock) spin_unlock(&parent->d_lock);
     return ret;
 }
+
+// 删除指定inode，父母dentry已经上锁
+void d_delete(struct dentry * dentry);
 
 /*
  * This is the Inode Attributes structure, used for notify_change().  It
@@ -893,7 +904,7 @@ inline struct kmem_cache *kmem_cache_create(int slab_size, int align) {
 }
 
 // 返回的dentry已经被引用
-static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool create) {
+static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool create, bool lock) {
     if (strncmp(qs.name, ".", 1) == 0) {
         dentry_ref(parent);
         return parent;
@@ -902,7 +913,7 @@ static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool cre
         dentry_ref(parent->d_parent);
         return parent->d_parent;
     }
-    dentry *child = dentry_get_child(parent, qs);
+    dentry *child = dentry_get_child(parent, qs, lock);
     if (child) return child;
     r_warning("%s not in dentry hash, lookup from nvm\n", qs.name);
     if (create == false) return nullptr;
