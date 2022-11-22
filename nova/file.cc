@@ -30,37 +30,37 @@ static inline int nova_can_set_blocksize_hint(struct inode *inode,
 	return 1;
 }
 
-int nova_set_blocksize_hint(struct super_block *sb, struct inode *inode,
-	struct nova_inode *pi, loff_t new_size)
-{
-	unsigned short block_type;
+// int nova_set_blocksize_hint(struct super_block *sb, struct inode *inode,
+// 	struct nova_inode *pi, loff_t new_size)
+// {
+// 	unsigned short block_type;
 
-	if (!nova_can_set_blocksize_hint(inode, pi, new_size))
-		return 0;
+// 	if (!nova_can_set_blocksize_hint(inode, pi, new_size))
+// 		return 0;
 
-	if (new_size >= 0x40000000) {   /* 1G */
-		block_type = NOVA_BLOCK_TYPE_1G;
-		goto hint_set;
-	}
+// 	if (new_size >= 0x40000000) {   /* 1G */
+// 		block_type = NOVA_BLOCK_TYPE_1G;
+// 		goto hint_set;
+// 	}
 
-	if (new_size >= 0x200000) {     /* 2M */
-		block_type = NOVA_BLOCK_TYPE_2M;
-		goto hint_set;
-	}
+// 	if (new_size >= 0x200000) {     /* 2M */
+// 		block_type = NOVA_BLOCK_TYPE_2M;
+// 		goto hint_set;
+// 	}
 
-	/* defaulting to 4K */
-	block_type = NOVA_BLOCK_TYPE_4K;
+// 	/* defaulting to 4K */
+// 	block_type = NOVA_BLOCK_TYPE_4K;
 
-hint_set:
-	nova_dbg_verbose(
-		"Hint: new_size 0x%llx, i_size 0x%llx\n",
-		new_size, pi->i_size);
-	nova_dbg_verbose("Setting the hint to 0x%x\n", block_type);
-	nova_memunlock_inode(sb, pi);
-	pi->i_blk_type = block_type;
-	nova_memlock_inode(sb, pi);
-	return 0;
-}
+// hint_set:
+// 	nova_dbg_verbose(
+// 		"Hint: new_size 0x%lx, i_size 0x%lx",
+// 		new_size, pi->i_size);
+// 	nova_dbg_verbose("Setting the hint to 0x%x", block_type);
+// 	nova_memunlock_inode(sb, pi);
+// 	pi->i_blk_type = block_type;
+// 	nova_memlock_inode(sb, pi);
+// 	return 0;
+// }
 
 #ifndef NOVA_CUT_OUT
 
@@ -126,7 +126,7 @@ static unsigned long nova_get_dirty_range(struct super_block *sb,
 	loff_t dirty_start;
 	loff_t temp = *start;
 
-	nova_dbgv("%s: inode %llu, start %llu, end %llu\n",
+	nova_dbgv("%s: inode %lu, start %lu, end %lu",
 			__func__, pi->nova_ino, *start, end);
 
 	dirty_start = temp;
@@ -214,7 +214,7 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	if (!isize || (start >= end))
 	{
 		nova_dbg_verbose("[%s:%d] : (ERR) isize(%llx), start(%llx),"
-			" end(%llx)\n", __func__, __LINE__, isize, start, end);
+			" end(%llx)", __func__, __LINE__, isize, start, end);
 		NOVA_END_TIMING(fsync_t, fsync_time);
 		mutex_unlock(&inode->i_mutex);
 		return 0;
@@ -224,8 +224,8 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	start_blk = start >> PAGE_SHIFT;
 	end_blk = end >> PAGE_SHIFT;
 
-	nova_dbgv("%s: start %llu, end %llu, size %llu, "
-			" start_blk %lu, end_blk %lu\n",
+	nova_dbgv("%s: start %lu, end %lu, size %lu, "
+			" start_blk %lu, end_blk %lu",
 			__func__, start, end, isize, start_blk,
 			end_blk);
 
@@ -238,7 +238,7 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 
 		nr_flush_bytes = nova_get_dirty_range(sb, pi, si, &start, end);
 
-		nova_dbgv("start %llu, flush bytes %lu\n",
+		nova_dbgv("start %lu, flush bytes %lu",
 				start, nr_flush_bytes);
 		if (nr_flush_bytes) {
 			nova_copy_to_nvmm(sb, inode, pi, start,
@@ -301,7 +301,7 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	// if (!isize || (start >= end))
 	// {
 	// 	nova_dbgv("[%s:%d] : (ERR) isize(%llx), start(%llx),"
-	// 		" end(%llx)\n", __func__, __LINE__, isize, start, end);
+	// 		" end(%llx)", __func__, __LINE__, isize, start, end);
 	// 	NOVA_END_TIMING(fsync_t, fsync_time);
 	// 	return -ENODATA;
 	// }
@@ -322,7 +322,7 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 
 	// 	entry = nova_get_write_entry(sb, si, pgoff);
 	// 	if (unlikely(entry == NULL)) {
-	// 		nova_dbgv("Found hole: pgoff %lu, inode size %lld\n",
+	// 		nova_dbgv("Found hole: pgoff %lu, inode size %lld",
 	// 				pgoff, isize);
 
 	// 		/* Jump the hole */
@@ -342,8 +342,8 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 
 	// 	if (pgoff < entry->pgoff ||
 	// 			pgoff - entry->pgoff >= entry->num_pages) {
-	// 		nova_err(sb, "%s ERROR: %lu, entry pgoff %llu, num %u, "
-	// 			"blocknr %llu\n", __func__, pgoff, entry->pgoff,
+	// 		nova_err(sb, "%s ERROR: %lu, entry pgoff %lu, num %u, "
+	// 			"blocknr %lu", __func__, pgoff, entry->pgoff,
 	// 			entry->num_pages, entry->block >> PAGE_SHIFT);
 	// 		NOVA_END_TIMING(fsync_t, fsync_time);
 	// 		return -EINVAL;
@@ -362,7 +362,7 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	// 	nvmm = get_nvmm(sb, sih, entry, pgoff);
 	// 	dax_mem = nova_get_block(sb, (nvmm << PAGE_SHIFT));
 
-	// 	nova_dbgv("start %llu, flush bytes %lu\n",
+	// 	nova_dbgv("start %lu, flush bytes %lu",
 	// 			start, nr_flush_bytes);
 	// 	if (nr_flush_bytes)
 	// 		nova_flush_buffer(dax_mem + offset, nr_flush_bytes, 0);
@@ -390,25 +390,25 @@ static int nova_open(struct inode *inode, struct file *filp)
 }
 
 const struct file_operations nova_dax_file_operations = {
-#ifndef NOVA_CUT_OUT
-	.llseek			= nova_llseek,
-#endif
+// #ifndef NOVA_CUT_OUT
+// 	.llseek			= nova_llseek,
+// #endif
 	.read			= nova_dax_file_read,
 	.write			= nova_dax_file_write,
 	// .read_iter		= generic_file_read_iter,
 	// .write_iter		= generic_file_write_iter,
 	// .mmap			= nova_dax_file_mmap,
 	.open			= nova_open,
-	.fsync			= nova_fsync,  // 主要对mmap有用，不过我们目前已经将mmap去掉了
 	.flush			= nova_flush,
+	.fsync			= nova_fsync,  // 主要对mmap有用，不过我们目前已经将mmap去掉了
 	// .unlocked_ioctl		= nova_ioctl,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl		= nova_compat_ioctl,
-#endif
+// #ifdef CONFIG_COMPAT
+// 	.compat_ioctl		= nova_compat_ioctl,
+// #endif
 };
 
 const struct inode_operations nova_file_inode_operations = {
-	.setattr	= nova_notify_change,
-	.getattr	= nova_getattr,
-	.get_acl	= NULL,
+	// .setattr	= nova_notify_change,
+	// .getattr	= nova_getattr,
+	// .get_acl	= NULL,
 };

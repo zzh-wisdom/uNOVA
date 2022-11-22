@@ -61,30 +61,4 @@ static inline void le64_add_cpu(__le64 *var, u64 val)
 
 #endif
 
-// 假的cache，直接使用glic分配
-struct kmem_cache {
-    int slab_size;
-    int align;
-};
-
-inline struct kmem_cache* kmem_cache_create(int slab_size, int align) {
-    struct kmem_cache* cache = (struct kmem_cache*)MALLOC(sizeof(struct kmem_cache));
-    if(cache == nullptr) return nullptr;
-    cache->slab_size = slab_size;
-    cache->align = align;
-    return cache;
-}
-
-inline void kmem_cache_destroy(struct kmem_cache* cache) {
-    FREE(cache);
-}
-
-inline void* kmem_cache_alloc(struct kmem_cache* cache) {
-    return MALLOC(cache->slab_size);
-}
-
-inline void kmem_cache_free(struct kmem_cache* cache, void* node) {
-    FREE(node);
-}
-
 #endif

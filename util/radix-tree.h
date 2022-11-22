@@ -24,6 +24,7 @@
 
 #include "util/util.h"
 #include "util/util_cfg.h"
+#include "util/bitops.h"
 
 /* Porting define not in radix-tree */
 
@@ -57,7 +58,7 @@ typedef unsigned gfp_t;
 #define BITS_PER_TYPE(type) (sizeof(type) * BITS_PER_BYTE)
 #define BITS_TO_LONGS(nr) DIV_ROUND_UP(nr, BITS_PER_TYPE(long))
 
-static inline unsigned long __ffs(unsigned long word) { return __builtin_ctzl(word); }
+// static inline unsigned long __ffs(unsigned long word) { return __builtin_ctzl(word); }
 
 static inline void bitmap_fill(unsigned long *dst, unsigned int nbits) {
     unsigned int len = BITS_TO_LONGS(nbits) * sizeof(unsigned long);
@@ -246,8 +247,8 @@ typedef void (*radix_tree_update_node_t)(struct radix_tree_node *);
 
 int __radix_tree_insert(struct radix_tree_root *root, unsigned long index, unsigned order,
                         void *item);
-void *__radix_tree_lookup(struct radix_tree_root *root, unsigned long index,
-                          struct radix_tree_node **nodep, void ***slotp);
+// extern void *__radix_tree_lookup(struct radix_tree_root *root, unsigned long index,
+//                           struct radix_tree_node **nodep, void ***slotp);
 void *radix_tree_lookup(const struct radix_tree_root *root, unsigned long index);
 void **radix_tree_lookup_slot(struct radix_tree_root *, unsigned long);
 // void radix_tree_replace_slot(struct radix_tree_root *, void **slot, void *entry);

@@ -85,7 +85,7 @@ struct nova_inode {
 	__le32	i_ctime;	/* Inode modification time */
 	__le32	i_mtime;	/* Inode b-tree Modification time */
 	__le32	i_atime;	/* Access time */
-	__le16	i_mode;		/* File mode */
+	__le16	i_mode;		/* File mode 文件类型*/
 	__le16	i_links_count;	/* Links count */
 
 	/*
@@ -148,7 +148,7 @@ struct nova_super_block {
 	__le32		s_wtime;            /* write time */
 	/* fields for fast mount support. Always keep them together */
 	__le64		s_num_free_blocks;
-} __attribute((__packed__));
+} __attribute((__packed__));  // 取消对齐
 
 #define NOVA_SB_STATIC_SIZE(ps) ((u64)&ps->s_start_dynamic - (u64)ps)
 
@@ -177,10 +177,6 @@ struct nova_super_block {
 
 /* ======================= Write ordering ========================= */
 
-#define CACHELINE_SIZE  (64)
-#define CACHELINE_MASK  (~(CACHELINE_SIZE - 1))
-#define CACHELINE_ALIGN(addr) (((addr)+CACHELINE_SIZE-1) & CACHELINE_MASK)
-
 #define X86_FEATURE_PCOMMIT	( 9*32+22) /* PCOMMIT instruction */
 #define X86_FEATURE_CLFLUSHOPT	( 9*32+23) /* CLFLUSHOPT instruction */
 #define X86_FEATURE_CLWB	( 9*32+24) /* CLWB instruction */
@@ -195,8 +191,8 @@ struct nova_super_block {
 // 	return static_cpu_has(X86_FEATURE_CLWB);
 // }
 
-extern int support_clwb;
-extern int support_pcommit;
+// extern int support_clwb;
+// extern int support_pcommit;
 
 #define _mm_clflush(addr)\
 	asm volatile("clflush %0" : "+m" (*(volatile char *)(addr)))
@@ -216,22 +212,25 @@ static inline void PERSISTENT_MARK(void)
 static inline void PERSISTENT_BARRIER(void)
 {
 	asm volatile ("sfence\n" : : );
-	if (support_pcommit) {
-		/* Do nothing */
-	}
+	// if (support_pcommit) {
+	// 	/* Do nothing */
+	// }
 }
 
 static inline void nova_flush_buffer(void *buf, uint32_t len, bool fence)
 {
 	uint32_t i;
 	len = len + ((unsigned long)(buf) & (CACHELINE_SIZE - 1));
-	if (support_clwb) {
-		for (i = 0; i < len; i += CACHELINE_SIZE)
-			_mm_clwb(buf + i);
-	} else {
-		for (i = 0; i < len; i += CACHELINE_SIZE)
-			_mm_clflush(buf + i);
+	for (i = 0; i < len; i += CACHELINE_SIZE) {
+		clwb(buf + i);
 	}
+	// if (support_clwb) {
+	// 	for (i = 0; i < len; i += CACHELINE_SIZE)
+	// 		_mm_clwb(buf + i);
+	// } else {
+	// 	for (i = 0; i < len; i += CACHELINE_SIZE)
+	// 		_mm_clflush(buf + i);
+	// }
 	/* Do a fence only if asked. We often don't need to do a fence
 	 * immediately after clflush because even if we get context switched
 	 * between clflush and subsequent fence, the context switch operation

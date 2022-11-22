@@ -25,6 +25,7 @@
 #include <stdlib.h>
 
 #include "util/radix-tree.h"
+#include "util/mem.h"
 
 static inline void *node_to_entry(void *ptr)
 {
@@ -200,7 +201,7 @@ radix_tree_node_alloc(gfp_t gfp_mask, struct radix_tree_node *parent,
 	struct radix_tree_node *ret = NULL;
 
 	/* On Application, directly allocate memory from malloc() */
-	ret = (struct radix_tree_node *)malloc(sizeof(struct radix_tree_node));
+	ret = (struct radix_tree_node *)ZALLOC(sizeof(struct radix_tree_node));
 	BUG_ON(radix_tree_is_internal_node(ret));
 	if (ret) {
 		ret->shift = shift;
@@ -365,6 +366,7 @@ static inline int insert_entires(struct radix_tree_node *node,
 	return 1;
 }
 
+// Index: 是key
 int __radix_tree_insert(struct radix_tree_root *root, unsigned long index,
 			unsigned order, void *item)
 {
@@ -505,43 +507,18 @@ static int calculate_count(struct radix_tree_root *root,
 	return !!item - !!old;
 }
 
-/**
- * __radix_tree_replace		- replace item in a slot
- * @root:		radix tree root
- * @node:		pointer to tree node
- * @slot:		pointer to slot in @node
- * @item:		new item to store in the slot.
- * @update_node:	callback for changing leaf nodes
- *
- * For use with __radix_tree_lookup().  Caller must hold tree write locked
- * across slot lookup and replacement.
- */
-void __radix_tree_replace(struct radix_tree_root *root,
-			  struct radix_tree_node *node,
-			  void **slot, void *item,
-			  radix_tree_update_node_t update_node)
+static void replace_slot(void **slot, void *item,
+		struct radix_tree_node *node, int count, int exceptional)
 {
-	void *old = *slot;
-	int exceptional = !!radix_tree_exceptional_entry(item) -
-				!!radix_tree_exceptional_entry(old);
-	int count = calculate_count(root, node, slot, item, old);
-
-	/*
-	 * This function supports replacing exceptional entries and
-	 * deleting entries, but that needs accounting against the
-	 * node unless the slot is root->rnode.
-	 */
-	WARN_ON_ONCE(!node && (slot != (void **)&root->rnode) &&
-			(count || exceptional));
-	replace_slot(slot, item, node, count, exceptional);
-
-	if (!node)
+	if (WARN_ON_ONCE(radix_tree_is_internal_node(item)))
 		return;
 
-	if (update_node)
-		update_node(node);
-
-	delete_node(root, node, update_node);
+	if (node && (count || exceptional)) {
+		node->count += count;
+		node->exceptional += exceptional;
+		replace_sibling_entries(node, slot, count, exceptional);
+	}
+	*slot = item;
 }
 
 /**
@@ -565,20 +542,6 @@ void __radix_tree_replace(struct radix_tree_root *root,
 // {
 // 	__radix_tree_replace(root, NULL, slot, item, NULL);
 // }
-
-static void replace_slot(void **slot, void *item,
-		struct radix_tree_node *node, int count, int exceptional)
-{
-	if (WARN_ON_ONCE(radix_tree_is_internal_node(item)))
-		return;
-
-	if (node && (count || exceptional)) {
-		node->count += count;
-		node->exceptional += exceptional;
-		replace_sibling_entries(node, slot, count, exceptional);
-	}
-	*slot = item;
-}
 
 static inline void
 radix_tree_node_free(struct radix_tree_node *node)
@@ -700,6 +663,45 @@ static bool delete_node(struct radix_tree_root *root,
 	} while (node);
 
 	return deleted;
+}
+
+/**
+ * __radix_tree_replace		- replace item in a slot
+ * @root:		radix tree root
+ * @node:		pointer to tree node
+ * @slot:		pointer to slot in @node
+ * @item:		new item to store in the slot.
+ * @update_node:	callback for changing leaf nodes
+ *
+ * For use with __radix_tree_lookup().  Caller must hold tree write locked
+ * across slot lookup and replacement.
+ */
+void __radix_tree_replace(struct radix_tree_root *root,
+			  struct radix_tree_node *node,
+			  void **slot, void *item,
+			  radix_tree_update_node_t update_node)
+{
+	void *old = *slot;
+	int exceptional = !!radix_tree_exceptional_entry(item) -
+				!!radix_tree_exceptional_entry(old);
+	int count = calculate_count(root, node, slot, item, old);
+
+	/*
+	 * This function supports replacing exceptional entries and
+	 * deleting entries, but that needs accounting against the
+	 * node unless the slot is root->rnode.
+	 */
+	WARN_ON_ONCE(!node && (slot != (void **)&root->rnode) &&
+			(count || exceptional));
+	replace_slot(slot, item, node, count, exceptional);
+
+	if (!node)
+		return;
+
+	if (update_node)
+		update_node(node);
+
+	delete_node(root, node, update_node);
 }
 
 static bool __radix_tree_delete(struct radix_tree_root *root,

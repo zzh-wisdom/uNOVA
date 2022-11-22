@@ -1,126 +1,112 @@
 #include "nova/vfs.h"
 
-static struct kmem_cache *inode_cachep;
+#include <string.h>
 
-static int no_open(struct inode *inode, struct file *file)
-{
-	return -ENXIO;
+#include "util/aep.h"
+#include "util/log.h"
+#include "util/mem.h"
+
+const struct qstr empty_name = QSTR_INIT("", 0);
+const struct qstr slash_name = QSTR_INIT("/", 1);
+
+static struct kmem_cache *dentry_cache;
+
+int init_dentry_cache(void) {
+    r_warning("TODO: 优化 kmem_cache");
+    dentry_cache = kmem_cache_create(sizeof(struct dentry), sizeof(struct dentry));
+    if (dentry_cache == NULL) return -ENOMEM;
+    return 0;
 }
+
+void destroy_dentry_cache(void) {
+    r_warning("TODO: 优化 kmem_cache");
+    kmem_cache_destroy(dentry_cache);
+}
+
+static int no_open(struct inode *inode, struct file *file) { return -ENXIO; }
 
 /**
- * inode_init_always - perform inode structure initialisation
- * @sb: superblock inode belongs to
- * @inode: inode to initialise
+ *	alloc_super	-	create new superblock
+ *	@type:	filesystem type superblock should belong to
+ *	@flags: the mount flags
+ *	@user_ns: User namespace for the super_block
  *
- * These are initializations that need to be done on every inode
- * allocation as the fields are not initialised by slab allocation.
+ *	Allocates and initializes a new &struct super_block.  alloc_super()
+ *	returns a pointer new superblock or %NULL if allocation had failed.
  */
-int inode_init_always(struct super_block *sb, struct inode *inode)
-{
-	static const struct inode_operations empty_iops = {};
-	static const struct file_operations no_open_fops = {.open = no_open};
-	// struct address_space *const mapping = &inode->i_data;
+struct super_block *alloc_super(const std::string &dev_name, pmem2_map *pmap,
+                                const std::string &root_path) {
+    struct super_block *s = (struct super_block *)ZALLOC(sizeof(struct super_block));
+    if (!s) return nullptr;
+    new (s) super_block;
 
-	inode->i_sb = sb;
-	inode->i_blkbits = sb->s_blocksize_bits;
-	inode->i_flags = 0;
-	// atomic_set(&inode->i_count, 1);
-	inode->i_op = &empty_iops;
-	inode->i_fop = &no_open_fops;
-	inode->__i_nlink = 1;
-	inode->i_opflags = 0;
-	// if (sb->s_xattr)
-	// 	inode->i_opflags |= IOP_XATTR;
-	// i_uid_write(inode, 0);
-	// i_gid_write(inode, 0);
-	// atomic_set(&inode->i_writecount, 0);
-	inode->i_size = 0;
-	// inode->i_write_hint = WRITE_LIFE_NOT_SET;
-	inode->i_blocks = 0;
-	inode->i_bytes = 0;
-	inode->i_generation = 0;
-	// inode->i_pipe = NULL;
-	// inode->i_bdev = NULL;
-	// inode->i_cdev = NULL;
-	// inode->i_link = NULL;
-	// inode->i_dir_seq = 0;
-	inode->i_rdev = 0;
-	inode->dirtied_when = 0;
-
-	// if (security_inode_alloc(inode))
-	// 	goto out;
-	spin_lock_init(&inode->i_lock);
-	// lockdep_set_class(&inode->i_lock, &sb->s_type->i_lock_key);
-
-	// init_rwsem(&inode->i_rwsem);
-	// lockdep_set_class(&inode->i_rwsem, &sb->s_type->i_mutex_key);
-
-	atomic_set(&inode->i_dio_count, 0);
-
-	// mapping->a_ops = &empty_aops;
-	// mapping->host = inode;
-	// mapping->flags = 0;
-	// mapping->wb_err = 0;
-	// atomic_set(&mapping->i_mmap_writable, 0);
-	// mapping_set_gfp_mask(mapping, GFP_HIGHUSER_MOVABLE);
-	// mapping->private_data = NULL;
-	// mapping->writeback_index = 0;
-	inode->i_private = NULL;
-	// inode->i_mapping = mapping;
-	// INIT_HLIST_HEAD(&inode->i_dentry);	/* buggered by rcu freeing */
-
-	// inode->i_flctx = NULL;
-	// this_cpu_inc(nr_inodes);
-
-	return 0;
-// out:
-// 	return -ENOMEM;
+    s->dev_name = dev_name;
+    s->pmap = pmap;
+    s->root_path = root_path;
+    spin_lock_init(&s->s_ino_2_inode_lock);
+    spin_lock_init(&s->s_fd_2_inode_lock);
+    return s;
 }
 
-static struct inode *alloc_inode(struct super_block *sb)
-{
-	struct inode *inode;
-
-	if (sb->s_op->alloc_inode)
-		inode = sb->s_op->alloc_inode(sb);
-	else
-		inode = (struct inode *)kmem_cache_alloc(inode_cachep);
-
-	if (!inode)
-		return NULL;
-
-	if (unlikely(inode_init_always(sb, inode))) {
-		if (inode->i_sb->s_op->destroy_inode)
-			inode->i_sb->s_op->destroy_inode(inode);
-		else
-			kmem_cache_free(inode_cachep, inode);
-		return NULL;
+void destroy_super(struct super_block *sb) {
+	rd_info("%s", __func__);
+	spin_lock(&sb->s_fd_2_inode_lock);
+	for(auto p: sb->s_fd_2_inode) {
+		inode_unref(p.second);
 	}
+	sb->s_fd_2_inode.clear();
+	spin_unlock(&sb->s_fd_2_inode_lock);
 
-	return inode;
+	spin_lock(&sb->s_ino_2_inode_lock);
+	for(auto p: sb->s_ino_2_inode) {
+		inode_unref(p.second);
+	}
+	sb->s_ino_2_inode.clear();
+	spin_unlock(&sb->s_ino_2_inode_lock);
+
+	d_put_recursive(sb->s_root);
+	int ret = dentry_unref(sb->s_root);
+	rdv_proc("%s: ret %d", __func__, ret);
+    FREE(sb);
 }
 
-/**
- *	new_inode_pseudo 	- obtain an inode
- *	@sb: superblock
- *
- *	Allocates a new inode for given superblock.
- *	Inode wont be chained in superblock s_inodes list
- *	This means :
- *	- fs can't be unmount
- *	- quotas, fsnotify, writeback can't work
- */
-struct inode *new_inode_pseudo(struct super_block *sb)
-{
-	struct inode *inode = alloc_inode(sb);
+int inode_default_init(struct super_block *sb, struct inode *inode) {
+    static const struct inode_operations empty_iops = {};
+    static const struct file_operations no_open_fops = {.open = no_open};
 
-	if (inode) {
-		spin_lock(&inode->i_lock);
-		inode->i_state = 0;
-		spin_unlock(&inode->i_lock);
-		// INIT_LIST_HEAD(&inode->i_sb_list);
-	}
-	return inode;
+    memset(inode, 0, sizeof(struct inode));
+    inode->i_op = &empty_iops;
+    inode->i_sb = sb;
+    inode->i_blkbits = sb->s_blocksize_bits;
+    atomic_set(&inode->i_count, 1);
+    inode->i_fop = &no_open_fops;
+    inode->__i_nlink = 1;
+
+    spin_lock_init(&inode->i_lock);
+    return 0;
+}
+
+// 分配并默认初始化一个无效的inode，引用为1
+struct inode *alloc_inode(struct super_block *sb) {
+    struct inode *inode;
+
+    dlog_assert(sb->s_op->alloc_inode);
+    // 只分配，没有任何的初始化
+    inode = sb->s_op->alloc_inode(sb);
+    if (!inode) return NULL;
+
+    if (unlikely(inode_default_init(sb, inode))) {
+        dlog_assert(sb->s_op->destroy_inode);
+        inode->i_sb->s_op->destroy_inode(inode);
+        return NULL;
+    }
+
+    return inode;
+}
+
+void free_inode(struct super_block *sb, struct inode *inode) {
+    dlog_assert(sb->s_op->destroy_inode);
+    inode->i_sb->s_op->destroy_inode(inode);
 }
 
 /**
@@ -135,17 +121,17 @@ struct inode *new_inode_pseudo(struct super_block *sb)
  *	newly created inode's mapping
  *
  */
-struct inode *new_inode(struct super_block *sb)
-{
-	struct inode *inode;
+// struct inode *new_inode(struct super_block *sb)
+// {
+// 	struct inode *inode;
 
-	// spin_lock_prefetch(&sb->s_inode_list_lock);
+// 	// spin_lock_prefetch(&sb->s_inode_list_lock);
 
-	inode = new_inode_pseudo(sb);
-	// if (inode)
-	// 	inode_sb_list_add(inode);
-	return inode;
-}
+// 	inode = new_inode_pseudo(sb);
+// 	// if (inode)
+// 	// 	inode_sb_list_add(inode);
+// 	return inode;
+// }
 
 /**
  * inode_init_owner - Init uid,gid,mode for new inode according to posix standards
@@ -153,23 +139,21 @@ struct inode *new_inode(struct super_block *sb)
  * @dir: Directory inode
  * @mode: mode of the new inode
  */
-void inode_init_owner(struct inode *inode, const struct inode *dir,
-			umode_t mode)
-{
-	// inode->i_uid = current_fsuid();
-	// if (dir && dir->i_mode & S_ISGID) {
-	// 	// inode->i_gid = dir->i_gid;
+void inode_init_owner(struct inode *inode, const struct inode *dir, umode_t mode) {
+    // inode->i_uid = current_fsuid();
+    // if (dir && dir->i_mode & S_ISGID) {
+    // 	// inode->i_gid = dir->i_gid;
 
-	// 	/* Directories are special, and always inherit S_ISGID */
-	// 	if (S_ISDIR(mode))
-	// 		mode |= S_ISGID;
-	// 	else if ((mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP) &&
-	// 		 !in_group_p(inode->i_gid) &&
-	// 		 !capable_wrt_inode_uidgid(dir, CAP_FSETID))
-	// 		mode &= ~S_ISGID;
-	// } else
-	// 	inode->i_gid = current_fsgid();
-	inode->i_mode = mode;
+    // 	/* Directories are special, and always inherit S_ISGID */
+    // 	if (S_ISDIR(mode))
+    // 		mode |= S_ISGID;
+    // 	else if ((mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP) &&
+    // 		 !in_group_p(inode->i_gid) &&
+    // 		 !capable_wrt_inode_uidgid(dir, CAP_FSETID))
+    // 		mode &= ~S_ISGID;
+    // } else
+    // 	inode->i_gid = current_fsgid();
+    inode->i_mode = mode;
 }
 
 /**
@@ -180,12 +164,11 @@ void inode_init_owner(struct inode *inode, const struct inode *dir,
  * direct filesystem manipulation of i_nlink.  See
  * drop_nlink() for why we care about i_nlink hitting zero.
  */
-void clear_nlink(struct inode *inode)
-{
-	if (inode->i_nlink) {
-		inode->__i_nlink = 0;
-		atomic_inc(&inode->i_sb->s_remove_count);
-	}
+void clear_nlink(struct inode *inode) {
+    if (inode->i_nlink) {
+        inode->__i_nlink = 0;
+        atomic_inc(&inode->i_sb->s_remove_count);
+    }
 }
 
 /**
@@ -196,17 +179,14 @@ void clear_nlink(struct inode *inode)
  * This is a low-level filesystem helper to replace any
  * direct filesystem manipulation of i_nlink.
  */
-void set_nlink(struct inode *inode, unsigned int nlink)
-{
-	if (!nlink) {
-		clear_nlink(inode);
-	} else {
-		/* Yes, some filesystems do change nlink from zero to one */
-		if (inode->i_nlink == 0)
-			atomic_dec(&inode->i_sb->s_remove_count);
-
-		inode->__i_nlink = nlink;
-	}
+void set_nlink(struct inode *inode, unsigned int nlink) {
+    if (!nlink) {
+        clear_nlink(inode);
+    } else {
+        /* Yes, some filesystems do change nlink from zero to one */
+        if (inode->i_nlink == 0) atomic_dec(&inode->i_sb->s_remove_count);
+        inode->__i_nlink = nlink;
+    }
 }
 
 /**
@@ -217,14 +197,13 @@ void set_nlink(struct inode *inode, unsigned int nlink)
  * direct filesystem manipulation of i_nlink.  Currently,
  * it is only here for parity with dec_nlink().
  */
-void inc_nlink(struct inode *inode)
-{
-	if (unlikely(inode->i_nlink == 0)) {
-		// WARN_ON(!(inode->i_state & I_LINKABLE));
-		atomic_dec(&inode->i_sb->s_remove_count);
-	}
+void inc_nlink(struct inode *inode) {
+    if (unlikely(inode->i_nlink == 0)) {
+        // WARN_ON(!(inode->i_state & I_LINKABLE));
+        atomic_dec(&inode->i_sb->s_remove_count);
+    }
 
-	inode->__i_nlink++;
+    inode->__i_nlink++;
 }
 
 /**
@@ -238,12 +217,10 @@ void inc_nlink(struct inode *inode)
  * write when the file is truncated and actually unlinked
  * on the filesystem.
  */
-void drop_nlink(struct inode *inode)
-{
-	WARN_ON(inode->i_nlink == 0);
-	inode->__i_nlink--;
-	if (!inode->i_nlink)
-		atomic_inc(&inode->i_sb->s_remove_count);
+void drop_nlink(struct inode *inode) {
+    WARN_ON(inode->i_nlink == 0);
+    inode->__i_nlink--;
+    if (!inode->i_nlink) atomic_inc(&inode->i_sb->s_remove_count);
 }
 
 /*
@@ -252,11 +229,224 @@ void drop_nlink(struct inode *inode)
  * the caller didn't specify O_LARGEFILE.  On 64bit systems we force
  * on this flag in sys_open.
  */
-int generic_file_open(struct inode * inode, struct file * filp)
-{
-	// if (!(filp->f_flags & O_LARGEFILE) && i_size_read(inode) > MAX_NON_LFS)
-	// 	return -EOVERFLOW;
-	return 0;
+int generic_file_open(struct inode *inode, struct file *filp) {
+    // if (!(filp->f_flags & O_LARGEFILE) && i_size_read(inode) > MAX_NON_LFS)
+    // 	return -EOVERFLOW;
+    return 0;
+}
+
+// 返回的inode如果是无效状态，则表明是新分配的，需要初始化，并设置i_state
+// 否则返回已经在cache中的inode，并且没有上锁
+// inode不用都要记得unref
+struct inode *iget_or_alloc(struct super_block *sb, unsigned long ino) {
+    struct inode *inode = nullptr;
+    int time = 0;
+
+again:
+    inode = inode_get_by_ino(sb, ino);
+    if (inode == nullptr) goto alloc;
+    spin_lock(&inode->i_lock);
+    if (inode->i_state == 1) {
+        spin_unlock(&inode->i_lock);
+        return inode;
+    }
+    spin_unlock(&inode->i_lock);
+    rd_info("another reader init the same inode, ino: %d, wait_time: %d", inode->i_ino, ++time);
+    inode_unref(inode);
+    goto again;  // 可能会失败而释放，得重新查找
+
+alloc:
+    inode = alloc_inode(sb);
+    if (inode == nullptr) {
+        r_error("alloc_inode fail\n");
+        return nullptr;
+    }
+    inode->i_ino = ino;
+    assert(inode->i_state == 0);
+
+    // 插入map
+    bool ret = inode_insert(sb, inode);
+    if (ret == false) {
+        inode_unref(inode);
+        rd_info("after alloc_inode, have the same inode: %d\n", inode->i_ino);
+        goto again;
+    }
+    return inode;
+}
+
+void d_set_d_op(struct dentry *dentry, const struct dentry_operations *op) {
+    WARN_ON_ONCE(dentry->d_op);
+    WARN_ON_ONCE(dentry->d_flags & (DCACHE_OP_HASH | DCACHE_OP_COMPARE | DCACHE_OP_REVALIDATE |
+                                    DCACHE_OP_WEAK_REVALIDATE | DCACHE_OP_DELETE | DCACHE_OP_REAL));
+    dentry->d_op = op;
+    if (!op) return;
+    if (op->d_hash) dentry->d_flags |= DCACHE_OP_HASH;
+    if (op->d_compare) dentry->d_flags |= DCACHE_OP_COMPARE;
+    if (op->d_revalidate) dentry->d_flags |= DCACHE_OP_REVALIDATE;
+    if (op->d_weak_revalidate) dentry->d_flags |= DCACHE_OP_WEAK_REVALIDATE;
+    if (op->d_delete) dentry->d_flags |= DCACHE_OP_DELETE;
+    if (op->d_prune) dentry->d_flags |= DCACHE_OP_PRUNE;
+    if (op->d_real) dentry->d_flags |= DCACHE_OP_REAL;
+}
+
+/**
+ * __d_alloc	-	allocate a dcache entry
+ * @sb: filesystem it will belong to
+ * @name: qstr of the name
+ *
+ * Allocates a dentry. It returns %NULL if there is insufficient memory
+ * available. On a success the dentry is returned. The name passed in is
+ * copied and the copy passed in may be reused after this call.
+ * 初始化引用为1
+ */
+struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name) {
+    struct external_name *ext = NULL;
+    struct dentry *new_dentry;
+    char *dname;
+    int err;
+
+    new_dentry = (struct dentry *)kmem_cache_alloc(dentry_cache);
+    if (!new_dentry) return NULL;
+
+    /*
+     * We guarantee that the inline name is always NUL-terminated.
+     * This way the memcpy() done by the name switching in rename
+     * will still always have a NUL at the end, even if we might
+     * be overwriting an internal NUL character
+     */
+    new_dentry->d_iname[DNAME_INLINE_LEN - 1] = 0;
+    if (unlikely(!name)) {
+        name = &slash_name;  // 根目录
+        dname = new_dentry->d_iname;
+    } else if (name->len > DNAME_INLINE_LEN - 1) {
+        size_t size = offsetof(struct external_name, name[1]);
+
+        ext = (struct external_name *)MALLOC(size + name->len);
+        if (!ext) {
+            kmem_cache_free(dentry_cache, new_dentry);
+            return NULL;
+        }
+        atomic_set(&ext->u.count, 1);
+        dname = ext->name;
+    } else {
+        dname = new_dentry->d_iname;
+    }
+
+    new_dentry->d_flags = 0;
+    new_dentry->d_op = NULL;
+    new_dentry->d_sb = sb;
+    new_dentry->d_parent = new_dentry;
+    new_dentry->d_inode = NULL;
+    d_set_d_op(new_dentry, new_dentry->d_sb->s_d_op);
+
+    new_dentry->d_name.len = name->len;
+    new_dentry->d_name.hash = name->hash;
+    memcpy(dname, name->name, name->len);
+    dname[name->len] = 0;
+    new_dentry->d_name.name = dname;
+
+    /* Make sure we always see the terminating NUL character */
+    // smp_store_release(&dentry->d_name.name, dname); /* ^^^ */
+
+    new_dentry->d_count = 1;
+    spin_lock_init(&new_dentry->d_lock);
+    new (&new_dentry->d_subdirs) std::unordered_map<u32, struct list_head>();
+    INIT_LIST_HEAD(&new_dentry->d_child);
+
+	rdv_proc("%s: %s", __func__, name->name);
+
+    if (new_dentry->d_op && new_dentry->d_op->d_init) {
+        err = new_dentry->d_op->d_init(new_dentry);
+        if (err) {
+            if (dname_external(new_dentry)) FREE(external_name(new_dentry));
+            kmem_cache_free(dentry_cache, new_dentry);
+            return NULL;
+        }
+    }
+
+    // if (unlikely(ext)) {
+    // 	pg_data_t *pgdat = page_pgdat(virt_to_page(ext));
+    // 	mod_node_page_state(pgdat, NR_INDIRECTLY_RECLAIMABLE_BYTES,
+    // 			    ksize(ext));
+    // }
+
+    // this_cpu_inc(nr_dentry);
+
+    return new_dentry;
+}
+
+/**
+ * d_alloc	-	allocate a dcache entry
+ * @parent: parent of entry to allocate
+ * @name: qstr of the name
+ *
+ * Allocates a dentry. It returns %NULL if there is insufficient memory
+ * available. On a success the dentry is returned. The name passed in is
+ * copied and the copy passed in may be reused after this call.
+ * 返回的dentry已经引用
+ */
+struct dentry *d_alloc(struct dentry *parent, const struct qstr *name) {
+    struct dentry *dentry = __d_alloc(parent->d_sb, name);
+    if (!dentry) return NULL;
+    dentry->d_flags |= DCACHE_RCUACCESS;
+    dentry_insert_child(parent, dentry);
+    return dentry;
+}
+
+// 内存中删除 dentry
+void d_put(struct dentry *parent) {
+	log_assert(parent->d_parent == nullptr);
+	log_assert(parent->d_inode == nullptr);
+	log_assert(list_empty(&parent->d_child));
+	log_assert(parent->d_subdirs.empty());
+	rdv_proc("%s: %s", __func__, parent->d_name.name);
+    if (dname_external(parent)) {
+        FREE(external_name(parent));
+    }
+	kmem_cache_free(dentry_cache, parent);
+}
+
+void d_put_recursive(struct dentry *parent) {
+	rdv_proc("%s: %s", __func__, parent->d_name.name);
+	if (parent->d_parent && parent->d_parent != parent) {
+        dentry_unref(parent->d_parent);
+    }
+	parent->d_parent = nullptr;
+
+	if(parent->d_inode) {
+    	inode_unref(parent->d_inode);
+		parent->d_inode = nullptr;
+	}
+
+	spin_lock(&parent->d_lock);
+    for (auto p : parent->d_subdirs) {
+        struct list_head *head = &parent->d_subdirs[p.first];
+        struct dentry *cur, *tmp;
+		rdv_proc("for %s: %s", __func__, parent->d_name.name);
+        list_for_each_entry_safe(cur, tmp, head, d_child) {
+			rdv_proc("list_for_each_entry_safe: %s: %s", parent->d_name.name, cur->d_name.name);
+            list_del_init(&cur->d_child);
+			d_put_recursive(cur);
+            dentry_unref(cur);
+        }
+    }
+	parent->d_subdirs.clear();
+    spin_unlock(&parent->d_lock);
+}
+
+struct dentry *d_alloc_anon(struct super_block *sb) {
+    return __d_alloc(sb, NULL);
+}
+
+// 为root inode创建dentry，并instantiate
+struct dentry *d_make_root(struct inode *root_inode) {
+    struct dentry *res = NULL;
+    res = d_alloc_anon(root_inode->i_sb);
+    if (res) {
+        res->d_flags |= DCACHE_RCUACCESS;
+        d_instantiate(res, root_inode);
+    }
+    return res;
 }
 
 /**
@@ -332,3 +522,13 @@ int generic_file_open(struct inode * inode, struct file * filp)
 // skip_update:
 // 	sb_end_write(inode->i_sb);
 // }
+
+void vfs_init() {
+    int ret = 0;
+    ret = init_dentry_cache();
+    assert(!ret);
+}
+
+void vfs_destroy() {
+    destroy_dentry_cache();
+}

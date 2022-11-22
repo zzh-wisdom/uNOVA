@@ -1,1 +1,1 @@
-/usr/bin/c++   -std=c++11 -DERPC_INFINIBAND=true -D_FILE_OFFSET_BITS=64  -rdynamic CMakeFiles/test.dir/test/fstest.cc.o  -o ../bin/test  -lpthread -lsyscall_intercept 
+/usr/bin/c++   -std=c++11 -DERPC_INFINIBAND=true -D_FILE_OFFSET_BITS=64  -rdynamic CMakeFiles/test.dir/test/fstest.cc.o  -o test  -lpthread -lsyscall_intercept 

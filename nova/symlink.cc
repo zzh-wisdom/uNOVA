@@ -19,64 +19,65 @@
  */
 
 #include "nova/nova.h"
+#include "nova/wprotect.h"
 
-int nova_block_symlink(struct super_block *sb, struct nova_inode *pi,
-	struct inode *inode, u64 log_block,
-	unsigned long name_blocknr, const char *symname, int len)
-{
-	struct nova_file_write_entry *entry;
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
-	u64 block;
-	u32 time;
-	char *blockp;
+// int nova_block_symlink(struct super_block *sb, struct nova_inode *pi,
+// 	struct inode *inode, u64 log_block,
+// 	unsigned long name_blocknr, const char *symname, int len)
+// {
+// 	struct nova_file_write_entry *entry;
+// 	struct nova_inode_info *si = NOVA_I(inode);
+// 	struct nova_inode_info_header *sih = &si->header;
+// 	u64 block;
+// 	u32 time;
+// 	char *blockp;
 
-	/* First copy name to name block */
-	block = nova_get_block_off(sb, name_blocknr, NOVA_BLOCK_TYPE_4K);
-	blockp = (char *)nova_get_block(sb, block);
+// 	/* First copy name to name block */
+// 	block = nova_get_block_off(sb, name_blocknr, NOVA_BLOCK_TYPE_4K);
+// 	blockp = (char *)nova_get_block(sb, block);
 
-	nova_memunlock_block(sb, blockp);
-	memcpy_to_pmem_nocache(blockp, symname, len);
-	blockp[len] = '\0';
-	nova_memlock_block(sb, blockp);
+// 	nova_memunlock_block(sb, blockp);
+// 	memcpy_to_pmem_nocache(blockp, symname, len);
+// 	blockp[len] = '\0';
+// 	nova_memlock_block(sb, blockp);
 
-	/* Apply a write entry to the start of log page */
-	block = log_block;
-	entry = (struct nova_file_write_entry *)nova_get_block(sb, block);
+// 	/* Apply a write entry to the start of log page */
+// 	block = log_block;
+// 	entry = (struct nova_file_write_entry *)nova_get_block(sb, block);
 
-	entry->pgoff = 0;
-	entry->num_pages = cpu_to_le32(1);
-	entry->invalid_pages = 0;
-	entry->block = cpu_to_le64(nova_get_block_off(sb, name_blocknr,
-							NOVA_BLOCK_TYPE_4K));
-	time = CURRENT_TIME_SEC.tv_sec;
-	entry->mtime = cpu_to_le32(time);
-	/* Set entry type after set block */
-	nova_set_entry_type(entry, FILE_WRITE);
-	entry->size = cpu_to_le64(len + 1);
-	nova_flush_buffer(entry, CACHELINE_SIZE, 0);
+// 	entry->pgoff = 0;
+// 	entry->num_pages = cpu_to_le32(1);
+// 	entry->invalid_pages = 0;
+// 	entry->block = cpu_to_le64(nova_get_block_off(sb, name_blocknr,
+// 							NOVA_BLOCK_TYPE_4K));
+// 	time = CURRENT_TIME_SEC.tv_sec;
+// 	entry->mtime = cpu_to_le32(time);
+// 	/* Set entry type after set block */
+// 	nova_set_entry_type(entry, FILE_WRITE);
+// 	entry->size = cpu_to_le64(len + 1);
+// 	nova_flush_buffer(entry, CACHELINE_SIZE, 0);
 
-	sih->log_pages = 1;
-	pi->log_head = block;
-	nova_update_tail(pi, block + sizeof(struct nova_file_write_entry));
+// 	sih->log_pages = 1;
+// 	pi->log_head = block;
+// 	nova_update_tail(pi, block + sizeof(struct nova_file_write_entry));
 
-	return 0;
-}
+// 	return 0;
+// }
 
-static int nova_readlink(struct dentry *dentry, char *buffer, int buflen)
-{
-	struct nova_file_write_entry *entry;
-	struct inode *inode = dentry->d_inode;
-	struct super_block *sb = inode->i_sb;
-	struct nova_inode *pi = nova_get_inode(sb, inode);
-	char *blockp;
+// static int nova_readlink(struct dentry *dentry, char *buffer, int buflen)
+// {
+// 	struct nova_file_write_entry *entry;
+// 	struct inode *inode = dentry->d_inode;
+// 	struct super_block *sb = inode->i_sb;
+// 	struct nova_inode *pi = nova_get_inode(sb, inode);
+// 	char *blockp;
 
-	entry = (struct nova_file_write_entry *)nova_get_block(sb,
-							pi->log_head);
-	blockp = (char *)nova_get_block(sb, BLOCK_OFF(entry->block));
+// 	entry = (struct nova_file_write_entry *)nova_get_block(sb,
+// 							pi->log_head);
+// 	blockp = (char *)nova_get_block(sb, BLOCK_OFF(entry->block));
 
-	return readlink_copy(buffer, buflen, blockp);
-}
+// 	return readlink_copy(buffer, buflen, blockp);
+// }
 
 static char *nova_get_link(struct dentry *dentry, struct inode *inode, void **cookie)
 {
@@ -101,11 +102,11 @@ static void *nova_follow_link(struct dentry *dentry, void **cookie)
 // #endif
 
 const struct inode_operations nova_symlink_inode_operations = {
-	.readlink	= nova_readlink,
+	// .readlink	= nova_readlink,
 // #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 // 	.get_link	= nova_get_link,
 // #else
-	.follow_link	= nova_follow_link,
+	// .follow_link	= nova_follow_link,
 // #endif
-	.setattr	= nova_notify_change,
+	// .setattr	= nova_notify_change,
 };

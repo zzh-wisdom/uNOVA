@@ -20,7 +20,7 @@
 
 // 每个cpu变量，主要cacheline分离
 
-int get_processor_id() {
+static force_inline int get_cpu_id() {
     // 系统调用，比较慢，还得缓存与绑核
     rd_warning("TODO: 注意绑核+缓存, 需要转化从0开始\n");
     return sched_getcpu();
@@ -28,6 +28,8 @@ int get_processor_id() {
 
 bool CoreBind(pthread_t t, uint32_t core_id);
 std::vector<int> CoreBindQuery(pthread_t t);
+int get_cpu_num_for_socket(int numa_socket);
+void SetSocketAndPolicy(int socket, int strict);
 
 static force_inline uint64_t GetTsSec() {
     struct timeval tv;

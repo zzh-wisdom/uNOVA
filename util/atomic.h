@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-typedef uint32_t atomic_t;
+typedef int atomic_t;
 
 #define atomic_set(a, v) __atomic_store_n(a, v, __ATOMIC_RELAXED)
 #define atomic_add_fetch(a, v) __atomic_add_fetch(a, v, __ATOMIC_RELAXED)

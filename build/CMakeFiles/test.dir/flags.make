@@ -6,5 +6,5 @@ CXX_FLAGS =  -std=c++11 -DERPC_INFINIBAND=true -D_FILE_OFFSET_BITS=64   -g -std=
 
 CXX_DEFINES = 
 
-CXX_INCLUDES = 
+CXX_INCLUDES = -I/home/zzh/uNOVA 
 

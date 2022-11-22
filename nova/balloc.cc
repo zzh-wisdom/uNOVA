@@ -35,7 +35,7 @@ void nova_delete_free_lists(struct super_block *sb)
 	struct nova_sb_info *sbi = NOVA_SB(sb);
 
 	/* Each tree is freed in save_blocknode_mappings */
-	free(sbi->free_lists);
+	FREE(sbi->free_lists);
 	sbi->free_lists = NULL;
 }
 
@@ -78,7 +78,7 @@ void nova_init_blockmap(struct super_block *sb, int recovery)
 			blknode->range_high = free_list->block_end;
 			ret = nova_insert_blocktree(sbi, tree, blknode);
 			if (ret) {
-				r_error("%s failed\n", __func__);
+				r_error("%s failed", __func__);
 				nova_free_blocknode(sb, blknode);
 				return;
 			}
@@ -170,7 +170,7 @@ static int nova_insert_range_node(struct nova_sb_info *sbi,
 			temp = &((*temp)->rb_right);
 		} else {
 			r_error("%s: entry %lu - %lu already exists: "
-				"%lu - %lu\n", __func__,
+				"%lu - %lu", __func__,
 				new_node->range_low,
 				new_node->range_high,
 				curr->range_low,
@@ -192,13 +192,13 @@ inline int nova_insert_blocktree(struct nova_sb_info *sbi,
 
 	ret = nova_insert_range_node(sbi, tree, new_node);
 	if (ret)
-		r_error("ERROR: %s failed %d\n", __func__, ret);
+		r_error("ERROR: %s failed %d", __func__, ret);
 
 	return ret;
 }
 
 // 将一个范围插入inode的红黑树
-inline int nova_insert_inodetree(struct nova_sb_info *sbi,
+int nova_insert_inodetree(struct nova_sb_info *sbi,
 	struct nova_range_node *new_node, int cpu)
 {
 	struct rb_root *tree;
@@ -207,7 +207,7 @@ inline int nova_insert_inodetree(struct nova_sb_info *sbi,
 	tree = &sbi->inode_maps[cpu].inode_inuse_tree;
 	ret = nova_insert_range_node(sbi, tree, new_node);
 	if (ret)
-		rd_error("ERROR: %s failed %d\n", __func__, ret);
+		rd_error("ERROR: %s failed %d", __func__, ret);
 
 	return ret;
 }
@@ -224,7 +224,7 @@ int nova_find_free_slot(struct nova_sb_info *sbi,
 
 	ret = nova_find_range_node(sbi, tree, range_low, &ret_node);
 	if (ret) {
-		rd_error("%s ERROR: %lu - %lu already in free list\n",
+		rd_error("%s ERROR: %lu - %lu already in free list",
 			__func__, range_low, range_high);
 		return -EINVAL;
 	}
@@ -247,7 +247,7 @@ int nova_find_free_slot(struct nova_sb_info *sbi,
 			*prev = NULL;
 	} else {
 		rd_error("%s ERROR: %lu - %lu overlaps with existing node "
-			"%lu - %lu\n", __func__, range_low,
+			"%lu - %lu", __func__, range_low,
 			range_high, ret_node->range_low,
 			ret_node->range_high);
 		return -EINVAL;
@@ -274,7 +274,7 @@ static int nova_free_blocks(struct super_block *sb, unsigned long blocknr,
 	int ret;
 
 	if (num <= 0) {
-		rd_error("%s ERROR: free %d\n", __func__, num);
+		rd_error("%s ERROR: free %d", __func__, num);
 		return -EINVAL;
 	}
 
@@ -298,13 +298,13 @@ static int nova_free_blocks(struct super_block *sb, unsigned long blocknr,
 	block_low = blocknr;
 	block_high = blocknr + num_blocks - 1;
 
-	rdv_proc("Free: %lu - %lu\n", block_low, block_high);
+	rdv_proc("Free: %lu - %lu", block_low, block_high);
 
 	ret = nova_find_free_slot(sbi, tree, block_low,
 					block_high, &prev, &next);
 
 	if (ret) {
-		rd_info("%s: find free slot fail: %d\n", __func__, ret);
+		rd_info("%s: find free slot fail: %d", __func__, ret);
 		spin_unlock(&free_list->s_lock);
 		nova_free_blocknode(sb, curr_node);
 		return ret;
@@ -368,17 +368,17 @@ int nova_free_data_blocks(struct super_block *sb, struct nova_inode *pi,
 	int ret;
 	timing_t free_time;
 
-	rd_info("Inode %llu: free %d data block from %lu to %lu\n",
+	rd_info("Inode %lu: free %d data block from %lu to %lu",
 			pi->nova_ino, num, blocknr, blocknr + num - 1);
 	if (blocknr == 0) {
-		r_error("%s: ERROR: %lu, %d\n", __func__, blocknr, num);
+		r_error("%s: ERROR: %lu, %d", __func__, blocknr, num);
 		return -EINVAL;
 	}
 	NOVA_START_TIMING(free_data_t, free_time);
 	ret = nova_free_blocks(sb, blocknr, num, pi->i_blk_type, 0);
 	if (ret)
-		nova_err(sb, "Inode %llu: free %d data block from %lu to %lu "
-				"failed!\n", pi->nova_ino, num, blocknr,
+		r_error("Inode %lu: free %d data block from %lu to %lu "
+				"failed!", pi->nova_ino, num, blocknr,
 				blocknr + num - 1);
 	NOVA_END_TIMING(free_data_t, free_time);
 
@@ -391,17 +391,17 @@ int nova_free_log_blocks(struct super_block *sb, struct nova_inode *pi,
 	int ret;
 	timing_t free_time;
 
-	rd_info("Inode %llu: free %d log block from %lu to %lu\n",
+	rd_info("Inode %lu: free %d log block from %lu to %lu",
 			pi->nova_ino, num, blocknr, blocknr + num - 1);
 	if (blocknr == 0) {
-		rd_error("%s: ERROR: %lu, %d\n", __func__, blocknr, num);
+		r_error("%s: ERROR: %lu, %d", __func__, blocknr, num);
 		return -EINVAL;
 	}
 	NOVA_START_TIMING(free_log_t, free_time);
 	ret = nova_free_blocks(sb, blocknr, num, pi->i_blk_type, 1);
 	if (ret)
-		nova_err(sb, "Inode %llu: free %d log block from %lu to %lu "
-				"failed!\n", pi->nova_ino, num, blocknr,
+		r_error("Inode %lu: free %d log block from %lu to %lu "
+				"failed!", pi->nova_ino, num, blocknr,
 				blocknr + num - 1);
 	NOVA_END_TIMING(free_log_t, free_time);
 
@@ -527,13 +527,13 @@ retry:
 
 	if (free_list->num_free_blocks < num_blocks || !free_list->first_node) {
 		rd_info("%s: cpu %d, free_blocks %lu, required %lu, "
-			"blocknode %lu\n", __func__, cpuid,
+			"blocknode %lu", __func__, cpuid,
 			free_list->num_free_blocks, num_blocks,
 			free_list->num_blocknode);
 		if (free_list->num_free_blocks >= num_blocks) {
 			// 只是缓存的first node为null，但红黑树还是管理有空闲的block
 			rd_info("first node is NULL "
-				"but still has free blocks\n");
+				"but still has free blocks");
 			temp = rb_first(&free_list->block_free_tree);
 			first = container_of(temp, struct nova_range_node, node);
 			free_list->first_node = first;
@@ -572,12 +572,12 @@ retry:
 	}
 	*blocknr = new_blocknr;
 
-	rdv_proc("Alloc %lu NVMM blocks 0x%lx\n", ret_blocks, *blocknr);
+	rdv_proc("Alloc %lu NVMM blocks 0x%lx", ret_blocks, *blocknr);
 	return ret_blocks / nova_get_numblocks(btype);
 }
 
 // 分配文件数据块
-inline int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
+int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 	unsigned long *blocknr,	unsigned int num, unsigned long start_blk,
 	int zero, int cow)
 {
@@ -587,8 +587,8 @@ inline int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 	allocated = nova_new_blocks(sb, blocknr, num,
 					pi->i_blk_type, zero, DATA);
 	NOVA_END_TIMING(new_data_blocks_t, alloc_time);
-	rdv_proc("Inode %llu, start blk %lu, cow %d, "
-			"alloc %d data blocks from %lu to %lu\n",
+	rdv_proc("Inode %lu, start blk %lu, cow %d, "
+			"alloc %d data blocks from %lu to %lu",
 			pi->nova_ino, start_blk, cow, allocated, *blocknr,
 			*blocknr + allocated - 1);
 	return allocated;
@@ -597,7 +597,7 @@ inline int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 // 分配新的用于log的block
 // 返回分配指定inode类型的block个数
 // zero为1表示新分配的空间需要清零
-inline int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
+int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
 	unsigned long *blocknr, unsigned int num, int zero)
 {
 	int allocated;
@@ -606,7 +606,7 @@ inline int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
 	allocated = nova_new_blocks(sb, blocknr, num,
 					pi->i_blk_type, zero, LOG);
 	NOVA_END_TIMING(new_log_blocks_t, alloc_time);
-	rdv_proc("Inode %llu, alloc %d log blocks from %lu to %lu\n",
+	rdv_proc("Inode %lu, alloc %d log blocks from %lu to %lu",
 			pi->nova_ino, allocated, *blocknr,
 			*blocknr + allocated - 1);
 	return allocated;

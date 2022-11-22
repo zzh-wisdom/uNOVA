@@ -108,17 +108,17 @@ const char *Timingstring[TIMING_NUM] =
 // 	int i;
 
 // 	printk("=========== NOVA allocation stats ===========\n");
-// 	printk("Alloc %llu, alloc steps %llu, average %llu\n",
+// 	printk("Alloc %lu, alloc steps %lu, average %lu\n",
 // 		Countstats[new_data_blocks_t], IOstats[alloc_steps],
 // 		Countstats[new_data_blocks_t] ?
 // 			IOstats[alloc_steps] / Countstats[new_data_blocks_t] : 0);
-// 	printk("Free %llu\n", Countstats[free_data_t]);
-// 	printk("Fast GC %llu, check pages %llu, free pages %llu, average %llu\n",
+// 	printk("Free %lu\n", Countstats[free_data_t]);
+// 	printk("Fast GC %lu, check pages %lu, free pages %lu, average %lu\n",
 // 		Countstats[fast_gc_t], IOstats[fast_checked_pages],
 // 		IOstats[fast_gc_pages], Countstats[fast_gc_t] ?
 // 			IOstats[fast_gc_pages] / Countstats[fast_gc_t] : 0);
-// 	printk("Thorough GC %llu, checked pages %llu, free pages %llu, "
-// 		"average %llu\n", Countstats[thorough_gc_t],
+// 	printk("Thorough GC %lu, checked pages %lu, free pages %lu, "
+// 		"average %lu\n", Countstats[thorough_gc_t],
 // 		IOstats[thorough_checked_pages], IOstats[thorough_gc_pages],
 // 		Countstats[thorough_gc_t] ?
 // 			IOstats[thorough_gc_pages] / Countstats[thorough_gc_t] : 0);
@@ -149,12 +149,12 @@ const char *Timingstring[TIMING_NUM] =
 // static void nova_print_IO_stats(struct super_block *sb)
 // {
 // 	printk("=========== NOVA I/O stats ===========\n");
-// 	printk("Read %llu, bytes %llu, average %llu\n",
+// 	printk("Read %lu, bytes %lu, average %lu\n",
 // 		Countstats[dax_read_t], IOstats[read_bytes],
 // 		Countstats[dax_read_t] ?
 // 			IOstats[read_bytes] / Countstats[dax_read_t] : 0);
-// 	printk("COW write %llu, bytes %llu, average %llu, "
-// 		"write breaks %llu, average %llu\n",
+// 	printk("COW write %lu, bytes %lu, average %lu, "
+// 		"write breaks %lu, average %lu\n",
 // 		Countstats[cow_write_t], IOstats[cow_write_bytes],
 // 		Countstats[cow_write_t] ?
 // 			IOstats[cow_write_bytes] / Countstats[cow_write_t] : 0,
@@ -199,14 +199,14 @@ const char *Timingstring[TIMING_NUM] =
 // 	printk("======== NOVA kernel timing stats ========\n");
 // 	for (i = 0; i < TIMING_NUM; i++) {
 // 		if (measure_timing || Timingstats[i]) {
-// 			printk("%s: count %llu, timing %llu, average %llu\n",
+// 			printk("%s: count %lu, timing %lu, average %lu\n",
 // 				Timingstring[i],
 // 				Countstats[i],
 // 				Timingstats[i],
 // 				Countstats[i] ?
 // 				Timingstats[i] / Countstats[i] : 0);
 // 		} else {
-// 			printk("%s: count %llu\n",
+// 			printk("%s: count %lu\n",
 // 				Timingstring[i],
 // 				Countstats[i]);
 // 		}
@@ -252,8 +252,8 @@ const char *Timingstring[TIMING_NUM] =
 static inline void nova_print_file_write_entry(struct super_block *sb,
 	u64 curr, struct nova_file_write_entry *entry)
 {
-	rd_info("file write entry @ 0x%llx: paoff %llu, pages %u, "
-			"blocknr %llu, invalid count %u, size %llu\n",
+	rd_info("file write entry @ 0x%lx: paoff %lu, pages %u, "
+			"blocknr %lu, invalid count %u, size %lu\n",
 			curr, entry->pgoff, entry->num_pages,
 			entry->block >> PAGE_SHIFT,
 			entry->invalid_pages, entry->size);
@@ -262,21 +262,21 @@ static inline void nova_print_file_write_entry(struct super_block *sb,
 static inline void nova_print_set_attr_entry(struct super_block *sb,
 	u64 curr, struct nova_setattr_logentry *entry)
 {
-	rd_info("set attr entry @ 0x%llx: mode %u, size %llu\n",
+	rd_info("set attr entry @ 0x%lx: mode %u, size %lu\n",
 			curr, entry->mode, entry->size);
 }
 
 static inline void nova_print_link_change_entry(struct super_block *sb,
 	u64 curr, struct nova_link_change_entry *entry)
 {
-	rd_info("link change entry @ 0x%llx: links %u, flags %u\n",
+	rd_info("link change entry @ 0x%lx: links %u, flags %u\n",
 			curr, entry->links, entry->flags);
 }
 
 static inline size_t nova_print_dentry(struct super_block *sb,
 	u64 curr, struct nova_dentry *entry)
 {
-	rd_info("dir logentry @ 0x%llx: inode %llu, "
+	rd_info("dir logentry @ 0x%lx: inode %lu, "
 			"namelen %u, rec len %u\n", curr,
 			le64_to_cpu(entry->ino),
 			entry->name_len, le16_to_cpu(entry->de_len));
@@ -309,19 +309,19 @@ static u64 nova_print_log_entry(struct super_block *sb, u64 curr)
 			size = nova_print_dentry(sb, curr, (struct nova_dentry *)addr);
 			curr += size;
 			if (size == 0) {
-				rd_info("%s: dentry with size 0 @ 0x%llx\n",
+				rd_info("%s: dentry with size 0 @ 0x%lx\n",
 						__func__, curr);
 				curr += sizeof(struct nova_file_write_entry);
 				log_assert(0);
 			}
 			break;
 		case NEXT_PAGE:
-			rd_info("%s: next page sign @ 0x%llx\n",
+			rd_info("%s: next page sign @ 0x%lx\n",
 						__func__, curr);
 			curr = PAGE_TAIL(curr);
 			break;
 		default:
-			rd_info("%s: unknown type %d, 0x%llx\n",
+			rd_info("%s: unknown type %d, 0x%lx\n",
 						__func__, type, curr);
 			curr += sizeof(struct nova_file_write_entry);
 			log_assert(0);
@@ -344,7 +344,7 @@ static u64 nova_print_log_entry(struct super_block *sb, u64 curr)
 // 	}
 
 // 	tail = nova_get_block(sb, end);
-// 	nova_dbg("Page tail. curr 0x%llx, next page 0x%llx\n",
+// 	nova_dbg("Page tail. curr 0x%lx, next page 0x%lx\n",
 // 			start, tail->next_page);
 // }
 
@@ -357,13 +357,13 @@ void nova_print_nova_log(struct super_block *sb,
 		return;
 
 	curr = pi->log_head;
-	rd_info("Pi %lu: log head 0x%llx, tail 0x%llx\n",
+	rd_info("Pi %lu: log head 0x%lx, tail 0x%lx\n",
 			sih->ino, curr, pi->log_tail);
 	while (curr != pi->log_tail) {
 		if ((curr & (PAGE_SIZE - 1)) == LAST_ENTRY) {
 			struct nova_inode_page_tail *tail =
 					(struct nova_inode_page_tail *)nova_get_block(sb, curr);
-			rd_info("Log tail, curr 0x%llx, next page 0x%llx\n",
+			rd_info("Log tail, curr 0x%lx, next page 0x%lx\n",
 					curr, tail->next_page);
 			curr = tail->next_page;
 		} else {
@@ -420,11 +420,11 @@ void nova_print_nova_log_pages(struct super_block *sb,
 	}
 
 	curr = pi->log_head;
-	rd_info("Pi %lu: log head @ 0x%llx, tail @ 0x%llx\n",
+	rd_info("Pi %lu: log head @ 0x%lx, tail @ 0x%lx\n",
 			sih->ino, curr, pi->log_tail);
 	curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr);
 	while ((next = curr_page->page_tail.next_page) != 0) {
-		rd_info("Current page 0x%llx, next page 0x%llx\n",
+		rd_info("Current page 0x%lx, next page 0x%lx\n",
 			curr >> PAGE_SHIFT, next >> PAGE_SHIFT);
 		if (pi->log_tail >> PAGE_SHIFT == curr >> PAGE_SHIFT)
 			used = count;

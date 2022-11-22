@@ -59,7 +59,7 @@ static void nova_recover_lite_journal_entry(struct super_block *sb,
 			*(u64 *)nova_get_block(sb, addr) = (u64)value;
 			break;
 		default:
-			rd_info("%s: unknown data type %u\n",
+			rd_info("%s: unknown data type %u",
 					__func__, type);
 			break;
 	}
@@ -72,7 +72,7 @@ void nova_print_lite_transaction(struct nova_lite_journal_entry *entry)
 	int i;
 
 	for (i = 0; i < 4; i++)
-		nova_dbg_verbose("Entry %d: addr 0x%llx, value 0x%llx\n",
+		rdv_proc("Entry %d: addr 0x%lx, value 0x%lx",
 				i, entry->addrs[i], entry->values[i]);
 }
 
@@ -134,7 +134,7 @@ static void nova_undo_lite_journal_entry(struct super_block *sb,
 	for (i = 0; i < 4; i++) {
 		type = entry->addrs[i] >> 56;
 		if (entry->addrs[i] && type) {
-			rd_info("%s: recover entry %d\n", __func__, i);
+			rd_info("%s: recover entry %d", __func__, i);
 			nova_recover_lite_journal_entry(sb, entry->addrs[i],
 					entry->values[i], type);
 		}
@@ -201,8 +201,8 @@ int nova_lite_journal_soft_init(struct super_block *sb)
 		}
 
 		/* We are in trouble if we get here*/
-		r_error("%s: lite journal %d error: head 0x%llx, "
-				"tail 0x%llx\n", __func__, i,
+		r_error("%s: lite journal %d error: head 0x%lx, "
+				"tail 0x%lx", __func__, i,
 				pair->journal_head, pair->journal_tail);
 		return -EINVAL;
 	}
@@ -231,7 +231,7 @@ int nova_lite_journal_hard_init(struct super_block *sb)
 			return -EINVAL;
 
 		allocated = nova_new_log_blocks(sb, &fake_pi, &blocknr, 1, 1);
-		rdv_proc("%s: allocate log @ 0x%lx\n", __func__, blocknr);
+		rdv_proc("%s: allocate log @ 0x%lx", __func__, blocknr);
 
 		// 检查
 		if (allocated != 1 || blocknr == 0)

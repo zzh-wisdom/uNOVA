@@ -126,6 +126,17 @@ struct	nova_inode_log_page {
 
 > 为什么尾部指针是按照32B对齐
 
+## 文件mode
+
+文件的三种mode：
+
+case S_IFREG:
+
+	case S_IFDIR:
+
+	case S_IFLNK:
+
+常见文件时需要注意设置好
 
 ## 思考
 

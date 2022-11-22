@@ -51,7 +51,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 	if (!isize)
 		goto out;
 
-	rdv_proc("%s: inode %lu, offset %lld, count %lu, size %lld\n",
+	rdv_proc("%s: inode %lu, offset %lld, count %lu, size %lld",
 		__func__, inode->i_ino,	pos, len, isize);
 
 	if (len > isize - pos)
@@ -81,7 +81,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 		if (unlikely(entry == NULL)) {
 			// 一个空洞的页
 			rdv_proc("Required extent not found: pgoff %lu, "
-				"inode size %lld\n", index, isize);
+				"inode size %lld", index, isize);
 			nr = PAGE_SIZE;
 			zero = 1;
 			goto memcpy;
@@ -90,8 +90,8 @@ do_dax_mapping_read(struct file *filp, char *buf,
 		/* Find contiguous blocks */
 		if (index < entry->pgoff ||
 			index - entry->pgoff >= entry->num_pages) { // 超出范围了
-			r_error("%s ERROR: %lu, entry pgoff %llu, num %u, "
-				"blocknr %llu\n", __func__, index, entry->pgoff,
+			r_error("%s ERROR: %lu, entry pgoff %lu, num %u, "
+				"blocknr %lu", __func__, index, entry->pgoff,
 				entry->num_pages, entry->block >> PAGE_SHIFT);
 			return -EINVAL;
 		}
@@ -121,7 +121,7 @@ memcpy:
 		NOVA_END_TIMING(memcpy_r_nvmm_t, memcpy_time);
 
 		if (left) {
-			r_error("%s ERROR!: bytes %lu, left %lu\n",
+			r_error("%s ERROR!: bytes %lu, left %lu",
 				__func__, nr, left);
 			err = -EFAULT;
 			goto out;
@@ -140,7 +140,7 @@ out:
 
 	NOVA_STATS_ADD(read_bytes, copied);
 
-	rd_info("%s returned %zu\n", __func__, copied);
+	rd_info("%s returned %zu", __func__, copied);
 	return (copied ? copied : err);
 }
 
@@ -212,10 +212,10 @@ static void nova_handle_head_tail_blocks(struct super_block *sb,
 	start_blk = pos >> sb->s_blocksize_bits;
 	end_blk = start_blk + num_blocks - 1;
 
-	rdv_proc("%s: %lu blocks\n", __func__, num_blocks);
+	rdv_proc("%s: %lu blocks", __func__, num_blocks);
 	/* We avoid zeroing the alloc'd range, which is going to be overwritten
 	 * by this system call anyway */
-	rdv_proc("%s: start offset %lu start blk %lu %p\n", __func__,
+	rdv_proc("%s: start offset %lu start blk %lu %p", __func__,
 				offset, start_blk, kmem);
 	if (offset != 0) {
 		entry = nova_get_write_entry(sb, si, start_blk);
@@ -235,7 +235,7 @@ static void nova_handle_head_tail_blocks(struct super_block *sb,
 			((num_blocks - 1) << sb->s_blocksize_bits));
 	// 处理尾部部分块
 	eblk_offset = (pos + count) & (nova_inode_blk_size(pi) - 1);
-	rdv_proc("%s: end offset %lu, end blk %lu %p\n", __func__,
+	rdv_proc("%s: end offset %lu, end blk %lu %p", __func__,
 				eblk_offset, end_blk, kmem);
 	if (eblk_offset != 0) {
 		entry = nova_get_write_entry(sb, si, end_blk);
@@ -268,7 +268,7 @@ int nova_reassign_file_tree(struct super_block *sb,
 			curr_p = next_log_page(sb, curr_p);
 
 		if (curr_p == 0) {
-			r_error("%s: File inode %llu log is NULL!\n",
+			r_error("%s: File inode %lu log is NULL!",
 				__func__, pi->nova_ino);
 			return -EINVAL;
 		}
@@ -277,7 +277,7 @@ int nova_reassign_file_tree(struct super_block *sb,
 					nova_get_block(sb, curr_p);
 
 		if (nova_get_entry_type(entry_data) != FILE_WRITE) {
-			r_error("%s: entry type is not write? %d\n",
+			r_error("%s: entry type is not write? %d",
 				__func__, nova_get_entry_type(entry_data));
 			curr_p += entry_size;
 			continue;
@@ -309,7 +309,7 @@ static int nova_cleanup_incomplete_write(struct super_block *sb,
 			curr_p = next_log_page(sb, curr_p);
 
 		if (curr_p == 0) {
-			nova_err(sb, "%s: File inode %llu log is NULL!\n",
+			r_error("%s: File inode %lu log is NULL!",
 				__func__, pi->nova_ino);
 			return -EINVAL;
 		}
@@ -318,7 +318,7 @@ static int nova_cleanup_incomplete_write(struct super_block *sb,
 					nova_get_block(sb, curr_p);
 
 		if (nova_get_entry_type(entry) != FILE_WRITE) {
-			r_error("%s: entry type is not write? %d\n",
+			r_error("%s: entry type is not write? %d",
 				__func__, nova_get_entry_type(entry));
 			curr_p += entry_size;
 			continue;
@@ -404,7 +404,7 @@ ssize_t nova_cow_file_write(struct file *filp,
 	inode->i_ctime = inode->i_mtime = cur_time;
 	time = cur_time.tv_sec;
 
-	rd_info("%s: inode %lu, offset %lld, count %lu\n",
+	rd_info("%s: inode %lu, offset %lld, count %lu",
 			__func__, inode->i_ino,	pos, count);
 
 	temp_tail = pi->log_tail;
@@ -415,11 +415,11 @@ ssize_t nova_cow_file_write(struct file *filp,
 		/* don't zero-out the allocated blocks */
 		allocated = nova_new_data_blocks(sb, pi, &blocknr, num_blocks,
 						start_blk, 0, 1);
-		rdv_proc("%s: alloc %d blocks @ %lu\n", __func__,
+		rdv_proc("%s: alloc %d blocks @ %lu", __func__,
 						allocated, blocknr);
 
 		if (allocated <= 0) {
-			r_warning("%s alloc blocks failed %d\n", __func__,
+			r_warning("%s alloc blocks failed %d", __func__,
 								allocated);
 			ret = allocated;
 			goto out;
@@ -439,7 +439,7 @@ ssize_t nova_cow_file_write(struct file *filp,
 								kmem);
 
 		/* Now copy from user buf */
-//		nova_dbg("Write: %p\n", kmem);
+//		nova_dbg("Write: %p", kmem);
 		NOVA_START_TIMING(memcpy_w_nvmm_t, memcpy_time);
 		copied = bytes - memcpy_to_pmem_nocache(kmem + offset,
 						buf, bytes);
@@ -462,12 +462,12 @@ ssize_t nova_cow_file_write(struct file *filp,
 		curr_entry = nova_append_file_write_entry(sb, pi, inode,
 							&entry_data, temp_tail);
 		if (curr_entry == 0) {
-			rd_warning("%s: append inode entry failed\n", __func__);
+			rd_warning("%s: append inode entry failed", __func__);
 			ret = -ENOSPC;
 			goto out;
 		}
 
-		rd_info("Write: %p, %lu\n", kmem, copied);
+		rd_info("Write: %p, %lu", kmem, copied);
 		if (copied > 0) {
 			status = copied;
 			written += copied;
@@ -477,7 +477,7 @@ ssize_t nova_cow_file_write(struct file *filp,
 			num_blocks -= allocated;
 		}
 		if (unlikely(copied != bytes)) {
-			r_error("%s ERROR!: %p, bytes %lu, copied %lu\n",
+			r_error("%s ERROR!: %p, bytes %lu, copied %lu",
 				__func__, kmem, bytes, copied);
 			if (status >= 0)
 				status = -EFAULT;
@@ -509,7 +509,7 @@ ssize_t nova_cow_file_write(struct file *filp,
 
 	ret = written;
 	NOVA_STATS_ADD(write_breaks, step);
-	rd_info("blocks: %lu, %llu\n", inode->i_blocks, pi->i_blocks);
+	rd_info("blocks: %lu, %lu", inode->i_blocks, pi->i_blocks);
 
 	*ppos = pos;
 	if (pos > inode->i_size) {
@@ -519,7 +519,7 @@ ssize_t nova_cow_file_write(struct file *filp,
 
 out:
 	if (ret < 0) {
-		r_error("Unexpected!!\n");
+		r_error("Unexpected!!");
 		nova_cleanup_incomplete_write(sb, pi, sih, blocknr, allocated,
 						begin_tail, temp_tail);
 	}
@@ -538,6 +538,8 @@ ssize_t nova_dax_file_write(struct file *filp, const char *buf,
 {
 	return nova_cow_file_write(filp, buf, len, ppos, true);
 }
+
+#ifndef NOVA_CUT_OUT
 
 /*
  * return > 0, # of blocks mapped or allocated.
@@ -567,7 +569,7 @@ static int nova_dax_get_blocks(struct inode *inode, sector_t iblock,
 	if (max_blocks == 0)
 		return 0;
 
-	nova_dbgv("%s: pgoff %lu, num %lu, create %d\n",
+	nova_dbgv("%s: pgoff %lu, num %lu, create %d",
 				__func__, iblock, max_blocks, create);
 
 	entry = nova_get_write_entry(sb, si, iblock);
@@ -583,7 +585,7 @@ static int nova_dax_get_blocks(struct inode *inode, sector_t iblock,
 
 		nvmm = get_nvmm(sb, sih, entry, iblock);
 		clear_buffer_new(bh);
-		nova_dbgv("%s: pgoff %lu, block %lu\n", __func__, iblock, nvmm);
+		nova_dbgv("%s: pgoff %lu, block %lu", __func__, iblock, nvmm);
 		goto out;
 	}
 
@@ -614,7 +616,7 @@ static int nova_dax_get_blocks(struct inode *inode, sector_t iblock,
 	allocated = nova_new_data_blocks(sb, pi, &blocknr, num_blocks,
 						iblock, 1, 1);
 	if (allocated <= 0) {
-		nova_dbg("%s alloc blocks failed %d\n", __func__,
+		nova_dbg("%s alloc blocks failed %d", __func__,
 							allocated);
 		ret = allocated;
 		goto out;
@@ -636,7 +638,7 @@ static int nova_dax_get_blocks(struct inode *inode, sector_t iblock,
 	curr_entry = nova_append_file_write_entry(sb, pi, inode,
 						&entry_data, pi->log_tail);
 	if (curr_entry == 0) {
-		nova_dbg("%s: append inode entry failed\n", __func__);
+		nova_dbg("%s: append inode entry failed", __func__);
 		ret = -ENOSPC;
 		goto out;
 	}
@@ -689,6 +691,8 @@ int nova_dax_get_block(struct inode *inode, sector_t iblock,
 	return ret;
 }
 
+#endif
+
 #if 0
 static ssize_t nova_flush_mmap_to_nvmm(struct super_block *sb,
 	struct inode *inode, struct nova_inode *pi, loff_t pos,
@@ -715,9 +719,9 @@ static ssize_t nova_flush_mmap_to_nvmm(struct super_block *sb,
 
 		cache_addr = nova_get_cache_addr(sb, si, start_blk);
 		if (cache_addr == 0) {
-			nova_dbg("%s: ino %lu %lu mmap page %lu not found!\n",
+			nova_dbg("%s: ino %lu %lu mmap page %lu not found!",
 					__func__, inode->i_ino, sih->ino, start_blk);
-			nova_dbg("mmap pages %lu\n", sih->mmap_pages);
+			nova_dbg("mmap pages %lu", sih->mmap_pages);
 			ret = -EINVAL;
 			goto out;
 		}
@@ -735,7 +739,7 @@ static ssize_t nova_flush_mmap_to_nvmm(struct super_block *sb,
 			kmem += offset + copied;
 		}
 		if (unlikely(copied != bytes)) {
-			nova_dbg("%s ERROR!: %p, bytes %lu, copied %lu\n",
+			nova_dbg("%s ERROR!: %p, bytes %lu, copied %lu",
 				__func__, kmem, bytes, copied);
 			if (status >= 0)
 				status = -EFAULT;
@@ -780,7 +784,7 @@ ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 	inode->i_ctime = inode->i_mtime = CURRENT_TIME_SEC;
 	time = CURRENT_TIME_SEC.tv_sec;
 
-	nova_dbgv("%s: ino %lu, block %llu, offset %lu, count %lu\n",
+	nova_dbgv("%s: ino %lu, block %lu, offset %lu, count %lu",
 		__func__, inode->i_ino, pos >> sb->s_blocksize_bits,
 		(unsigned long)offset, count);
 
@@ -791,7 +795,7 @@ ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 		allocated = nova_new_data_blocks(sb, pi, &blocknr, num_blocks,
 						start_blk, 0, 0);
 		if (allocated <= 0) {
-			nova_dbg("%s alloc blocks failed %d\n", __func__,
+			nova_dbg("%s alloc blocks failed %d", __func__,
 								allocated);
 			ret = allocated;
 			goto out;
@@ -828,12 +832,12 @@ ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 		curr_entry = nova_append_file_write_entry(sb, pi, inode,
 						&entry_data, temp_tail);
 		if (curr_entry == 0) {
-			nova_dbg("%s: append inode entry failed\n", __func__);
+			nova_dbg("%s: append inode entry failed", __func__);
 			ret = -ENOSPC;
 			goto out;
 		}
 
-		nova_dbgv("Write: %p, %ld\n", kmem, copied);
+		nova_dbgv("Write: %p, %ld", kmem, copied);
 		if (copied > 0) {
 			status = copied;
 			written += copied;
@@ -842,7 +846,7 @@ ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 			num_blocks -= allocated;
 		}
 		if (unlikely(copied != bytes)) {
-			nova_dbg("%s ERROR!: %p, bytes %lu, copied %lu\n",
+			nova_dbg("%s ERROR!: %p, bytes %lu, copied %lu",
 				__func__, kmem, bytes, copied);
 			if (status >= 0)
 				status = -EFAULT;
@@ -900,7 +904,7 @@ static int nova_get_nvmm_pfn(struct super_block *sb, struct nova_inode *pi,
 						pgoff, 0, 1);
 
 		if (ret <= 0) {
-			nova_dbg("%s alloc blocks failed %d\n",
+			nova_dbg("%s alloc blocks failed %d",
 					__func__, ret);
 			return ret;
 		}
@@ -911,13 +915,13 @@ static int nova_get_nvmm_pfn(struct super_block *sb, struct nova_inode *pi,
 		if (vm_flags & VM_WRITE)
 			mmap_block |= MMAP_WRITE_BIT;
 
-		nova_dbgv("%s: inode %lu, pgoff %lu, mmap block 0x%llx\n",
+		nova_dbgv("%s: inode %lu, pgoff %lu, mmap block 0x%lx",
 			__func__, sih->ino, pgoff, mmap_block);
 
 		ret = radix_tree_insert(&sih->cache_tree, pgoff,
 					(void *)mmap_block);
 		if (ret) {
-			nova_dbg("%s: ERROR %d\n", __func__, ret);
+			nova_dbg("%s: ERROR %d", __func__, ret);
 			return ret;
 		}
 
@@ -983,7 +987,7 @@ static int __nova_dax_file_fault(struct vm_area_struct *vma,
 	size = (i_size_read(inode) + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	if (vmf->pgoff >= size) {
 		nova_dbg("[%s:%d] pgoff >= size(SIGBUS). vm_start(0x%lx),"
-			" vm_end(0x%lx), pgoff(0x%lx), VA(%lx), size 0x%lx\n",
+			" vm_end(0x%lx), pgoff(0x%lx), VA(%lx), size 0x%lx",
 			__func__, __LINE__, vma->vm_start, vma->vm_end,
 			vmf->pgoff, (unsigned long)vmf->virtual_address, size);
 		goto out;
@@ -993,18 +997,18 @@ static int __nova_dax_file_fault(struct vm_area_struct *vma,
 						&dax_mem, &dax_pfn);
 	if (unlikely(err)) {
 		nova_dbg("[%s:%d] get_mmap_addr failed. vm_start(0x%lx),"
-			" vm_end(0x%lx), pgoff(0x%lx), VA(%lx)\n",
+			" vm_end(0x%lx), pgoff(0x%lx), VA(%lx)",
 			__func__, __LINE__, vma->vm_start, vma->vm_end,
 			vmf->pgoff, (unsigned long)vmf->virtual_address);
 		goto out;
 	}
 
-	nova_dbgv("%s flags: vma 0x%lx, vmf 0x%x\n",
+	nova_dbgv("%s flags: vma 0x%lx, vmf 0x%x",
 			__func__, vma->vm_flags, vmf->flags);
 
 	nova_dbgv("DAX mmap: inode %lu, vm_start(0x%lx), vm_end(0x%lx), "
 			"pgoff(0x%lx), vma pgoff(0x%lx), "
-			"VA(0x%lx)->PA(0x%lx)\n",
+			"VA(0x%lx)->PA(0x%lx)",
 			inode->i_ino, vma->vm_start, vma->vm_end, vmf->pgoff,
 			vma->vm_pgoff, (unsigned long)vmf->virtual_address,
 			(unsigned long)dax_pfn << PAGE_SHIFT);
@@ -1046,6 +1050,8 @@ static int nova_dax_file_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	return ret;
 }
 #endif
+
+#ifndef NOVA_CUT_OUT
 
 static int nova_dax_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
@@ -1118,9 +1124,11 @@ int nova_dax_file_mmap(struct file *file, struct vm_area_struct *vma)
 	vma->vm_ops = &nova_dax_vm_ops;
 	nova_dbg_mmap4k("[%s:%d] MMAP 4KPAGE vm_start(0x%lx),"
 			" vm_end(0x%lx), vm_flags(0x%lx), "
-			"vm_page_prot(0x%lx)\n", __func__,
+			"vm_page_prot(0x%lx)", __func__,
 			__LINE__, vma->vm_start, vma->vm_end,
 			vma->vm_flags, pgprot_val(vma->vm_page_prot));
 
 	return 0;
 }
+
+#endif

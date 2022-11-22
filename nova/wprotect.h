@@ -35,7 +35,7 @@ static inline void nova_sync_super(struct nova_super_block *ps)
 {
 	u16 crc = 0;
 
-	r_error("%s should not run.\n", __func__);
+	// r_error("%s should not run.\n", __func__);
 	// ps->s_wtime = cpu_to_le32(get_seconds());
 	ps->s_wtime = cpu_to_le32(0);
 	ps->s_sum = 0;
