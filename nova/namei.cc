@@ -449,53 +449,54 @@ void nova_apply_link_change_entry(struct nova_inode *pi,
 // 	return err;
 // }
 
-// static int nova_unlink(struct inode *dir, struct dentry *dentry)
-// {
-// 	struct inode *inode = dentry->d_inode;
-// 	struct super_block *sb = dir->i_sb;
-// 	int retval = -ENOMEM;
-// 	struct nova_inode *pi = nova_get_inode(sb, inode);
-// 	struct nova_inode *pidir;
-// 	u64 pidir_tail = 0, pi_tail = 0;
-// 	int invalidate = 0;
-// 	timing_t unlink_time;
+// 删除文件
+static int nova_unlink(struct inode *dir, struct dentry *dentry)
+{
+	struct inode *inode = dentry->d_inode;
+	struct super_block *sb = dir->i_sb;
+	int retval = -ENOMEM;
+	struct nova_inode *pi = nova_get_inode(sb, inode);
+	struct nova_inode *pidir;
+	u64 pidir_tail = 0, pi_tail = 0;
+	int invalidate = 0;
+	timing_t unlink_time;
 
-// 	NOVA_START_TIMING(unlink_t, unlink_time);
+	NOVA_START_TIMING(unlink_t, unlink_time);
 
-// 	pidir = nova_get_inode(sb, dir);
-// 	if (!pidir)
-// 		goto out;
+	pidir = nova_get_inode(sb, dir);
+	if (!pidir)
+		goto out;
 
-// 	nova_dbgv("%s: %s", __func__, dentry->d_name.name);
-// 	nova_dbgv("%s: inode %lu, dir %lu", __func__,
-// 				inode->i_ino, dir->i_ino);
-// 	retval = nova_remove_dentry(dentry, 0, 0, &pidir_tail);
-// 	if (retval)
-// 		goto out;
+	rd_info("%s: %s", __func__, dentry->d_name.name);
+	rd_info("%s: inode %lu, dir %lu", __func__,
+				inode->i_ino, dir->i_ino);
+	retval = nova_remove_dentry(dentry, 0, 0, &pidir_tail);
+	if (retval)
+		goto out;
 
-// 	inode->i_ctime = dir->i_ctime;
+	inode->i_ctime = dir->i_ctime;
 
-// 	if (inode->i_nlink == 1)
-// 		invalidate = 1;
+	if (inode->i_nlink == 1)
+		invalidate = 1;
 
-// 	if (inode->i_nlink) {
-// 		drop_nlink(inode);
-// 	}
+	if (inode->i_nlink) {
+		drop_nlink(inode);
+	}
 
-// 	retval = nova_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
-// 	if (retval)
-// 		goto out;
+	retval = nova_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
+	if (retval)
+		goto out;
 
-// 	nova_lite_transaction_for_time_and_link(sb, pi, pidir,
-// 					pi_tail, pidir_tail, invalidate);
+	nova_lite_transaction_for_time_and_link(sb, pi, pidir,
+					pi_tail, pidir_tail, invalidate);
 
-// 	NOVA_END_TIMING(unlink_t, unlink_time);
-// 	return 0;
-// out:
-// 	nova_err(sb, "%s return %d", __func__, retval);
-// 	NOVA_END_TIMING(unlink_t, unlink_time);
-// 	return retval;
-// }
+	NOVA_END_TIMING(unlink_t, unlink_time);
+	return 0;
+out:
+	r_error("%s return %d", __func__, retval);
+	NOVA_END_TIMING(unlink_t, unlink_time);
+	return retval;
+}
 
 static int nova_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 {
@@ -884,7 +885,7 @@ const struct inode_operations nova_dir_inode_operations = {
 	.create		= nova_create,
 	.lookup		= nova_lookup,
 	// .link		= nova_link,
-	// .unlink		= nova_unlink,
+	.unlink		= nova_unlink,
 	// .symlink	= nova_symlink,
 	.mkdir		= nova_mkdir,
 	.rmdir		= nova_rmdir,

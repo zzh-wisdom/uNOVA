@@ -150,6 +150,76 @@
 #define S_IXOTH 00001
 
 #define pgoff_t unsigned long
+typedef unsigned __bitwise fmode_t;
+
+#define __O_SYNC	04000000
+
+#define VALID_OPEN_FLAGS \
+	(O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC | \
+	 O_APPEND | O_NDELAY | O_NONBLOCK | O_NDELAY | __O_SYNC | O_DSYNC | \
+	 FASYNC	| O_DIRECT | O_LARGEFILE | O_DIRECTORY | O_NOFOLLOW | \
+	 O_NOATIME | O_CLOEXEC | O_PATH | __O_TMPFILE)
+
+#define S_IRWXUGO	(S_IRWXU|S_IRWXG|S_IRWXO)
+#define S_IALLUGO	(S_ISUID|S_ISGID|S_ISVTX|S_IRWXUGO)
+#define S_IRUGO		(S_IRUSR|S_IRGRP|S_IROTH)
+#define S_IWUGO		(S_IWUSR|S_IWGRP|S_IWOTH)
+#define S_IXUGO		(S_IXUSR|S_IXGRP|S_IXOTH)
+
+#define MAY_EXEC		0x00000001
+#define MAY_WRITE		0x00000002
+#define MAY_READ		0x00000004
+#define MAY_APPEND		0x00000008
+#define MAY_ACCESS		0x00000010
+#define MAY_OPEN		0x00000020
+#define MAY_CHDIR		0x00000040
+/* called from RCU mode, don't block */
+#define MAY_NOT_BLOCK		0x00000080
+
+#define FMODE_NONOTIFY		(0x4000000)
+#define O_TMPFILE_MASK (__O_TMPFILE | O_DIRECTORY | O_CREAT)
+
+#define LOOKUP_FOLLOW		0x0001
+#define LOOKUP_DIRECTORY	0x0002
+#define LOOKUP_AUTOMOUNT	0x0004
+
+#define LOOKUP_PARENT		0x0010
+#define LOOKUP_REVAL		0x0020
+#define LOOKUP_RCU		0x0040
+#define LOOKUP_NO_REVAL		0x0080
+/*
+ * Intent data
+ */
+#define LOOKUP_OPEN		0x0100
+#define LOOKUP_CREATE		0x0200
+#define LOOKUP_EXCL		0x0400
+#define LOOKUP_RENAME_TARGET	0x0800
+
+#define __FMODE_NONOTIFY	((int) FMODE_NONOTIFY)
+
+#define ACC_MODE(x) ("\004\002\006\006"[(x)&O_ACCMODE])
+#define OPEN_FMODE(flag) ((fmode_t)(((flag + 1) & O_ACCMODE) | \
+					    (flag & __FMODE_NONOTIFY)))
+
+// 假的cache，直接使用glic分配
+struct kmem_cache {
+    int slab_size;
+    int align;
+};
+
+static force_inline struct kmem_cache *kmem_cache_create(int slab_size, int align) {
+    struct kmem_cache *cache = (struct kmem_cache *)MALLOC(sizeof(struct kmem_cache));
+    if (cache == nullptr) return nullptr;
+    cache->slab_size = slab_size;
+    cache->align = align;
+    return cache;
+}
+
+inline void kmem_cache_destroy(struct kmem_cache *cache) { FREE(cache); }
+
+inline void *kmem_cache_alloc(struct kmem_cache *cache) { return MALLOC(cache->slab_size); }
+
+inline void kmem_cache_free(struct kmem_cache *cache, void *node) { FREE(node); }
 
 struct super_block;
 struct file_operations;
@@ -211,9 +281,6 @@ struct super_block {
     // 读写锁，保护inode释放读。访问：加读锁，inode引用加一，解读锁
     spinlock_t s_ino_2_inode_lock;
     std::unordered_map<unsigned long, inode *> s_ino_2_inode;
-    spinlock_t s_fd_2_inode_lock;
-    std::unordered_map<unsigned long, inode *> s_fd_2_inode;
-    atomic_t s_fd_seq = 1000;
     struct dentry *s_root;  // 需要释放
 
     unsigned char s_blocksize_bits;
@@ -260,11 +327,15 @@ struct address_space {
 };
 
 struct file {
+
+    int f_fd;
+
     // union {
     // 	struct llist_node	fu_llist;
     // 	struct rcu_head 	fu_rcuhead;
     // } f_u;
-    struct path f_path;
+    // struct path f_path;
+    struct dentry *f_dentry;
     struct inode *f_inode; /* cached value */
     const struct file_operations *f_op;
 
@@ -276,21 +347,31 @@ struct file {
     // enum rw_hint		f_write_hint;
     // atomic_long_t		f_count;
     unsigned int f_flags;
-    // fmode_t			f_mode;
+    fmode_t			f_mode;
     // struct mutex		f_pos_lock;
-    // loff_t			f_pos;
+    loff_t			f_pos;
     // struct fown_struct	f_owner;
     // const struct cred	*f_cred;
     // struct file_ra_state	f_ra;
 
-    u64 f_version;
+    // u64 f_version;
 
     /* needed for tty driver, and maybe others */
-    void *private_data;
+    // void *private_data;
 
-    struct address_space *f_mapping;
+    // struct address_space *f_mapping;
     // errseq_t		f_wb_err;
 };
+
+static force_inline loff_t file_pos_read(struct file *file)
+{
+	return file->f_pos;
+}
+
+static force_inline void file_pos_write(struct file *file, loff_t pos)
+{
+	file->f_pos = pos;
+}
 
 /* legacy typedef, should eventually be removed */
 typedef void *fl_owner_t;
@@ -356,7 +437,6 @@ struct inode {
     unsigned long i_ino;  // ino号，nova内部产生的
 
     u32 i_generation;
-    int fd;
     // 保护下面两个初始化状态
     spinlock_t i_lock; /* i_state  */
     // unsigned short i_bytes;
@@ -412,14 +492,8 @@ struct super_block *alloc_super(const std::string &dev_name, pmem2_map *pmap,
                                 const std::string &root_path);
 void destroy_super(struct super_block *sb);
 
-force_inline static int sb_get_fd(struct super_block *sb) {
-    return atomic_fetch_add(&sb->s_fd_seq, 1);
-}
-
 force_inline static bool inode_insert(struct super_block *sb, struct inode *inode) {
     bool ret = false;
-    int fd = sb_get_fd(sb);  // 会有浪费，先不管
-    assert(inode->fd == 0);
 
     spin_lock(&sb->s_ino_2_inode_lock);
     auto it = sb->s_ino_2_inode.find(inode->i_ino);
@@ -430,18 +504,6 @@ force_inline static bool inode_insert(struct super_block *sb, struct inode *inod
     }
     spin_unlock(&sb->s_ino_2_inode_lock);
 
-    if (!ret) return ret;
-
-    inode_ref(inode);
-    spin_lock(&sb->s_fd_2_inode_lock);
-    inode->fd = fd;
-#ifndef NDEBUG
-    auto it_fd = sb->s_fd_2_inode.find(inode->fd);
-    assert(it_fd == sb->s_fd_2_inode.end());
-#endif
-    sb->s_fd_2_inode[inode->fd] = inode;
-    spin_unlock(&sb->s_fd_2_inode_lock);
-
     return ret;
 }
 
@@ -451,12 +513,6 @@ force_inline static void inode_delete_from_sb(struct super_block *sb, struct ino
     ret = sb->s_ino_2_inode.erase(inode->i_ino);
     dlog_assert(ret == 1);
     spin_unlock(&sb->s_ino_2_inode_lock);
-    inode_unref(inode);
-
-    spin_lock(&sb->s_fd_2_inode_lock);
-    ret = sb->s_fd_2_inode.erase(inode->fd);
-    dlog_assert(ret == 1);
-    spin_unlock(&sb->s_fd_2_inode_lock);
     inode_unref(inode);
 }
 
@@ -640,7 +696,7 @@ static force_inline bool is_dir(struct dentry *parent) {
         return true;
     }
     if(S_ISREG(parent->d_inode->i_mode)) {
-        return true;
+        return false;
     }
     log_assert(0);
 }
@@ -655,6 +711,7 @@ static inline struct external_name *external_name(struct dentry *dentry) {
 
 // 返回修改后的引用计数
 static force_inline int dentry_ref(struct dentry *dentry) {
+    // printf("%s count: %d, name: %s\n", __func__, dentry->d_count + 1, dentry->d_name.name);
     return atomic_add_fetch(&dentry->d_count, 1);
 }
 
@@ -889,20 +946,6 @@ static force_inline void d_instantiate(struct dentry *dentry, struct inode *inod
     inode->i_dentry = dentry;
 }
 
-// 假的cache，直接使用glic分配
-struct kmem_cache {
-    int slab_size;
-    int align;
-};
-
-inline struct kmem_cache *kmem_cache_create(int slab_size, int align) {
-    struct kmem_cache *cache = (struct kmem_cache *)MALLOC(sizeof(struct kmem_cache));
-    if (cache == nullptr) return nullptr;
-    cache->slab_size = slab_size;
-    cache->align = align;
-    return cache;
-}
-
 // 返回的dentry已经被引用
 static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool create, bool lock) {
     if (strncmp(qs.name, ".", 1) == 0) {
@@ -933,13 +976,52 @@ static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool cre
     return child;
 }
 
-inline void kmem_cache_destroy(struct kmem_cache *cache) { FREE(cache); }
+struct open_flags {
+	int open_flag;
+	umode_t mode;
+	int acc_mode;
+	int intent;
+	int lookup_flags;
+};
 
-inline void *kmem_cache_alloc(struct kmem_cache *cache) { return MALLOC(cache->slab_size); }
+#define CFG_MAX_CPU_NUM 64
+#define CFG_START_FD 1000
 
-inline void kmem_cache_free(struct kmem_cache *cache, void *node) { FREE(node); }
+struct vfs_cfg {
+    int numa_socket;
+    int cpu_num;
+    int cpu_ids[CFG_MAX_CPU_NUM];
+    int bg_thread_cpu_id;
+    int measure_timing;
+    int start_fd;
+	bool format;
+};
 
-void vfs_init();
+void vfs_cfg_print(struct vfs_cfg* cfg);
+static force_inline void vfs_cfg_default_init(struct vfs_cfg* cfg) {
+	cfg->numa_socket = 1;
+	cfg->cpu_num = 0;
+	for(int i = 20; i < 40; ++i) {
+		cfg->cpu_ids[cfg->cpu_num++] = i;
+	}
+	for(int i = 60; i < 72; ++i) {
+		cfg->cpu_ids[cfg->cpu_num++] = i;
+	}
+	cfg->bg_thread_cpu_id = 79;
+	cfg->measure_timing = 0;
+	cfg->start_fd = CFG_START_FD;
+	cfg->format = true;
+}
+
+void vfs_init(vfs_cfg* cfg);
+void vfs_destroy_file();
 void vfs_destroy();
+
+int do_open(dentry* parent, qstr name, struct open_flags* op);
+int do_close(int fd);
+ssize_t do_read(int fd, char* buf, size_t count);
+ssize_t do_write(int fd, const char* buf, size_t count);
+loff_t generic_file_llseek(struct file *file, loff_t offset, int whence);
+off_t do_lseek(int fd, off_t offset, int whence);
 
 #endif

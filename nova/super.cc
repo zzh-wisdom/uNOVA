@@ -426,7 +426,7 @@ static struct inode *nova_alloc_inode(struct super_block *sb) {
 }
 
 static void nova_destroy_inode(struct inode *inode) {
-    rdv_proc("%s: %lu\n", __func__, inode->i_ino);
+    rdv_proc("%s: %lu", __func__, inode->i_ino);
     // call_rcu(&inode->i_rcu, nova_i_callback);
     struct nova_inode_info *vi = NOVA_I(inode);
     kmem_cache_free(nova_inode_cachep, vi);

@@ -62,50 +62,48 @@ static inline int nova_can_set_blocksize_hint(struct inode *inode,
 // 	return 0;
 // }
 
-#ifndef NOVA_CUT_OUT
-
 static loff_t nova_llseek(struct file *file, loff_t offset, int origin)
 {
-	struct inode *inode = file->f_path.dentry->d_inode;
+	// struct inode *inode = file->f_path.dentry->d_inode;
+	struct inode *inode = file->f_inode;
 	int retval;
 
 	if (origin != SEEK_DATA && origin != SEEK_HOLE)
 		return generic_file_llseek(file, offset, origin);
 
-	mutex_lock(&inode->i_mutex);
-	switch (origin) {
-	case SEEK_DATA:
-		retval = nova_find_region(inode, &offset, 0);
-		if (retval) {
-			mutex_unlock(&inode->i_mutex);
-			return retval;
-		}
-		break;
-	case SEEK_HOLE:
-		retval = nova_find_region(inode, &offset, 1);
-		if (retval) {
-			mutex_unlock(&inode->i_mutex);
-			return retval;
-		}
-		break;
-	}
+	r_fatal("NOT SUPPORT! SEEK_DATA and SEEK_HOLE");
+	// mutex_lock(&inode->i_mutex);
+	// switch (origin) {
+	// case SEEK_DATA:
+	// 	retval = nova_find_region(inode, &offset, 0);
+	// 	if (retval) {
+	// 		mutex_unlock(&inode->i_mutex);
+	// 		return retval;
+	// 	}
+	// 	break;
+	// case SEEK_HOLE:
+	// 	retval = nova_find_region(inode, &offset, 1);
+	// 	if (retval) {
+	// 		mutex_unlock(&inode->i_mutex);
+	// 		return retval;
+	// 	}
+	// 	break;
+	// }
 
-	if ((offset < 0 && !(file->f_mode & FMODE_UNSIGNED_OFFSET)) ||
-	    offset > inode->i_sb->s_maxbytes) {
-		mutex_unlock(&inode->i_mutex);
-		return -EINVAL;
-	}
+	// if ((offset < 0 && !(file->f_mode & FMODE_UNSIGNED_OFFSET)) ||
+	//     offset > inode->i_sb->s_maxbytes) {
+	// 	mutex_unlock(&inode->i_mutex);
+	// 	return -EINVAL;
+	// }
 
-	if (offset != file->f_pos) {
-		file->f_pos = offset;
-		file->f_version = 0;
-	}
+	// if (offset != file->f_pos) {
+	// 	file->f_pos = offset;
+	// 	// file->f_version = 0;
+	// }
 
-	mutex_unlock(&inode->i_mutex);
+	// mutex_unlock(&inode->i_mutex);
 	return offset;
 }
-
-#endif
 
 #if 0
 static inline int nova_check_page_dirty(struct super_block *sb,
@@ -384,21 +382,21 @@ static int nova_flush(struct file *file, fl_owner_t id)
 	return 0;
 }
 
-static int nova_open(struct inode *inode, struct file *filp)
-{
-	return generic_file_open(inode, filp);
-}
+// static int nova_open(struct inode *inode, struct file *filp)
+// {
+// 	return generic_file_open(inode, filp);
+// }
 
 const struct file_operations nova_dax_file_operations = {
 // #ifndef NOVA_CUT_OUT
-// 	.llseek			= nova_llseek,
+	.llseek			= nova_llseek,
 // #endif
 	.read			= nova_dax_file_read,
 	.write			= nova_dax_file_write,
 	// .read_iter		= generic_file_read_iter,
 	// .write_iter		= generic_file_write_iter,
 	// .mmap			= nova_dax_file_mmap,
-	.open			= nova_open,
+	// .open			= nova_open,
 	.flush			= nova_flush,
 	.fsync			= nova_fsync,  // 主要对mmap有用，不过我们目前已经将mmap去掉了
 	// .unlocked_ioctl		= nova_ioctl,

@@ -2,6 +2,7 @@
 #define UNOVA_NOVA_COM_H_
 
 #include <stdint.h>
+#include <sys/stat.h>
 
 #include "util/common.h"
 #include "util/mem.h"
@@ -18,19 +19,19 @@ typedef uint64_t u64;
  * any application/library that wants linux/types.h.
  */
 
-#ifdef __CHECKER__
-#define __bitwise__ __attribute__((bitwise))
-#else
-#define __bitwise__
-#endif
-#define __bitwise __bitwise__
+// #ifdef __CHECKER__
+// #define __bitwise__ __attribute__((bitwise))
+// #else
+// #define __bitwise__
+// #endif
+// #define __bitwise __bitwise__
 
-typedef u16 __bitwise __le16;
-typedef u16 __bitwise __be16;
-typedef u32 __bitwise __le32;
-typedef u32 __bitwise __be32;
-typedef u64 __bitwise __le64;
-typedef u64 __bitwise __be64;
+// typedef u16 __bitwise __le16;
+// typedef u16 __bitwise __be16;
+// typedef u32 __bitwise __le32;
+// typedef u32 __bitwise __be32;
+// typedef u64 __bitwise __le64;
+// typedef u64 __bitwise __be64;
 
 typedef u64 kuid_t;
 typedef u64 kgid_t;

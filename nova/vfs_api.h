@@ -5,35 +5,6 @@
 
 #include "util/aep.h"
 
-#define CFG_MAX_CPU_NUM 64
-#define CFG_START_FD 1000
-
-struct vfs_cfg {
-    int numa_socket;
-    int cpu_num;
-    int cpu_ids[CFG_MAX_CPU_NUM];
-    int bg_thread_cpu_id;
-    int measure_timing;
-    int start_fd;
-	bool format;
-};
-
-void vfs_cfg_print(struct vfs_cfg* cfg);
-static force_inline void vfs_cfg_default_init(struct vfs_cfg* cfg) {
-	cfg->numa_socket = 1;
-	cfg->cpu_num = 0;
-	for(int i = 20; i < 40; ++i) {
-		cfg->cpu_ids[cfg->cpu_num++] = i;
-	}
-	for(int i = 60; i < 72; ++i) {
-		cfg->cpu_ids[cfg->cpu_num++] = i;
-	}
-	cfg->bg_thread_cpu_id = 79;
-	cfg->measure_timing = 0;
-	cfg->start_fd = CFG_START_FD;
-	cfg->format = true;
-}
-
 /**
  *
  * @brief 初始化一个文件
@@ -53,7 +24,23 @@ int fs_unmount(struct super_block** sb);
 // 0创建成功，-1创建失败
 int vfs_mkdir(const char* pathname, umode_t mode);
 int vfs_ls(const char* pathname);
-int vfs_rmdir( const char *dirname);
+int vfs_rmdir(const char *dirname);
+int vfs_open(const char* filename, int flags, umode_t mode);
+int vfs_close(int fd);
+int vfs_unlink(const char *pathname);
 
+// SYSCALL_DEFINE3(read
+static force_inline ssize_t vfs_read(int fd, char* buf, size_t count) {
+    return do_read(fd, buf, count);
+}
+
+// SYSCALL_DEFINE3(write
+static force_inline ssize_t vfs_write(int fd, const char* buf, size_t count) {
+    return do_write(fd, buf, count);
+}
+
+static force_inline off_t vfs_lseek(int fd, off_t offset, int whence) {
+    return do_lseek(fd, offset, whence);
+}
 
 #endif

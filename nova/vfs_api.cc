@@ -90,7 +90,7 @@ int fs_mount(struct super_block **sb, const std::string &dev_name, const std::st
     vfs_cfg_print(cfg);
 
     // 抽象层初始化
-    vfs_init();
+    vfs_init(cfg);
 
     // 创建pmem2 map
     struct pmem2_map *pmap = Pmem2Map(dev_name);
@@ -128,6 +128,7 @@ int fs_unmount(struct super_block **sb) {
     rd_info("fs_unmount: %s\n", s->root_path.c_str());
     s->s_op->put_super(s);
     pmem2_map *pmap = s->pmap;
+    vfs_destroy_file();
     destroy_super(s);
     Pmem2UnMap(&s->pmap);
     vfs_destroy();
@@ -292,6 +293,7 @@ int vfs_mkdir(const char* pathname, umode_t mode) {
     }
     int ret = 0;
     struct inode *dir = parent->d_inode;
+    inode_lock(dir);
     struct dentry* new_d = get_dentry_by_hash(parent, last, true, true);
     log_assert(new_d);
     if(new_d->d_inode) {
@@ -306,6 +308,7 @@ int vfs_mkdir(const char* pathname, umode_t mode) {
     }
 
 out:
+    inode_unlock(dir);
     dentry_unref(parent);
     dentry_unref(new_d);
     return ret;
@@ -328,7 +331,7 @@ int vfs_ls(const char* pathname) {
 }
 
 // SYSCALL_DEFINE1(rmdir
-int vfs_rmdir( const char *dirname) {
+int vfs_rmdir(const char *dirname) {
     rd_info("%s: %s", __func__, dirname);
     int name_start = pathname_deal_root_prefix(dirname);
     if(name_start < 0) return -1;
@@ -359,6 +362,163 @@ int vfs_rmdir( const char *dirname) {
     inode_lock(child->d_inode);
     if(dir->i_op->rmdir(dir, child)) {
         r_error("%s %s fail, maybe has childs.", __func__, dirname);
+        ret = -1;
+    }
+    inode_unlock(child->d_inode);
+    dentry_unref(child);
+    if(!ret) {
+        d_delete(child);
+    }
+out:
+    inode_unlock(dir);
+    dentry_unref(parent);
+    return ret;
+}
+
+static inline int build_open_flags(int flags, umode_t mode, struct open_flags *op)
+{
+	int lookup_flags = 0;
+	int acc_mode = ACC_MODE(flags);
+
+	/*
+	 * Clear out all open flags we don't know about so that we don't report
+	 * them in fcntl(F_GETFD) or similar interfaces.
+	 */
+	flags &= VALID_OPEN_FLAGS;
+
+	if (flags & (O_CREAT | __O_TMPFILE))
+		op->mode = (mode & S_IALLUGO) | S_IFREG;
+	else
+		op->mode = 0;
+
+	/* Must never be set by userspace */
+	flags &= ~FMODE_NONOTIFY & ~O_CLOEXEC;
+
+	/*
+	 * O_SYNC is implemented as __O_SYNC|O_DSYNC.  As many places only
+	 * check for O_DSYNC if the need any syncing at all we enforce it's
+	 * always set instead of having to deal with possibly weird behaviour
+	 * for malicious applications setting only __O_SYNC.
+	 */
+	if (flags & __O_SYNC)
+		flags |= O_DSYNC;
+
+	if (flags & __O_TMPFILE) {
+        log_assert(0);
+		if ((flags & O_TMPFILE_MASK) != O_TMPFILE)
+			return -EINVAL;
+		if (!(acc_mode & MAY_WRITE))
+			return -EINVAL;
+	} else if (flags & O_PATH) {
+		/*
+		 * If we have O_PATH in the open flag. Then we
+		 * cannot have anything other than the below set of flags
+		 */
+		flags &= O_DIRECTORY | O_NOFOLLOW | O_PATH;
+		acc_mode = 0;
+	}
+
+	op->open_flag = flags;
+
+	/* O_TRUNC implies we need access checks for write permissions */
+	if (flags & O_TRUNC)
+		acc_mode |= MAY_WRITE;
+
+	/* Allow the LSM permission hook to distinguish append
+	   access from general write access. */
+	if (flags & O_APPEND)
+		acc_mode |= MAY_APPEND;
+
+	op->acc_mode = acc_mode;
+
+	op->intent = flags & O_PATH ? 0 : LOOKUP_OPEN;
+
+	if (flags & O_CREAT) {
+		op->intent |= LOOKUP_CREATE;
+		if (flags & O_EXCL)
+			op->intent |= LOOKUP_EXCL;
+	}
+
+	if (flags & O_DIRECTORY)
+		lookup_flags |= LOOKUP_DIRECTORY;
+	if (!(flags & O_NOFOLLOW))
+		lookup_flags |= LOOKUP_FOLLOW;
+	op->lookup_flags = lookup_flags;
+	return 0;
+}
+
+// SYSCALL_DEFINE3(open
+int vfs_open(const char* filename, int flags, umode_t mode) {
+    rd_info("%s: %s", __func__, filename);
+    log_assert((flags & O_TRUNC) == 0); // 不支持
+    struct open_flags op;
+	int fd = build_open_flags(flags, mode, &op);
+    if (fd) // 出错
+		return fd;
+
+    int name_start = pathname_deal_root_prefix(filename);
+    if(name_start < 0) return -1;
+    std::string root_path(filename, name_start-1);
+    super_block* sb = get_mounted_fs(root_path);
+    log_assert(sb);
+    qstr last;
+    dentry* parent = get_parent_entry(sb->s_root, filename+name_start, &last);
+    if(parent == nullptr) {
+        r_error("%s fail, parent dir %s not exist.", __func__, filename+name_start);
+        return -1;
+    }
+    fd = -1;
+    if(!is_dir(parent)) {
+        r_error("%s fail, %s is not dir.", __func__, parent->d_name.name);
+        goto out;
+    }
+    // 参考 path_openat
+    fd = do_open(parent, last, &op);
+
+out:
+    dentry_unref(parent);
+    return fd;
+}
+
+int vfs_close(int fd) {
+    return do_close(fd);
+}
+
+// SYSCALL_DEFINE1(unlink
+int vfs_unlink(const char *pathname) {
+    rd_info("%s: %s", __func__, pathname);
+    int name_start = pathname_deal_root_prefix(pathname);
+    if(name_start < 0) return -1;
+    std::string root_path(pathname, name_start-1);
+    super_block* sb = get_mounted_fs(root_path);
+    log_assert(sb);
+    qstr last;
+    dentry* parent = get_parent_entry(sb->s_root, pathname+name_start, &last);
+    if(parent == nullptr) {
+        r_error("%s fail, parent dir %s not exist.", __func__, pathname+name_start);
+        return -1;
+    }
+    struct inode *dir = parent->d_inode;
+    inode_lock(dir);
+    int ret = 0;
+    struct dentry* child = get_dentry_by_hash(parent, last, false, false);
+    if(child == nullptr) {
+        r_error("%s fail, file %s not exist.", __func__, pathname + name_start);
+        ret = -1;
+        goto out;
+    }
+    dlog_assert(child->d_inode);
+    if(is_dir(child)) {
+        r_error("%s %s fail, is a dir.", __func__, pathname);
+        dentry_unref(child);
+        ret = -1;
+        goto out;
+    }
+    rd_info("%s: parent %s, child %s", __func__, parent->d_name.name, child->d_name.name);
+
+    inode_lock(child->d_inode);
+    if(dir->i_op->unlink(dir, child)) {
+        r_error("%s %s fail, unexpected.", __func__, pathname);
         ret = -1;
     }
     inode_unlock(child->d_inode);

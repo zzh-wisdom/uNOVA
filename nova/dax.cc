@@ -24,7 +24,8 @@ static ssize_t
 do_dax_mapping_read(struct file *filp, char *buf,
 	size_t len, loff_t *ppos)
 {
-	struct inode *inode = filp->f_mapping->host;
+	// struct inode *inode = filp->f_mapping->host;
+	struct inode *inode = filp->f_inode;
 	struct super_block *sb = inode->i_sb;
 	struct nova_inode_info *si = NOVA_I(inode);
 	struct nova_inode_info_header *sih = &si->header;
@@ -335,8 +336,9 @@ static int nova_cleanup_incomplete_write(struct super_block *sb,
 ssize_t nova_cow_file_write(struct file *filp,
 	const char *buf, size_t len, loff_t *ppos, bool need_mutex)
 {
-	struct address_space *mapping = filp->f_mapping;
-	struct inode    *inode = mapping->host;
+	// struct address_space *mapping = filp->f_mapping;
+	// struct inode    *inode = mapping->host;
+	struct inode    *inode = filp->f_inode;
 	struct nova_inode_info *si = NOVA_I(inode);
 	struct nova_inode_info_header *sih = &si->header;
 	struct super_block *sb = inode->i_sb;

@@ -10,20 +10,138 @@ const struct qstr empty_name = QSTR_INIT("", 0);
 const struct qstr slash_name = QSTR_INIT("/", 1);
 
 static struct kmem_cache *dentry_cache;
+struct kmem_cache *file_cache;
 
-int init_dentry_cache(void) {
+static force_inline int init_dentry_cache(void) {
     r_warning("TODO: 优化 kmem_cache");
     dentry_cache = kmem_cache_create(sizeof(struct dentry), sizeof(struct dentry));
     if (dentry_cache == NULL) return -ENOMEM;
     return 0;
 }
 
-void destroy_dentry_cache(void) {
+static force_inline void destroy_dentry_cache(void) {
     r_warning("TODO: 优化 kmem_cache");
     kmem_cache_destroy(dentry_cache);
 }
 
+static force_inline int init_file_cache(void) {
+    file_cache = kmem_cache_create(sizeof(struct file), sizeof(struct file));
+    if (file_cache == NULL) return -ENOMEM;
+    return 0;
+}
+
+static force_inline void destroy_file_cache(void) { kmem_cache_destroy(file_cache); }
+
+static force_inline file *file_alloc(int fd, int flags, dentry *dentry) {
+    file *f = (struct file *)kmem_cache_alloc(file_cache);
+    f->f_fd = fd;
+    f->f_inode = dentry->d_inode;
+    inode_ref(dentry->d_inode);
+    f->f_dentry = dentry;
+    dentry_ref(dentry);
+    f->f_pos = 0;
+    if (flags & O_APPEND) {
+        f->f_pos = dentry->d_inode->i_size;
+    }
+    f->f_op = dentry->d_inode->i_fop;
+    spin_lock_init(&f->f_lock);
+    f->f_flags = flags;
+    f->f_mode = OPEN_FMODE(flags);
+    return f;
+}
+static force_inline void file_free(struct file *file) {
+    if (file->f_inode) {
+        inode_unref(file->f_inode);
+    }
+    if (file->f_dentry) {
+        dentry_unref(file->f_dentry);
+    }
+    kmem_cache_free(file_cache, file);
+}
+
 static int no_open(struct inode *inode, struct file *file) { return -ENXIO; }
+
+const int FG_FRA_BITS = 6;
+const int FG_FRAS = 1 << FG_FRA_BITS;
+const int FG_FRAS_MASK = FG_FRAS - 1;
+rwlock_t global_fd_2_file_rwlock[FG_FRAS];
+std::unordered_map<int, file *> global_fd_2_file[FG_FRAS];
+atomic_t global_fd_seq = 1000;
+
+void vfs_init(vfs_cfg *cfg) {
+    int ret = 0;
+    ret = init_dentry_cache();
+    assert(!ret);
+    ret = init_file_cache();
+    assert(!ret);
+    for (int i = 0; i < FG_FRAS; ++i) {
+        rwlock_init(&global_fd_2_file_rwlock[i]);
+    }
+    global_fd_seq = cfg->start_fd;
+}
+
+// 用户可能未close的一些文件
+void vfs_destroy_file() {
+    // spin_lock(&global_fd_2_file_lock);
+    for (int i = 0; i < FG_FRAS; ++i) {
+        auto &map = global_fd_2_file[i];
+        for (auto p : map) {
+            file *file = p.second;
+            r_warning("un close %s", file->f_dentry->d_name.name);
+            file_free(p.second);
+        }
+        map.clear();
+    }
+    // spin_unlock(&global_fd_2_file_lock);
+}
+void vfs_destroy() {
+    destroy_dentry_cache();
+    destroy_file_cache();
+}
+
+force_inline static int vfs_get_fd() { return atomic_fetch_add(&global_fd_seq, 1); }
+
+force_inline static bool vfs_file_insert(file *file) {
+    dlog_assert(file->f_fd);
+    dlog_assert(file->f_inode);
+    int ret = false;
+
+    int fra = file->f_fd & FG_FRAS_MASK;
+    write_lock(&global_fd_2_file_rwlock[fra]);
+    auto it = global_fd_2_file[fra].find(file->f_fd);
+    if (it == global_fd_2_file[fra].end()) {
+        global_fd_2_file[fra][file->f_fd] = file;
+        ret = true;
+    }
+    write_unlock(&global_fd_2_file_rwlock[fra]);
+
+    return ret;
+}
+
+force_inline static file *vfs_file_delete(int fd) {
+    file *tmp = nullptr;
+    int fra = fd & FG_FRAS_MASK;
+    write_lock(&global_fd_2_file_rwlock[fra]);
+    auto it = global_fd_2_file[fra].find(fd);
+    if (it != global_fd_2_file[fra].end()) {
+        tmp = it->second;
+        global_fd_2_file[fra].erase(it);
+    }
+    write_unlock(&global_fd_2_file_rwlock[fra]);
+    return tmp;
+}
+
+force_inline static file *vfs_file_get(int fd) {
+    file *ret = nullptr;
+    int fra = fd & FG_FRAS_MASK;
+    write_lock(&global_fd_2_file_rwlock[fra]);
+    auto it = global_fd_2_file[fra].find(fd);
+    if (it != global_fd_2_file[fra].end()) {
+        ret = it->second;
+    }
+    write_unlock(&global_fd_2_file_rwlock[fra]);
+    return ret;
+}
 
 /**
  *	alloc_super	-	create new superblock
@@ -44,19 +162,11 @@ struct super_block *alloc_super(const std::string &dev_name, pmem2_map *pmap,
     s->pmap = pmap;
     s->root_path = root_path;
     spin_lock_init(&s->s_ino_2_inode_lock);
-    spin_lock_init(&s->s_fd_2_inode_lock);
     return s;
 }
 
 void destroy_super(struct super_block *sb) {
     rd_info("%s", __func__);
-    spin_lock(&sb->s_fd_2_inode_lock);
-    for (auto p : sb->s_fd_2_inode) {
-        inode_unref(p.second);
-    }
-    sb->s_fd_2_inode.clear();
-    spin_unlock(&sb->s_fd_2_inode_lock);
-
     spin_lock(&sb->s_ino_2_inode_lock);
     for (auto p : sb->s_ino_2_inode) {
         inode_unref(p.second);
@@ -555,16 +665,15 @@ int d_show(const char *path, struct dentry *parent) {
 
 static void dentry_unlink_inode(struct dentry *dentry) {
     struct inode *inode = dentry->d_inode;
+    if (inode == nullptr) return;
     struct super_block *sb = inode->i_sb;
     // 从sb中删除
     inode_delete_from_sb(sb, inode);
-    dlog_assert(inode->i_count == 1);
 
     if (dentry->d_op && dentry->d_op->d_iput) {
-		log_assert(0); // 暂不支持
+        log_assert(0);  // 暂不支持
         dentry->d_op->d_iput(dentry, inode);
-	}
-    else {
+    } else {
         dlog_assert(inode->i_nlink == 0);
         dlog_assert(inode->i_state == 1);
         if (inode->i_sb->s_op->drop_inode) {
@@ -575,35 +684,195 @@ static void dentry_unlink_inode(struct dentry *dentry) {
             inode->i_sb->s_op->evict_inode(inode);  // 真正从介质中删除
         }
     }
-	// 内存中删除inode
-	int ret = inode_unref(inode);
-	log_assert(ret == 0);
-	dentry->d_inode = nullptr;
+    // 内存中删除inode
+    inode_unref(inode);  // 如果还有其他open，则不会删除
+    dentry->d_inode = nullptr;
 }
 
 // 能删除成功，说明肯定没有孩子
 void d_delete(struct dentry *dentry) {
     struct inode *inode = dentry->d_inode;
     struct dentry *parent = dentry->d_parent;
-
-	// 父母中删除
+    // 父母中删除
     struct dentry *tmp = dentry_delete_child(parent, &dentry->d_name, false);
     dlog_assert(tmp == dentry);
 
     // spin_lock(&inode->i_lock);
     // we should be the only user,
     dentry_unlink_inode(dentry);
-	// spin_unlock(&inode->i_lock);
+    // spin_unlock(&inode->i_lock);
 
-	// 内存中删除dentry
-	int ret = dentry_unref(dentry);
-	log_assert(ret == 0);
+    // 内存中删除dentry
+    int ret = dentry_unref(dentry);
+    if (ret != 0) {
+        r_warning("unlink %s ino %d, but still has %d openers.", dentry->d_name.name, inode->i_ino,
+                  ret);
+    }
 }
 
-void vfs_init() {
-    int ret = 0;
-    ret = init_dentry_cache();
-    assert(!ret);
+// 允许
+int do_open(dentry *parent, qstr name, struct open_flags *op) {
+    int fd = -1;
+    int ret;
+    struct inode *dir = parent->d_inode;
+    file *file;
+    inode_lock(dir);
+
+    dentry *cur = get_dentry_by_hash(parent, name, true, true);
+    if (cur->d_inode && is_dir(cur)) {
+        r_error("%s fail, %s exist and is a dir.", __func__, name.name);
+        goto out;
+    }
+    if (cur->d_inode) {  // 文件已经存在
+        goto succ;
+    }
+
+    if (!(op->open_flag & O_CREAT)) {
+        r_error("open fail, %s not exist.", name.name);
+        goto err;
+    }
+
+    printf("inode->mode: %d\n", op->mode);
+    // 需要新建文件
+    ret = dir->i_op->create(dir, cur, op->mode, op->open_flag & O_EXCL);
+    if (ret != 0) {
+        r_error("dir->i_op->create %s fail, ret = %d", name.name, ret);
+        goto err;
+    }
+
+succ:
+    fd = vfs_get_fd();
+    file = file_alloc(fd, op->open_flag, cur);
+    vfs_file_insert(file);
+out:
+    dentry_unref(cur);
+    inode_unlock(dir);
+    return fd;
+err:
+    dentry_unref(cur);
+    d_delete(cur);
+    inode_unlock(dir);
+    return -1;
 }
 
-void vfs_destroy() { destroy_dentry_cache(); }
+int do_close(int fd) {
+    file *file = vfs_file_delete(fd);
+    if (file == nullptr) return -1;
+    file_free(file);
+    return 0;
+}
+
+// 读不加锁，用户自己互斥 读写 和 写写
+ssize_t do_read(int fd, char *buf, size_t count) {
+    ssize_t ret = -1;
+    struct file *file = vfs_file_get(fd);
+    if (file == nullptr) {
+        rd_error("%s fail, fd %d is illegal.", __func__, fd);
+        return ret;
+    }
+    loff_t pos = file_pos_read(file);
+    rd_info("%s src_buf=%p, count=%lu, pos=%ld", __func__, buf, count, pos);
+
+    if (file->f_op->read)
+        ret = file->f_op->read(file, buf, count, &pos);
+    else
+        ret - EINVAL;
+    if (ret >= 0) file_pos_write(file, pos);
+    return ret;
+}
+
+ssize_t do_write(int fd, const char *buf, size_t count) {
+    ssize_t ret = -1;
+    struct file *file = vfs_file_get(fd);
+    if (file == nullptr) {
+        rd_error("%s fail, fd %d is illegal.", __func__, fd);
+        return ret;
+    }
+    loff_t pos = file_pos_read(file);
+    rd_info("%s src_buf=%p, count=%lu, pos=%ld", __func__, buf, count, pos);
+
+    if (file->f_op->read)
+        ret = file->f_op->write(file, buf, count, &pos);
+    else
+        ret - EINVAL;
+    if (ret >= 0) file_pos_write(file, pos);
+    return ret;
+}
+
+loff_t vfs_setpos(struct file *file, loff_t offset, loff_t maxsize) {
+    // if (offset < 0 && !unsigned_offsets(file))
+    if (offset < 0) return -EINVAL;
+    if (offset > maxsize) return -EINVAL;
+
+    if (offset != file->f_pos) {
+        file->f_pos = offset;
+        // file->f_version = 0;
+    }
+    return offset;
+}
+
+loff_t generic_file_llseek_size(struct file *file, loff_t offset, int whence, loff_t maxsize,
+                                loff_t eof) {
+    switch (whence) {
+        case SEEK_END:
+            // offset += eof;
+            offset == eof;
+            break;
+        case SEEK_CUR:
+            /*
+             * Here we special-case the lseek(fd, 0, SEEK_CUR)
+             * position-querying operation.  Avoid rewriting the "same"
+             * f_pos value back to the file because a concurrent read(),
+             * write() or lseek() might have altered it
+             */
+            if (offset == 0) return file->f_pos;
+            /*
+             * f_lock protects against read/modify/write race with other
+             * SEEK_CURs. Note that parallel writes and reads behave
+             * like SEEK_SET.
+             */
+            spin_lock(&file->f_lock);
+            offset = vfs_setpos(file, file->f_pos + offset, maxsize);
+            spin_unlock(&file->f_lock);
+            return offset;
+        case SEEK_DATA:
+            /*
+             * In the generic case the entire file is data, so as long as
+             * offset isn't at the end of the file then the offset is data.
+             */
+            if ((unsigned long long)offset >= eof) return -ENXIO;
+            break;
+        case SEEK_HOLE:
+            /*
+             * There is a virtual hole at the end of the file, so as long as
+             * offset isn't i_size or larger, return i_size.
+             */
+            if ((unsigned long long)offset >= eof) return -ENXIO;
+            offset = eof;
+            break;
+    }
+
+    return vfs_setpos(file, offset, maxsize);
+}
+
+loff_t generic_file_llseek(struct file *file, loff_t offset, int whence) {
+    // struct inode *inode = file->f_mapping->host;
+    struct inode *inode = file->f_inode;
+
+    return generic_file_llseek_size(file, offset, whence, inode->i_sb->s_maxbytes,
+                                    i_size_read(inode));
+}
+
+static loff_t no_llseek(struct file *file, loff_t offset, int whence) { return -ESPIPE; }
+
+off_t do_lseek(int fd, off_t offset, int whence) {
+    struct file *file = vfs_file_get(fd);
+    if (file == nullptr) {
+        rd_error("%s fail, fd %d is illegal.", __func__, fd);
+        return -1;
+    }
+    loff_t (*fn)(struct file *, loff_t, int);
+    fn = no_llseek;
+    if (file->f_op->llseek) fn = file->f_op->llseek;
+    return fn(file, offset, whence);
+}
