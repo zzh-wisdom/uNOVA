@@ -4,8 +4,9 @@ set(CMAKE_DEPENDS_LANGUAGES
   )
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_CXX
-  "/home/zzh/uNOVA/syscall-intercept-demo/hooks.cc" "/home/zzh/uNOVA/build/CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.o"
-  "/home/zzh/uNOVA/syscall-intercept-demo/preload.cc" "/home/zzh/uNOVA/build/CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.o"
+  "/home/zzh/uNOVA/syscall-intercept/hook_native.cc" "/home/zzh/uNOVA/build/CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.o"
+  "/home/zzh/uNOVA/syscall-intercept/hooks.cc" "/home/zzh/uNOVA/build/CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.o"
+  "/home/zzh/uNOVA/syscall-intercept/preload.cc" "/home/zzh/uNOVA/build/CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.o"
   )
 set(CMAKE_CXX_COMPILER_ID "GNU")
 

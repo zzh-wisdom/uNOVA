@@ -31,7 +31,7 @@ set(INCLUDE_HEAD_LIST
 include_directories(${INCLUDE_HEAD_LIST})
 
 file(GLOB HOOK_SRC
-    ${PROJECT_SOURCE_DIR}/syscall-intercept-demo/*.cc
+    ${PROJECT_SOURCE_DIR}/syscall-intercept/*.cc
 )
 
 file(GLOB UTIL_SRC

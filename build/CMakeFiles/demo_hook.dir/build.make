@@ -57,45 +57,60 @@ include CMakeFiles/demo_hook.dir/progress.make
 # Include the compile flags for this target's objects.
 include CMakeFiles/demo_hook.dir/flags.make
 
-CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.o: CMakeFiles/demo_hook.dir/flags.make
-CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.o: ../syscall-intercept-demo/hooks.cc
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zzh/uNOVA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.o"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.o -c /home/zzh/uNOVA/syscall-intercept-demo/hooks.cc
+CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.o: CMakeFiles/demo_hook.dir/flags.make
+CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.o: ../syscall-intercept/hook_native.cc
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zzh/uNOVA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.o"
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.o -c /home/zzh/uNOVA/syscall-intercept/hook_native.cc
 
-CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zzh/uNOVA/syscall-intercept-demo/hooks.cc > CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.i
+CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zzh/uNOVA/syscall-intercept/hook_native.cc > CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.i
 
-CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zzh/uNOVA/syscall-intercept-demo/hooks.cc -o CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.s
+CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zzh/uNOVA/syscall-intercept/hook_native.cc -o CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.s
 
-CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.o: CMakeFiles/demo_hook.dir/flags.make
-CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.o: ../syscall-intercept-demo/preload.cc
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zzh/uNOVA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.o"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.o -c /home/zzh/uNOVA/syscall-intercept-demo/preload.cc
+CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.o: CMakeFiles/demo_hook.dir/flags.make
+CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.o: ../syscall-intercept/hooks.cc
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zzh/uNOVA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.o"
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.o -c /home/zzh/uNOVA/syscall-intercept/hooks.cc
 
-CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zzh/uNOVA/syscall-intercept-demo/preload.cc > CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.i
+CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zzh/uNOVA/syscall-intercept/hooks.cc > CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.i
 
-CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zzh/uNOVA/syscall-intercept-demo/preload.cc -o CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.s
+CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zzh/uNOVA/syscall-intercept/hooks.cc -o CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.s
+
+CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.o: CMakeFiles/demo_hook.dir/flags.make
+CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.o: ../syscall-intercept/preload.cc
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zzh/uNOVA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.o"
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.o -c /home/zzh/uNOVA/syscall-intercept/preload.cc
+
+CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zzh/uNOVA/syscall-intercept/preload.cc > CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.i
+
+CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zzh/uNOVA/syscall-intercept/preload.cc -o CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.s
 
 # Object files for target demo_hook
 demo_hook_OBJECTS = \
-"CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.o" \
-"CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.o"
+"CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.o" \
+"CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.o" \
+"CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.o"
 
 # External object files for target demo_hook
 demo_hook_EXTERNAL_OBJECTS =
 
-libdemo_hook.so: CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.o
-libdemo_hook.so: CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.o
+libdemo_hook.so: CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.o
+libdemo_hook.so: CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.o
+libdemo_hook.so: CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.o
 libdemo_hook.so: CMakeFiles/demo_hook.dir/build.make
 libdemo_hook.so: CMakeFiles/demo_hook.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/zzh/uNOVA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX shared library libdemo_hook.so"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/zzh/uNOVA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX shared library libdemo_hook.so"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/demo_hook.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

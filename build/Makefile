@@ -554,59 +554,86 @@ nova/wprotect.cc.s:
 	$(MAKE) -f CMakeFiles/nova_basic_test.dir/build.make CMakeFiles/nova_basic_test.dir/nova/wprotect.cc.s
 .PHONY : nova/wprotect.cc.s
 
-syscall-intercept-demo/hooks.o: syscall-intercept-demo/hooks.cc.o
+syscall-intercept/hook_native.o: syscall-intercept/hook_native.cc.o
 
-.PHONY : syscall-intercept-demo/hooks.o
-
-# target to build an object file
-syscall-intercept-demo/hooks.cc.o:
-	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.o
-.PHONY : syscall-intercept-demo/hooks.cc.o
-
-syscall-intercept-demo/hooks.i: syscall-intercept-demo/hooks.cc.i
-
-.PHONY : syscall-intercept-demo/hooks.i
-
-# target to preprocess a source file
-syscall-intercept-demo/hooks.cc.i:
-	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.i
-.PHONY : syscall-intercept-demo/hooks.cc.i
-
-syscall-intercept-demo/hooks.s: syscall-intercept-demo/hooks.cc.s
-
-.PHONY : syscall-intercept-demo/hooks.s
-
-# target to generate assembly for a file
-syscall-intercept-demo/hooks.cc.s:
-	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept-demo/hooks.cc.s
-.PHONY : syscall-intercept-demo/hooks.cc.s
-
-syscall-intercept-demo/preload.o: syscall-intercept-demo/preload.cc.o
-
-.PHONY : syscall-intercept-demo/preload.o
+.PHONY : syscall-intercept/hook_native.o
 
 # target to build an object file
-syscall-intercept-demo/preload.cc.o:
-	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.o
-.PHONY : syscall-intercept-demo/preload.cc.o
+syscall-intercept/hook_native.cc.o:
+	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.o
+.PHONY : syscall-intercept/hook_native.cc.o
 
-syscall-intercept-demo/preload.i: syscall-intercept-demo/preload.cc.i
+syscall-intercept/hook_native.i: syscall-intercept/hook_native.cc.i
 
-.PHONY : syscall-intercept-demo/preload.i
+.PHONY : syscall-intercept/hook_native.i
 
 # target to preprocess a source file
-syscall-intercept-demo/preload.cc.i:
-	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.i
-.PHONY : syscall-intercept-demo/preload.cc.i
+syscall-intercept/hook_native.cc.i:
+	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.i
+.PHONY : syscall-intercept/hook_native.cc.i
 
-syscall-intercept-demo/preload.s: syscall-intercept-demo/preload.cc.s
+syscall-intercept/hook_native.s: syscall-intercept/hook_native.cc.s
 
-.PHONY : syscall-intercept-demo/preload.s
+.PHONY : syscall-intercept/hook_native.s
 
 # target to generate assembly for a file
-syscall-intercept-demo/preload.cc.s:
-	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept-demo/preload.cc.s
-.PHONY : syscall-intercept-demo/preload.cc.s
+syscall-intercept/hook_native.cc.s:
+	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.s
+.PHONY : syscall-intercept/hook_native.cc.s
+
+syscall-intercept/hooks.o: syscall-intercept/hooks.cc.o
+
+.PHONY : syscall-intercept/hooks.o
+
+# target to build an object file
+syscall-intercept/hooks.cc.o:
+	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.o
+.PHONY : syscall-intercept/hooks.cc.o
+
+syscall-intercept/hooks.i: syscall-intercept/hooks.cc.i
+
+.PHONY : syscall-intercept/hooks.i
+
+# target to preprocess a source file
+syscall-intercept/hooks.cc.i:
+	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.i
+.PHONY : syscall-intercept/hooks.cc.i
+
+syscall-intercept/hooks.s: syscall-intercept/hooks.cc.s
+
+.PHONY : syscall-intercept/hooks.s
+
+# target to generate assembly for a file
+syscall-intercept/hooks.cc.s:
+	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.s
+.PHONY : syscall-intercept/hooks.cc.s
+
+syscall-intercept/preload.o: syscall-intercept/preload.cc.o
+
+.PHONY : syscall-intercept/preload.o
+
+# target to build an object file
+syscall-intercept/preload.cc.o:
+	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.o
+.PHONY : syscall-intercept/preload.cc.o
+
+syscall-intercept/preload.i: syscall-intercept/preload.cc.i
+
+.PHONY : syscall-intercept/preload.i
+
+# target to preprocess a source file
+syscall-intercept/preload.cc.i:
+	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.i
+.PHONY : syscall-intercept/preload.cc.i
+
+syscall-intercept/preload.s: syscall-intercept/preload.cc.s
+
+.PHONY : syscall-intercept/preload.s
+
+# target to generate assembly for a file
+syscall-intercept/preload.cc.s:
+	$(MAKE) -f CMakeFiles/demo_hook.dir/build.make CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.s
+.PHONY : syscall-intercept/preload.cc.s
 
 test/fstest.o: test/fstest.cc.o
 
@@ -880,12 +907,15 @@ help:
 	@echo "... nova/wprotect.o"
 	@echo "... nova/wprotect.i"
 	@echo "... nova/wprotect.s"
-	@echo "... syscall-intercept-demo/hooks.o"
-	@echo "... syscall-intercept-demo/hooks.i"
-	@echo "... syscall-intercept-demo/hooks.s"
-	@echo "... syscall-intercept-demo/preload.o"
-	@echo "... syscall-intercept-demo/preload.i"
-	@echo "... syscall-intercept-demo/preload.s"
+	@echo "... syscall-intercept/hook_native.o"
+	@echo "... syscall-intercept/hook_native.i"
+	@echo "... syscall-intercept/hook_native.s"
+	@echo "... syscall-intercept/hooks.o"
+	@echo "... syscall-intercept/hooks.i"
+	@echo "... syscall-intercept/hooks.s"
+	@echo "... syscall-intercept/preload.o"
+	@echo "... syscall-intercept/preload.i"
+	@echo "... syscall-intercept/preload.s"
 	@echo "... test/fstest.o"
 	@echo "... test/fstest.i"
 	@echo "... test/fstest.s"

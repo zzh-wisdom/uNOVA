@@ -67,7 +67,7 @@ int hook_openat(int dirfd, const char* cpath, int flags, mode_t mode, long *res)
 
 // TODO: 读写文件如果需要sync则需要更新元数据
 int hook_fsync(int fd, long *res) {
-    if(fd < START_FD) {
+    if(fd < hook_start_fd) {
         return 1;
     }
     printf("fsync fd = %d\n", fd);
@@ -77,7 +77,7 @@ int hook_fsync(int fd, long *res) {
 
 
 int hook_close(int fd, long *res) {
-    if(fd < START_FD) {
+    if(fd < hook_start_fd) {
         return 1;
     }
 
@@ -162,7 +162,7 @@ int hook_read(int fd, void *buf, size_t len, long *res) {
 }
 
 int hook_write(int fd, const char *buf, size_t len, long *res) {
-    if(fd < START_FD) {
+    if(fd < hook_start_fd) {
         return 1;
     }
     printf("write fd = %d\n", fd);
