@@ -1,6 +1,7 @@
 #include "nova/vfs_api.h"
 
 #include "util/cpu.h"
+#include "nova/nova_cfg.h"
 
 int main(int argc, char* argv[]) {
     LogCfg log_cfg = {
@@ -24,6 +25,8 @@ int main(int argc, char* argv[]) {
     const std::string dir_name = "/tmp/nova";
     ret = fs_mount(&sb, dev_name, dir_name, &fs_cfg);
     log_assert(ret == 0);
+
+    nova_register_thread(nullptr);
 
     ret = vfs_mkdir("/tmp/nova/dir1", 0);
     log_assert(ret == 0);

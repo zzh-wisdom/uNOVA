@@ -503,7 +503,7 @@ static int nova_get_candidate_free_list(struct super_block *sb)
 // 返回分配指定btype类型的block个数
 static int nova_new_blocks(struct super_block *sb, unsigned long *blocknr,
 	unsigned int num, unsigned short btype, int zero,
-	enum alloc_type atype)
+	enum alloc_type atype, int cpuid = -1)
 {
 	struct free_list *free_list;
 	void *bp;
@@ -512,14 +512,14 @@ static int nova_new_blocks(struct super_block *sb, unsigned long *blocknr,
 	unsigned long new_blocknr = 0;
 	struct rb_node *temp;
 	struct nova_range_node *first;
-	int cpuid;
 	int retried = 0;
 
 	num_blocks = num * nova_get_numblocks(btype);
 	if (num_blocks == 0)
 		return -EINVAL;
 
-	cpuid = get_processor_id();
+	if(cpuid == -1)
+		cpuid = get_processor_id();
 
 retry:
 	free_list = nova_get_free_list(sb, cpuid);
@@ -598,13 +598,13 @@ int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 // 返回分配指定inode类型的block个数
 // zero为1表示新分配的空间需要清零
 int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
-	unsigned long *blocknr, unsigned int num, int zero)
+	unsigned long *blocknr, unsigned int num, int zero, int cpuid)
 {
 	int allocated;
 	timing_t alloc_time;
 	NOVA_START_TIMING(new_log_blocks_t, alloc_time);
 	allocated = nova_new_blocks(sb, blocknr, num,
-					pi->i_blk_type, zero, LOG);
+					pi->i_blk_type, zero, LOG, cpuid);
 	NOVA_END_TIMING(new_log_blocks_t, alloc_time);
 	rdv_proc("Inode %lu, alloc %d log blocks from %lu to %lu",
 			pi->nova_ino, allocated, *blocknr,

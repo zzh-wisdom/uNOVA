@@ -26,10 +26,11 @@ extern pmem2_drain_fn pmem_drain_func;
 
 void nova_cfg_init(pmem2_map* pmap, struct vfs_cfg* cfg);
 // 返回线程id
-int nova_register_thread();
+int nova_register_thread(int* proc_id);
 
 static force_inline int get_processor_id() {
     dlog_assert(nova_cfg_inited);
+    dlog_assert(processor_id >= 0 && processor_id < nova_cpu_num);
     return processor_id;
 }
 static force_inline int num_online_cpus() {

@@ -80,7 +80,7 @@ int nova_init_inode_table(struct super_block *sb) {
         inode_table = nova_get_inode_table(sb, i);
         if (!inode_table) return -EINVAL;
 
-        allocated = nova_new_log_blocks(sb, pi, &blocknr, 1, 1);
+        allocated = nova_new_log_blocks(sb, pi, &blocknr, 1, 1, i);
         rdv_proc("%s: allocate log @ 0x%lx", __func__, blocknr);
         if (allocated != 1 || blocknr == 0) return -ENOSPC;
 
@@ -1475,14 +1475,14 @@ static int nova_coalesce_log_pages(struct super_block *sb, unsigned long prev_bl
 // new_block 返回分配的第一个page的nvm偏移
 // 返回值是实际分配的page个数，分配好的page已经用链表连接好
 int nova_allocate_inode_log_pages(struct super_block *sb, struct nova_inode *pi,
-                                  unsigned long num_pages, u64 *new_block) {
+                                  unsigned long num_pages, u64 *new_block, int cpuid) {
     unsigned long new_inode_blocknr;
     unsigned long first_blocknr;
     unsigned long prev_blocknr;
     int allocated;
     int ret_pages = 0;
 
-    allocated = nova_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0);
+    allocated = nova_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0, cpuid);
 
     if (allocated <= 0) {
         r_error("ERROR: no inode log page available: %ld %d", num_pages, allocated);
@@ -1499,7 +1499,7 @@ int nova_allocate_inode_log_pages(struct super_block *sb, struct nova_inode *pi,
 
     /* Allocate remaining pages */
     while (num_pages) {
-        allocated = nova_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0);
+        allocated = nova_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0, cpuid);
 
         rdv_proc("Alloc %d log blocks @ 0x%lx", allocated, new_inode_blocknr);
         if (allocated <= 0) {

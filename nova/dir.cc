@@ -218,7 +218,7 @@ static u64 nova_append_dir_inode_entry(struct super_block *sb,
 // 并写入两个log entry（. 和 ..）
 // 更新tail 并fence
 int nova_append_dir_init_entries(struct super_block *sb,
-	struct nova_inode *pi, u64 self_ino, u64 parent_ino)
+	struct nova_inode *pi, u64 self_ino, u64 parent_ino, int cpuid)
 {
 	int allocated;
 	u64 new_block;
@@ -231,7 +231,7 @@ int nova_append_dir_init_entries(struct super_block *sb,
 		return -EINVAL;
 	}
 
-	allocated = nova_allocate_inode_log_pages(sb, pi, 1, &new_block);
+	allocated = nova_allocate_inode_log_pages(sb, pi, 1, &new_block, cpuid);
 	if (allocated != 1) {
 		r_error("ERROR: no inode log page available");
 		return -ENOMEM;

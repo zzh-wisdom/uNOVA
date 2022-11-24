@@ -44,6 +44,8 @@ struct linux_dirent64 {
  */
 #define ALIGN(x, a)                     __ALIGN_KERNEL((x), (a))
 
+int hook_start_fd = 10000;
+
 // TODO: 参数的含义
 int hook_openat(int dirfd, const char* cpath, int flags, mode_t mode, long *res) {
     if(flags & O_PATH || flags & O_APPEND || flags & O_EXCL) {

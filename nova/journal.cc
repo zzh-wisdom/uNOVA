@@ -230,7 +230,7 @@ int nova_lite_journal_hard_init(struct super_block *sb)
 		if (!pair)
 			return -EINVAL;
 
-		allocated = nova_new_log_blocks(sb, &fake_pi, &blocknr, 1, 1);
+		allocated = nova_new_log_blocks(sb, &fake_pi, &blocknr, 1, 1, i);
 		rdv_proc("%s: allocate log @ 0x%lx", __func__, blocknr);
 
 		// 检查

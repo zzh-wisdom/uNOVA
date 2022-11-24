@@ -887,7 +887,7 @@ extern int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 	unsigned long *blocknr, unsigned int num, unsigned long start_blk,
 	int zero, int cow);
 extern int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
-	unsigned long *blocknr, unsigned int num, int zero);
+	unsigned long *blocknr, unsigned int num, int zero, int cpuid = -1);
 extern unsigned long nova_count_free_blocks(struct super_block *sb);
 inline int nova_search_inodetree(struct nova_sb_info *sbi,
 	unsigned long ino, struct nova_range_node **ret_node);
@@ -930,7 +930,7 @@ int nova_dax_file_mmap(struct file *file, struct vm_area_struct *vma);
 /* dir.c */
 extern const struct file_operations nova_dir_operations;
 int nova_append_dir_init_entries(struct super_block *sb,
-	struct nova_inode *pi, u64 self_ino, u64 parent_ino);
+	struct nova_inode *pi, u64 self_ino, u64 parent_ino, int cpuid = -1);
 extern int nova_add_dentry(struct dentry *dentry, u64 ino,
 	int inc_link, u64 tail, u64 *new_tail);
 extern int nova_remove_dentry(struct dentry *dentry, int dec_link, u64 tail,
@@ -980,7 +980,7 @@ void nova_apply_setattr_entry(struct super_block *sb, struct nova_inode *pi,
 void nova_free_inode_log(struct super_block *sb, struct nova_inode *pi);
 int nova_allocate_inode_log_pages(struct super_block *sb,
 	struct nova_inode *pi, unsigned long num_pages,
-	u64 *new_block);
+	u64 *new_block, int cpuid=-1);
 int nova_delete_file_tree(struct super_block *sb,
 	struct nova_inode_info_header *sih, unsigned long start_blocknr,
 	unsigned long last_blocknr, bool delete_nvmm, bool delete_mmap);
