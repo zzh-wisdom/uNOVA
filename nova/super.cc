@@ -779,7 +779,7 @@ out:
 // 	return ret;
 // }
 
-inline void nova_free_range_node(struct nova_range_node *node) {
+void nova_free_range_node(struct nova_range_node *node) {
     kmem_cache_free(nova_range_node_cachep, node);
 }
 

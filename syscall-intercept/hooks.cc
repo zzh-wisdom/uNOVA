@@ -50,7 +50,7 @@ struct hook_operations* hook_op;
 
 static inline bool is_hook(const char *pathname) {
     if(hook_op->root_name.empty()) return false;
-    if(strncmp(pathname, hook_op->root_name.c_str(), hook_op->root_name.size())) return true;
+    if(strncmp(pathname, hook_op->root_name.c_str(), hook_op->root_name.size()) == 0) return true;
     return false;
 }
 
@@ -86,11 +86,11 @@ static inline int hook_close(int fd, long *res) {
     *res = hook_op->close(fd);
     return 0;
 }
-static inline int hook_unlinkat(int dirfd, const char *cpath, int flags, long *res) {
+static inline int hook_unlinkat(int dirfd, const char *cpath, long *res) {
     if(dirfd != AT_FDCWD) return -1;
     if(!is_hook(cpath)) return -1;
     printf("%s cpath = %s\n", __func__, cpath);
-    *res = hook_op->unlink(cpath, flags);
+    *res = hook_op->unlink(cpath);
     return 0;
 }
 int hook_fsync(int fd, long *res) {
@@ -173,13 +173,15 @@ int hook(long syscall_number,
                 long a2, long a3,
                 long a4, long a5,
                 long *res) {
+    int ret;
     switch(syscall_number) {
         case SYS_mkdirat:
             // printf("SYS_mkdirat\n");
             return hook_mkdirat((int)a0, (const char *)a1, (mode_t)a2, res);
         case SYS_mkdir:
-            // printf("SYS_mkdir\n");
-            return hook_mkdirat(AT_FDCWD, (const char *)a0, (mode_t)a1, res);
+            ret = hook_mkdirat(AT_FDCWD, (const char *)a0, (mode_t)a1, res);
+            printf("SYS_mkdir %d\n", ret);
+            return ret;
         case SYS_rmdir:
             // printf("SYS_rmdir\n");
             return hook_rmdir(AT_FDCWD, (const char *)a0, res);
@@ -209,7 +211,7 @@ int hook(long syscall_number,
             return hook_fsync((int)a0, res);
         case SYS_unlink:
             // printf("SYS_unlink\n");
-            return hook_unlinkat(AT_FDCWD, (const char *)a0, 0, res);
+            return hook_unlinkat(AT_FDCWD, (const char *)a0, res);
 
         case SYS_stat:
             // printf("SYS_stat\n");
@@ -235,7 +237,7 @@ int hook(long syscall_number,
         // case SYS_renameat:
 
         default:
-            printf("SYS_unhook: %ld\n", syscall_number);
+            // printf("SYS_unhook: %ld\n", syscall_number);
             assert(syscall_number != SYS_fork && syscall_number != SYS_vfork);
             return 1;
     }
@@ -248,12 +250,6 @@ int wrapper_hook(long syscall_number,
                 long a2, long a3,
                 long a4, long a5,
                 long *res) {
-    thread_local static bool thread_bind = false;
-    if(!thread_bind) {
-        hook_op->register_thread(nullptr);
-        thread_bind = true;
-    }
-
     // 防止重复进入
     thread_local static int reentrance_flag = false;
 	// int oerrno;
@@ -264,6 +260,11 @@ int wrapper_hook(long syscall_number,
 		return 1;
 	}
 	reentrance_flag = true;
+    thread_local static bool thread_bind = false;
+    if(!thread_bind) {
+        hook_op->register_thread(nullptr);
+        thread_bind = true;
+    }
     // printf("hook start\n");
 
 	// oerrno = errno;

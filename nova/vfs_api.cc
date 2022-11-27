@@ -31,6 +31,10 @@ static inline super_block* unregister_mounted_fs(const std::string& root) {
 }
 
 static inline super_block* get_mounted_fs(const std::string& root) {
+    // for(auto p: vfs_root_2_sb) {
+    //     printf("root:[%s], sb:%p\n", p.first.c_str(), p.second);
+    // }
+    // printf("vfs_root_2_sb.size=%u\n", vfs_root_2_sb.size());
     auto it = vfs_root_2_sb.find(root);
     if(it == vfs_root_2_sb.end()) return nullptr;
     return it->second;
@@ -75,7 +79,7 @@ static force_inline std::string path_find_last_compo(const std::string& path) {
 	return path.substr(i, end-i);
 }
 
-int fs_mount(const std::string &dev_name, const std::string &root_path,
+int fs_mount(void** sb_,  const std::string &dev_name, const std::string &root_path,
             vfs_cfg *cfg) {
     int ret = 0;
     bool ret_bool;
@@ -112,6 +116,8 @@ int fs_mount(const std::string &dev_name, const std::string &root_path,
 
     ret_bool = register_mounted_fs(root_path, s);
     log_assert(ret_bool);
+
+    *sb_ = s;
     return 0;
 out2:
     destroy_super(s);
@@ -120,15 +126,17 @@ out1:
     return -1;
 }
 
-int vfs_fs_unmount(const std::string &root_path) {
-    super_block* sb = get_mounted_fs(root_path);
-    if(sb == nullptr) {
-        r_error("%s fail, %s is not a mounted fs.", __func__, root_path.c_str());
-        return -1;
-    }
+int vfs_fs_unmount(void** sb_, const std::string &root_path) {
+    super_block* sb = (super_block*)*sb_;
+    // super_block* sb = get_mounted_fs(root_path);
+    // if(sb == nullptr) {
+    //     r_error("%s fail, %s is not a mounted fs.", __func__, root_path.c_str());
+    //     return -1;
+    // }
 
-    super_block* tmp = unregister_mounted_fs(sb->root_path);
-    log_assert(tmp == sb);
+    // super_block* tmp = unregister_mounted_fs(sb->root_path);
+    // log_assert(tmp == sb);
+    dlog_assert(sb->root_path == root_path);
     rd_info("vfs_fs_unmount: %s\n", sb->root_path.c_str());
     sb->s_op->put_super(sb);
     pmem2_map *pmap = sb->pmap;
@@ -278,7 +286,7 @@ err:
 
 // pathname不能以 / 结尾
 // 参考 SYSCALL_DEFINE2(mkdir
-int vfs_mkdir(const char* pathname, umode_t mode) {
+int vfs_mkdir(const char* pathname, mode_t mode) {
     rd_info("%s: %s", __func__, pathname);
     int name_start = pathname_deal_root_prefix(pathname);
     if(name_start < 0) return -1;
@@ -451,7 +459,7 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
 }
 
 // SYSCALL_DEFINE3(open
-int vfs_open(const char* filename, int flags, umode_t mode) {
+int vfs_open(const char* filename, int flags, mode_t mode) {
     rd_info("%s: %s", __func__, filename);
     log_assert((flags & O_TRUNC) == 0); // 不支持
     struct open_flags op;

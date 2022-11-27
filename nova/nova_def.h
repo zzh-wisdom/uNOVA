@@ -20,7 +20,10 @@
 #ifndef _LINUX_NOVA_DEF_H
 #define _LINUX_NOVA_DEF_H
 
+#include <sys/types.h>
+
 #include "nova/nova_com.h"
+#include "util/aep.h"
 
 #define	NOVA_SUPER_MAGIC	0x4E4F5641	/* NOVA */
 
@@ -211,7 +214,8 @@ static inline void PERSISTENT_MARK(void)
 
 static inline void PERSISTENT_BARRIER(void)
 {
-	asm volatile ("sfence\n" : : );
+	// asm volatile ("sfence\n" : : );
+	sfence();
 	// if (support_pcommit) {
 	// 	/* Do nothing */
 	// }

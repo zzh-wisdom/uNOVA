@@ -13,7 +13,7 @@ void InitLog(const char* argv0, LogCfg* cfg) {
 
     // some check
 #ifdef NDEBUG
-    LOG(INFO) << "Run as [NOT DEBUG] mode";
+    printf("Run as [NOT DEBUG] mode");
     assert(0);
     DLOG(FATAL) << "DLOG UnExpected!!!";
     DVLOG(0) << "DVLOG UnExpected!!!";
@@ -43,7 +43,7 @@ void InitLog(const char* argv0, LogCfg* cfg) {
     rdv_verb("%s\n", "rdv_verb UnExpected!!!");
     dlog_assert(0) << "dlog_assert UnExpected!!!";
 #else
-    LOG(INFO) << "Run as [DEBUG] mode";
+    printf("Run as [DEBUG] mode");
     DLOG_ASSERT(1) << "DLOG_ASSERT UnExpected!!!";
     dlog_assert(1) << "dlog_assert UnExpected!!!";
 #endif

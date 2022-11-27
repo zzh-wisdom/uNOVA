@@ -28,21 +28,21 @@ int main(int argc, char* argv[]) {
             ├── dir_b
             └── file_a
     */
-    const std::string mntdir = "/tmp/metafs";
-    const std::string nonexisting = mntdir + "/nonexisting";
-    const std::string topdir = mntdir + "/top";
-    const std::string longer = topdir + "_plus";
-    const std::string dir_a  = topdir + "/dir_a";
-    const std::string dir_b  = topdir + "/dir_b";
-    const std::string file_a = topdir + "/file_a";
-    const std::string subdir_a  = dir_a + "/subdir_a";
+    const std::string mntdir = "/tmp/nova";
+    const std::string dir1 = mntdir + "/dir1";
+    const std::string dir2 = mntdir + "/dir2";
+    const std::string dir1_d1 = mntdir + "/dir1" + "/d1";
+    const std::string dir1_d2 = mntdir + "/dir1" + "/d2";
+    const std::string files = mntdir + "/files";
+    const std::string files_f1 = mntdir + "/files" + "/f1";
+    const std::string files_f2 = mntdir + "/files" + "/f2";
+    int mkdir_flag = S_IRWXU | S_IRWXG | S_IRWXO;
 
     int ret;
-    int fd;
-    DIR * dirstream = NULL;
-    struct stat dirstat;
+    // int fd;
+    // DIR * dirstream = NULL;
+    // struct stat dirstat;
 
-    printf("dfvdfv\n");
     if(syscall_hook_in_process_allowed()) {
         printf("syscall Enable!\n");
     } else {
@@ -50,18 +50,119 @@ int main(int argc, char* argv[]) {
     }
 
     // Create topdir
-    ret = mkdir(topdir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO);
-    if(ret != 0){
-        std::cerr << "Error creating topdir: " << std::strerror(errno) << std::endl;
-        return -1;
-    }
+    ret = mkdir(dir1.c_str(), mkdir_flag);
+    assert(ret == 0);
+    ret = mkdir(dir1_d1.c_str(), mkdir_flag);
+    assert(ret == 0);
+    ret = mkdir(dir1_d2.c_str(), mkdir_flag);
+    assert(ret == 0);
+    ret = mkdir(dir2.c_str(), mkdir_flag);
+    assert(ret == 0);
+    ret = mkdir(dir2.c_str(), mkdir_flag);
+    assert(ret);
 
-    //Test stat on existing dir
-    ret = stat(topdir.c_str(), &dirstat);
-    if(ret != 0){
-        std::cerr << "Error stating topdir: " << std::strerror(errno) << std::endl;
-        return -1;
+    ret = rmdir(dir2.c_str());
+    assert(ret == 0);
+    ret = rmdir(dir1.c_str());
+    assert(ret);
+
+    // file open
+    ret = mkdir(files.c_str(), mkdir_flag);
+    assert(ret == 0);
+    ret = open(files_f1.c_str(), O_RDWR, 666);
+    assert(ret < 0);
+    ret = open(files.c_str(), O_RDWR, 666);
+    assert(ret < 0);
+    int fd1 = open(files_f1.c_str(), O_RDWR | O_CREAT, 666);
+    assert(fd1 > 0);
+    printf("open %s, fd = %d\n", files_f1.c_str(), fd1);
+    int fd2 = open(files_f1.c_str(), O_RDWR | O_CREAT, 666);  // 要sudo
+    // printf("errno=%d\n", errno); // EACCES
+    assert(fd2 > 0);
+    printf("open %s, fd = %d\n", files_f1.c_str(), fd2);
+    assert(close(fd1) == 0);
+    assert(close(fd2) == 0);
+    fd1 = open(files_f2.c_str(), O_RDWR | O_CREAT, 0);
+    assert(fd1 > 0);
+    assert(close(fd1) == 0);
+    printf("open %s, fd = %d\n", files_f2.c_str(), fd1);
+
+    // 读写测试
+    int fd_w = open(files_f1.c_str(), O_RDWR | O_CREAT, 0);
+    assert(fd_w > 0);
+    int fd_r = open(files_f1.c_str(), O_RDWR | O_CREAT, 0);
+    assert(fd_r > 0);
+    const int BUF_LEN = 20;
+    char w_buffer[BUF_LEN+1];
+    char r_buffer[BUF_LEN+1];
+    memset(r_buffer, 0, sizeof(r_buffer));
+    w_buffer[BUF_LEN] = '\0';
+    for(int i = 0; i < BUF_LEN; ++i) {
+        w_buffer[i] = 'a' + i;
     }
+    ret = read(fd_r, r_buffer, BUF_LEN); // 空文件
+    assert(ret == 0);
+    ret = write(fd_w, w_buffer, BUF_LEN/2);
+    assert(ret == BUF_LEN/2);
+    ret = write(fd_w, w_buffer+BUF_LEN/2, BUF_LEN/2);
+    assert(ret == BUF_LEN/2);
+    ret = read(fd_r, r_buffer, BUF_LEN);
+    assert(ret == BUF_LEN);
+    assert(strcmp(r_buffer, w_buffer) == 0);
+    ret = lseek(fd_r, 0, SEEK_SET);
+    assert(ret == 0);
+    for(int i = 0; i < BUF_LEN; ++i) {
+        char c;
+        ret = read(fd_r, &c, 1);
+        assert(ret == 1);
+        assert(c == 'a' + i);
+    }
+    ret = read(fd_r, r_buffer, BUF_LEN); // 文件尾部
+    assert(ret == 0);
+
+    // 重写
+    ret = lseek(fd_w, 0, SEEK_SET);
+    assert(ret == 0);
+    for(int i = 0; i < BUF_LEN; ++i) {
+        ret = write(fd_w, "a", 1);
+        assert(ret == 1);
+    }
+    ret = lseek(fd_r, 0, SEEK_SET);
+    assert(ret == 0);
+    ret = read(fd_r, r_buffer, BUF_LEN);
+    assert(ret == BUF_LEN);
+    printf("%d r_buffer: %s\n", __LINE__, r_buffer);
+
+    ret = lseek(fd_r, 0, SEEK_SET);
+    assert(ret == 0);
+    for(int i = 0; i < BUF_LEN; ++i) {
+        char c;
+        ret = read(fd_r, &c, 1);
+        assert(ret == 1);
+        assert(c == 'a');
+    }
+    assert(close(fd_w) == 0);
+    assert(close(fd_r) == 0);
+
+    int fd = open(files_f2.c_str(), O_RDWR | O_CREAT, 666);
+    assert(fd > 0);
+    // 删除文件
+    ret = unlink(dir1_d1.c_str());
+    assert(ret);
+    ret = unlink(files.c_str());
+    assert(ret);
+    ret = unlink(files_f2.c_str());
+    assert(ret == 0);
+    ret = unlink(files_f2.c_str());
+    assert(ret);
+    close(fd);
+
+    // Test stat on existing dir
+    // ret = stat(topdir.c_str(), &dirstat);
+    // if(ret != 0){
+    //     std::cerr << "Error stating topdir: " << std::strerror(errno) << std::endl;
+    //     return -1;
+    // }
     // assert(S_ISDIR(dirstat.st_mode));
 
     printf("Test pass\n");

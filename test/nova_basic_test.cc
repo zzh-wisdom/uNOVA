@@ -24,7 +24,8 @@ int main(int argc, char* argv[]) {
     int ret = 0;
     const std::string dev_name = "/dev/dax3.0";
     const std::string root_path = "/tmp/nova";
-    ret = fs_mount(dev_name, root_path, &fs_cfg);
+    super_block* sb = nullptr;
+    ret = fs_mount((void**)&sb, dev_name, root_path, &fs_cfg);
     log_assert(ret == 0);
 
     nova_register_thread(nullptr);
@@ -158,6 +159,6 @@ int main(int argc, char* argv[]) {
     ret = vfs_ls("/tmp/nova/");
     log_assert(ret == 0);
 
-    vfs_fs_unmount(root_path);
+    vfs_fs_unmount((void**)&sb, root_path);
     return 0;
 }

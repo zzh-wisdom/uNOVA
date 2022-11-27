@@ -17,21 +17,21 @@
  * 注意，需要先调用 vfs_init()
  *
  */
-int fs_mount(const std::string &dev_name, const std::string &root_path,
+int fs_mount(void** sb_, const std::string &dev_name, const std::string &root_path,
              struct vfs_cfg* cfg);
-int vfs_fs_unmount(const std::string &root_path);
+int vfs_fs_unmount(void** sb_, const std::string &root_path);
 
 // 0创建成功，-1创建失败
-int vfs_mkdir(const char* pathname, umode_t mode);
+int vfs_mkdir(const char* pathname, mode_t mode);
 int vfs_ls(const char* pathname);
 int vfs_rmdir(const char *dirname);
-int vfs_open(const char* filename, int flags, umode_t mode);
+int vfs_open(const char* filename, int flags, mode_t mode);
 int vfs_close(int fd);
 int vfs_unlink(const char *pathname);
 
 // SYSCALL_DEFINE3(read
-static force_inline ssize_t vfs_read(int fd, char* buf, size_t count) {
-    return do_read(fd, buf, count);
+static force_inline ssize_t vfs_read(int fd, void* buf, size_t count) {
+    return do_read(fd, (char*)buf, count);
 }
 
 // SYSCALL_DEFINE3(write

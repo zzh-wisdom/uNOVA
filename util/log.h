@@ -37,6 +37,7 @@
 // 低级详细信息
 #define dv_verb     DVLOG(3)
 
+// 注意raw log不受FLAGS_minloglevel和vlog_level的控制。
 #define rd_info(...)     RAW_DLOG(INFO, __VA_ARGS__)
 #define rd_warning(...)  RAW_DLOG(WARNING, __VA_ARGS__)
 #define rd_error(...)    RAW_DLOG(ERROR, __VA_ARGS__)

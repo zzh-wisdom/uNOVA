@@ -12,8 +12,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 MESSAGE(STATUS "Project: ${PACKAGE_NAME}")
 
-add_compile_options(-g)
-# add_definitions(-D NDEBUG)
 # -fpic -fPIC
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -DERPC_INFINIBAND=true -D_FILE_OFFSET_BITS=64")
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
@@ -32,6 +30,8 @@ include_directories(${INCLUDE_HEAD_LIST})
 
 file(GLOB HOOK_SRC
     ${PROJECT_SOURCE_DIR}/syscall-intercept/*.cc
+    ${PROJECT_SOURCE_DIR}/util/*.cc
+    ${PROJECT_SOURCE_DIR}/nova/*.cc
 )
 
 file(GLOB UTIL_SRC
@@ -43,14 +43,20 @@ file(GLOB UNOVA_SRC
 )
 
 set(HOOK_HEAD_LIST ${PROJECT_SOURCE_DIR})
-add_library(demo_hook SHARED ${HOOK_SRC})
-target_link_libraries(demo_hook
-    pthread syscall_intercept
+add_library(fs_hook SHARED ${HOOK_SRC})
+target_link_libraries(fs_hook
+    syscall_intercept
+    glog pthread numa pmem2
 )
-target_include_directories(demo_hook PUBLIC ${HOOK_HEAD_LIST})
+# target_include_directories(demo_hook PUBLIC ${HOOK_HEAD_LIST})
 
-add_executable(test test/fstest.cc)
-target_link_libraries(test
+# add_executable(fstest test/fstest.cc ${HOOK_SRC})
+# target_link_libraries(fstest
+#     pthread syscall_intercept
+#     glog pthread numa pmem2
+# )
+add_executable(fstest test/fstest.cc)
+target_link_libraries(fstest
     pthread syscall_intercept
 )
 

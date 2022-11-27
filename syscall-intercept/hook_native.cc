@@ -20,7 +20,7 @@ inline int close_native(int fd) {
     r_error("Hook do nothing --------------------------- %s", __func__);
 	return -1;
 }
-inline int unlink_native(const char *cpath, int flags) {
+inline int unlink_native(const char *cpath) {
     r_error("Hook do nothing --------------------------- %s", __func__);
 	return -1;
 }
@@ -28,15 +28,15 @@ inline int fsync_native(int fd) {
     r_error("Hook do nothing --------------------------- %s", __func__);
 	return -1;
 }
-inline int read_native(int fd, void *buf, size_t len) {
+inline ssize_t read_native(int fd, void *buf, size_t len) {
     r_error("Hook do nothing --------------------------- %s", __func__);
 	return -1;
 }
-inline int write_native(int fd, const char *buf, size_t len) {
+inline ssize_t write_native(int fd, const char *buf, size_t len) {
     r_error("Hook do nothing --------------------------- %s", __func__);
 	return -1;
 }
-inline int lseek_native(int fd, long off, int flag) {
+inline off_t lseek_native(int fd, off_t off, int flag) {
     r_error("Hook do nothing --------------------------- %s", __func__);
 	return -1;
 }
@@ -71,7 +71,7 @@ inline int register_thread_native(int* proc_id) {
     return 0;
 }
 
-inline int fs_init_native(const std::string& dev_name, const std::string& root_path) {
+inline int fs_init_native(void** sb_, const std::string& dev_name, const std::string& root_path) {
     // rand 随机数种子
     int seed = time(nullptr);
     srand((unsigned int)seed);
@@ -81,7 +81,8 @@ inline int fs_init_native(const std::string& dev_name, const std::string& root_p
     return 0;
 }
 
-inline int fs_unmount_native(const std::string &root_path) {
+inline int fs_unmount_native(void** sb_, const std::string &root_path) {
+    *sb_ = nullptr;
     return 0;
 }
 

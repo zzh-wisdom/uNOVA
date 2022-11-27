@@ -318,6 +318,9 @@ struct super_block {
     const struct dentry_operations *s_d_op; /* default d_op for dentries */
     /* Number of inodes with nlink == 0 but still referenced */
     atomic_t s_remove_count;
+    // ~super_block() {
+    //     printf("destroy %s\n", root_path.c_str());
+    // }
 };
 
 struct vfsmount {
@@ -1010,7 +1013,7 @@ struct open_flags {
 };
 
 #define CFG_MAX_CPU_NUM 64
-#define CFG_START_FD 100000
+#define CFG_START_FD 10000
 
 struct vfs_cfg {
     int numa_socket;
