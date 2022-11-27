@@ -75,18 +75,18 @@ static force_inline std::string path_find_last_compo(const std::string& path) {
 	return path.substr(i, end-i);
 }
 
-int fs_mount(struct super_block **sb, const std::string &dev_name, const std::string &dir_name,
+int fs_mount(const std::string &dev_name, const std::string &root_path,
             vfs_cfg *cfg) {
     int ret = 0;
     bool ret_bool;
-    if(fs_root_valid(dir_name) == false) return -1;
-    std::string last_part = path_find_last_compo(dir_name);
+    if(fs_root_valid(root_path) == false) return -1;
+    std::string last_part = path_find_last_compo(root_path);
     auto it = fs_init_ops.find(last_part);
     if(it == fs_init_ops.end()) {
         r_error("file type %s not found!", last_part.c_str());
         return -1;
     }
-    r_info("%s: dev_name=%s, dir_name=%s, cfg:", __func__, dev_name.c_str(), dir_name.c_str());
+    r_info("%s: dev_name=%s, root_path=%s, cfg:", __func__, dev_name.c_str(), root_path.c_str());
     vfs_cfg_print(cfg);
 
     // 抽象层初始化
@@ -98,21 +98,20 @@ int fs_mount(struct super_block **sb, const std::string &dev_name, const std::st
 
     // 创建sb
     struct super_block *s;
-    s = alloc_super(dev_name, pmap, dir_name);
+    s = alloc_super(dev_name, pmap, root_path);
     if (!s) {
         r_error("%s fail.\n", "alloc_super");
         goto out1;
     }
 
-    ret = ((it->second))(s, dev_name, dir_name, cfg);
+    ret = ((it->second))(s, dev_name, root_path, cfg);
     if(ret) {
         r_error("init specify fs fail.");
         goto out2;
     }
 
-    ret_bool = register_mounted_fs(dir_name, s);
+    ret_bool = register_mounted_fs(root_path, s);
     log_assert(ret_bool);
-    *sb = s;
     return 0;
 out2:
     destroy_super(s);
@@ -121,18 +120,22 @@ out1:
     return -1;
 }
 
-int fs_unmount(struct super_block **sb) {
-    struct super_block *s = *sb;
-    super_block* tmp = unregister_mounted_fs(s->root_path);
-    log_assert(tmp == s);
-    rd_info("fs_unmount: %s\n", s->root_path.c_str());
-    s->s_op->put_super(s);
-    pmem2_map *pmap = s->pmap;
+int vfs_fs_unmount(const std::string &root_path) {
+    super_block* sb = get_mounted_fs(root_path);
+    if(sb == nullptr) {
+        r_error("%s fail, %s is not a mounted fs.", __func__, root_path.c_str());
+        return -1;
+    }
+
+    super_block* tmp = unregister_mounted_fs(sb->root_path);
+    log_assert(tmp == sb);
+    rd_info("vfs_fs_unmount: %s\n", sb->root_path.c_str());
+    sb->s_op->put_super(sb);
+    pmem2_map *pmap = sb->pmap;
     vfs_destroy_file();
-    destroy_super(s);
-    Pmem2UnMap(&s->pmap);
+    destroy_super(sb);
+    Pmem2UnMap(&sb->pmap);
     vfs_destroy();
-    *sb = nullptr;
     return 0;
 }
 

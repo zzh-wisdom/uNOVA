@@ -876,3 +876,19 @@ off_t do_lseek(int fd, off_t offset, int whence) {
     if (file->f_op->llseek) fn = file->f_op->llseek;
     return fn(file, offset, whence);
 }
+
+int do_fsync(int fd) {
+    struct file *file = vfs_file_get(fd);
+    if (file == nullptr) {
+        rd_error("%s fail, fd %d is illegal.", __func__, fd);
+        return -1;
+    }
+    struct inode* inode = file->f_inode;
+    super_block* sb = inode->i_sb;
+    if (!file->f_op->fsync)
+		return -EINVAL;
+    if (sb->s_op->dirty_inode)
+	    sb->s_op->dirty_inode(inode, I_DIRTY_INODE | I_DIRTY_TIME);
+
+    return file->f_op->fsync(file, 0, __LONG_MAX__, 0);
+}

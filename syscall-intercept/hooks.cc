@@ -5,6 +5,7 @@
 #include <dlfcn.h>
 #include <sys/types.h>
 #include <assert.h>
+#include <string.h>
 
 #include "hooks.h"
 
@@ -45,64 +46,80 @@ struct linux_dirent64 {
 #define ALIGN(x, a)                     __ALIGN_KERNEL((x), (a))
 
 int hook_start_fd = 10000;
+struct hook_operations* hook_op;
 
-// TODO: 参数的含义
-int hook_openat(int dirfd, const char* cpath, int flags, mode_t mode, long *res) {
-    if(flags & O_PATH || flags & O_APPEND || flags & O_EXCL) {
-        *res = -ENOTSUP;
-         return 1;
-    }
-    if(dirfd != AT_FDCWD) {
-        return 1;
-    }
-
-    if(cpath[0] != '/') {
-        return 1;
-    }
-
-    printf("open dirfd = %d, cpath = %s\n", dirfd, cpath);
-    *res = 0;
-    return 0;
+static inline bool is_hook(const char *pathname) {
+    if(hook_op->root_name.empty()) return false;
+    if(strncmp(pathname, hook_op->root_name.c_str(), hook_op->root_name.size())) return true;
+    return false;
 }
 
-// TODO: 读写文件如果需要sync则需要更新元数据
-int hook_fsync(int fd, long *res) {
-    if(fd < hook_start_fd) {
-        return 1;
-    }
-    printf("fsync fd = %d\n", fd);
-    *res = 0;
-    return 0;
-}
-
-
-int hook_close(int fd, long *res) {
-    if(fd < hook_start_fd) {
-        return 1;
-    }
-
-    printf("close fd = %d\n", fd);
-    *res = 0;
-    return 0;
-}
-
-int hook_mkdirat(int dirfd, const char *path, mode_t mode, long *res) {
-    if(dirfd != AT_FDCWD) {
-        return 1;
-    }
-    long fd;
-    int was_hooked = hook_openat(dirfd, path, O_CREAT | O_DIRECTORY, mode, &fd);
-    if (was_hooked) {
-        return 1;
-    }
-	// hook_close((int)fd, res);
-    *res = 0;
+static inline int hook_mkdirat(int dirfd, const char *path, mode_t mode, long *res) {
+    if(dirfd != AT_FDCWD) return -1;
+    if(!is_hook(path)) return -1;
+    printf("%s %s\n", __func__, path);
+    *res = hook_op->mkdir(path, mode);
 	return 0;
+}
+static inline int hook_rmdir(int dirfd, const char *cpath, long *res) {
+    if(dirfd != AT_FDCWD) return -1;
+    if(!is_hook(cpath)) return -1;
+    printf("%s %s\n", __func__, cpath);
+    *res = hook_op->rmdir(cpath);
+    return 0;
+}
+
+static inline int hook_openat(int dirfd, const char* cpath, int flags, mode_t mode, long *res) {
+    if(dirfd != AT_FDCWD) return -1;
+    if(!is_hook(cpath)) return -1;
+    if(flags & O_PATH || flags & O_TRUNC || flags & O_EXCL) {
+        *res = -ENOTSUP;
+        return 0;
+    }
+    printf("%s cpath = %s\n", __func__, cpath);
+    *res = hook_op->open(cpath, flags, mode);
+    return 0;
+}
+static inline int hook_close(int fd, long *res) {
+    if(fd < hook_start_fd) return -1;
+    printf("%s fd = %d\n", __func__, fd);
+    *res = hook_op->close(fd);
+    return 0;
+}
+static inline int hook_unlinkat(int dirfd, const char *cpath, int flags, long *res) {
+    if(dirfd != AT_FDCWD) return -1;
+    if(!is_hook(cpath)) return -1;
+    printf("%s cpath = %s\n", __func__, cpath);
+    *res = hook_op->unlink(cpath, flags);
+    return 0;
+}
+int hook_fsync(int fd, long *res) {
+    if(fd < hook_start_fd) return -1;
+    printf("%s fd = %d\n", __func__, fd);
+    *res = hook_op->fsync(fd);
+    return 0;
+}
+int hook_read(int fd, void *buf, size_t len, long *res) {
+    if(fd < hook_start_fd) return -1;
+    printf("%s fd = %d\n", __func__, fd);
+    *res = hook_op->read(fd, buf, len);
+    return 0;
+}
+int hook_write(int fd, const char *buf, size_t len, long *res) {
+    if(fd < hook_start_fd) return -1;
+    printf("%s fd = %d\n", __func__, fd);
+    *res = hook_op->write(fd, buf, len);
+    return 0;
+}
+int hook_lseek(int fd, long off, int flag, long *res) {
+    if(fd < hook_start_fd) return -1;
+    printf("%s fd = %d\n", __func__, fd);
+    *res = hook_op->lseek(fd, off, flag);
+    return 0;
 }
 
 int hook_statfs(const char *path, struct statfs *sf, long *res) {
-
-    // TODO: RPC get fs info
+    if(!is_hook(path)) return -1;
     sf->f_type = 0;
     sf->f_bsize = 0;
     sf->f_blocks = 40960;
@@ -115,63 +132,25 @@ int hook_statfs(const char *path, struct statfs *sf, long *res) {
     sf->f_frsize = 0;
 	sf->f_flags = ST_NOSUID | ST_NODEV;
 
-    printf("stat path = %s\n", path);
+    printf("------------- %s path = %s\n", __func__, path);
     *res = 0;
     return 0;
 }
-
-
-// 删除目录和文件都使用这个函数
-// 服务器判断是文件还是目录，决定是否删除
-int hook_unlinkat(int dirfd, const char *cpath, int flags, long *res) {
-    // cpath need has consistent prefix with mount_dir
-
-    if(dirfd != AT_FDCWD) {
-        return 1;
-    }
-
-    printf("open unlink = %d, cpath = %s\n", dirfd, cpath);
-    *res = 0;
-    return 0;
-}
-
 int hook_stat(const char *cpath, struct stat *st, long *res) {
-
-    printf("stat cpath = %s\n", cpath);
+    if(!is_hook(cpath)) return -1;
+    printf("------------- %s path = %s\n", __func__, cpath);
     *res = 0;
     return 0;
 }
-
-
 int hook_fstat(int fd, struct stat *st, long *res) {
-    printf("fstat fd = %d\n", fd);
+    if(fd < hook_start_fd) return -1;
+    printf("------------- %s fd = %d\n", __func__, fd);
     *res = 0;
     return 0;
 }
-
 int hook_access(const char *path, int mask, long *res) {
-    printf("access path = %s\n", path);
-    *res = 0;
-    return 0;
-}
-
-int hook_read(int fd, void *buf, size_t len, long *res) {
-    printf("read fd = %d", fd);
-    *res = 0;
-    return 0;
-}
-
-int hook_write(int fd, const char *buf, size_t len, long *res) {
-    if(fd < hook_start_fd) {
-        return 1;
-    }
-    printf("write fd = %d\n", fd);
-    *res = 0;
-    return 0;
-}
-
-int hook_lseek(int fd, long off, int flag, long *res) {
-    printf("lseek fd = %d", fd);
+    if(!is_hook(path)) return -1;
+    printf("------------- %s path = %s\n", __func__, path);
     *res = 0;
     return 0;
 }
@@ -180,7 +159,6 @@ int hook_getdents(int fd, struct linux_dirent *dirp, int count, long *res) {
     printf("hook %s\n", __func__);
     return 0;
 }
-
 int hook_getdents64(int fd, struct linux_dirent64 *dirp, int count, long *res) {
     printf("hook %s\n", __func__);
     *res = 0;
@@ -196,59 +174,61 @@ int hook(long syscall_number,
                 long a4, long a5,
                 long *res) {
     switch(syscall_number) {
+        case SYS_mkdirat:
+            // printf("SYS_mkdirat\n");
+            return hook_mkdirat((int)a0, (const char *)a1, (mode_t)a2, res);
+        case SYS_mkdir:
+            // printf("SYS_mkdir\n");
+            return hook_mkdirat(AT_FDCWD, (const char *)a0, (mode_t)a1, res);
+        case SYS_rmdir:
+            // printf("SYS_rmdir\n");
+            return hook_rmdir(AT_FDCWD, (const char *)a0, res);
         case SYS_open:
-            printf("SYS_open\n");
+            // printf("SYS_open\n");
             return hook_openat(AT_FDCWD, (char *)a0, (int)a1, (mode_t)a2, res);
-        case SYS_creat:
-            printf("SYS_create\n");
-            return hook_openat(AT_FDCWD, (char *)a0, O_WRONLY | O_CREAT | O_TRUNC, (mode_t)a1, res);
         case SYS_openat:
-            printf("SYS_openat\n");
+            // printf("SYS_openat\n");
             return hook_openat((int)a0, (char *)a1, (int)a2, (mode_t)a3, res);
+        case SYS_creat:
+            // printf("SYS_create\n");
+            return hook_openat(AT_FDCWD, (char *)a0, O_WRONLY | O_CREAT | O_TRUNC, (mode_t)a1, res);
         case SYS_close:
-            printf("SYS_close, fd: %d\n", (int)a0);
+            // printf("SYS_close, fd: %d\n", (int)a0);
             return hook_close((int)a0, res);
         case SYS_write:
-            printf("SYS_write, fd: %d\n", (int)a0);
+            // printf("SYS_write, fd: %d\n", (int)a0);
             return hook_write((int)a0, (char *)a1, (size_t)a2, res);
         case SYS_read:
             // FS_LOG("SYS_read, fd: %d", (int)a0);
             return hook_read((int)a0, (void *)a1, (size_t)a2, res);
         case SYS_lseek:
-            printf("SYS_lseek\n");
+            // printf("SYS_lseek\n");
             return hook_lseek((int)a0, a1, (int)a2, res);
         case SYS_fsync:
-            printf("SYS_fsync\n");
+            // printf("SYS_fsync\n");
             return hook_fsync((int)a0, res);
+        case SYS_unlink:
+            // printf("SYS_unlink\n");
+            return hook_unlinkat(AT_FDCWD, (const char *)a0, 0, res);
+
         case SYS_stat:
-            printf("SYS_stat\n");
+            // printf("SYS_stat\n");
             return hook_stat((const char *)a0, (struct stat *)a1, res);
         case SYS_fstat:
-            printf("SYS_fstat\n");
+            // printf("SYS_fstat\n");
             return hook_fstat((int)a0, (struct stat*)a1, res);
-        case SYS_mkdirat:
-            printf("SYS_mkdirat\n");
-            return hook_mkdirat((int)a0, (const char *)a1, (mode_t)a2, res);
-        case SYS_mkdir:
-            printf("SYS_mkdir\n");
-            return hook_mkdirat(AT_FDCWD, (const char *)a0, (mode_t)a1, res);
         case SYS_statfs:
-            printf("SYS_statfs\n");
+            // printf("SYS_statfs\n");
             return hook_statfs((const char *)a0, (struct statfs *)a1, res);
         case SYS_access:
-            printf("SYS_access\n");
+            // printf("SYS_access\n");
             return hook_access((const char *)a0, (int)a1, res);
-        case SYS_unlink:
-            printf("SYS_unlink\n");
-            return hook_unlinkat(AT_FDCWD, (const char *)a0, 0, res);
-        case SYS_rmdir:
-            printf("SYS_rmdir\n");
-            return hook_unlinkat(AT_FDCWD, (const char *)a0, AT_REMOVEDIR, res);
+
         case SYS_getdents:
-            printf("SYS_getdents\n");
+            // printf("SYS_getdents\n");
             return hook_getdents((int)a0, (linux_dirent *)a1, (int)a2, res);
         case SYS_getdents64:
-            printf("SYS_getdents64\n");
+            // printf("SYS_getdents64\n");
             return hook_getdents64((int)a0, (linux_dirent64 *)a1, (int)a3, res);
         // case SYS_rename:
         //     return hook_renameat(AT_FDCWD, (const char))
@@ -268,6 +248,12 @@ int wrapper_hook(long syscall_number,
                 long a2, long a3,
                 long a4, long a5,
                 long *res) {
+    thread_local static bool thread_bind = false;
+    if(!thread_bind) {
+        hook_op->register_thread(nullptr);
+        thread_bind = true;
+    }
+
     // 防止重复进入
     thread_local static int reentrance_flag = false;
 	// int oerrno;

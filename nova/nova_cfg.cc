@@ -43,10 +43,12 @@ void nova_cfg_init(pmem2_map* pmap, struct vfs_cfg* cfg) {
 // 注册并绑核，返回绑定的core_id
 int nova_register_thread(int* proc_id) {
     log_assert(nova_cfg_inited);
-    log_assert(register_thread_num < nova_cpu_num);
-    processor_id = register_thread_num;
-    int core_id = nova_cpu_ids[register_thread_num].id;
-    ++register_thread_num;
+    if(atomic_load(&register_thread_num) >= nova_cpu_num) {
+        r_fatal("register_thread_num %d >= nova_cpu_num %d", register_thread_num, nova_cpu_num);
+    }
+    processor_id = atomic_fetch_add(&register_thread_num, 1);
+    processor_id = processor_id % nova_cpu_num;
+    int core_id = nova_cpu_ids[processor_id].id;
     bool ret = CoreBind(pthread_self(), core_id);
     log_assert(ret);
     r_info("process_id=%d bind ===========================> core %d", processor_id, core_id);

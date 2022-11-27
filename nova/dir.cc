@@ -736,11 +736,20 @@ static u64 nova_find_next_dentry_addr(struct super_block *sb,
 // 	return 0;
 // }
 
+int noop_fsync(struct file *file, loff_t start, loff_t end, int datasync)
+{
+	int ret = 0;
+	NOVA_START_TIMING(fsync_t, fsync_time);
+	PERSISTENT_BARRIER();
+	NOVA_END_TIMING(fsync_t, fsync_time);
+	return ret;
+}
+
 const struct file_operations nova_dir_operations = {
 // 	.llseek		= generic_file_llseek,
 // 	.read		= generic_read_dir,
 // 	.iterate	= nova_readdir,
-// 	.fsync		= noop_fsync,
+	.fsync		= noop_fsync,
 // 	.unlocked_ioctl = nova_ioctl,
 // #ifdef CONFIG_COMPAT
 // 	.compat_ioctl	= nova_compat_ioctl,

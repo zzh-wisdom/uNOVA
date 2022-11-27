@@ -17,9 +17,9 @@
  * 注意，需要先调用 vfs_init()
  *
  */
-int fs_mount(struct super_block** sb, const std::string &dev_name, const std::string &dir_name,
+int fs_mount(const std::string &dev_name, const std::string &root_path,
              struct vfs_cfg* cfg);
-int fs_unmount(struct super_block** sb);
+int vfs_fs_unmount(const std::string &root_path);
 
 // 0创建成功，-1创建失败
 int vfs_mkdir(const char* pathname, umode_t mode);
@@ -41,6 +41,11 @@ static force_inline ssize_t vfs_write(int fd, const char* buf, size_t count) {
 
 static force_inline off_t vfs_lseek(int fd, off_t offset, int whence) {
     return do_lseek(fd, offset, whence);
+}
+
+// SYSCALL_DEFINE1(fsync
+static force_inline int vfs_fsync(int fd) {
+    return do_fsync(fd);
 }
 
 #endif

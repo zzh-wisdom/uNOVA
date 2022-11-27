@@ -1,5 +1,0 @@
-/home/zzh/uNOVA/build/CMakeFiles/rebuild_cache.dir
-/home/zzh/uNOVA/build/CMakeFiles/nova_basic_test.dir
-/home/zzh/uNOVA/build/CMakeFiles/edit_cache.dir
-/home/zzh/uNOVA/build/CMakeFiles/test.dir
-/home/zzh/uNOVA/build/CMakeFiles/demo_hook.dir

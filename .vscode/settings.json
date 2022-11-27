@@ -42,6 +42,25 @@
         "vfs.h": "c",
         "nova_cfg.h": "c",
         "vfs_api.h": "c",
-        "aep.h": "c"
+        "aep.h": "c",
+        "string": "cpp",
+        "atomic": "cpp",
+        "bit": "cpp",
+        "cstdarg": "cpp",
+        "cstddef": "cpp",
+        "cstring": "cpp",
+        "deque": "cpp",
+        "vector": "cpp",
+        "algorithm": "cpp",
+        "functional": "cpp",
+        "iterator": "cpp",
+        "memory": "cpp",
+        "memory_resource": "cpp",
+        "numeric": "cpp",
+        "optional": "cpp",
+        "string_view": "cpp",
+        "fstream": "cpp",
+        "iosfwd": "cpp",
+        "sstream": "cpp"
     }
 }

@@ -11,19 +11,20 @@ int main(int argc, char* argv[]) {
     };
     InitLog(argv[0], &log_cfg);
 
-    vfs_cfg fs_cfg;
-    vfs_cfg_default_init(&fs_cfg);
     // rand 随机数种子
     int seed = time(nullptr);
     srand((unsigned int)seed);
+
+    vfs_cfg fs_cfg;
+    vfs_cfg_default_init(&fs_cfg);
+
     // numa环境
     SetSocketAndPolicy(fs_cfg.numa_socket, 1);
 
-    super_block *sb;
     int ret = 0;
     const std::string dev_name = "/dev/dax3.0";
-    const std::string dir_name = "/tmp/nova";
-    ret = fs_mount(&sb, dev_name, dir_name, &fs_cfg);
+    const std::string root_path = "/tmp/nova";
+    ret = fs_mount(dev_name, root_path, &fs_cfg);
     log_assert(ret == 0);
 
     nova_register_thread(nullptr);
@@ -157,6 +158,6 @@ int main(int argc, char* argv[]) {
     ret = vfs_ls("/tmp/nova/");
     log_assert(ret == 0);
 
-    // fs_unmount(&sb);
+    vfs_fs_unmount(root_path);
     return 0;
 }

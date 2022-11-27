@@ -1,1 +1,0 @@
-/usr/bin/c++ -fPIC  -std=c++11 -DERPC_INFINIBAND=true -D_FILE_OFFSET_BITS=64  -shared -Wl,-soname,libdemo_hook.so -o libdemo_hook.so CMakeFiles/demo_hook.dir/syscall-intercept/hook_native.cc.o CMakeFiles/demo_hook.dir/syscall-intercept/hooks.cc.o CMakeFiles/demo_hook.dir/syscall-intercept/preload.cc.o  -lpthread -lsyscall_intercept 
