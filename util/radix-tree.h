@@ -33,11 +33,11 @@
 
 #define GFP_ATOMIC (0x20u | 80000u | 0x400000u)
 
-#ifdef CONFIG_64BIT
+// #ifdef CONFIG_64BIT
 #define BITS_PER_LONG 64
-#else
-#define BITS_PER_LONG 32
-#endif /* CONFIG_64BIT */
+// #else
+// #define BITS_PER_LONG 32
+// #endif /* CONFIG_64BIT */
 
 typedef unsigned gfp_t;
 

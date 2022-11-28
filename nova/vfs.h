@@ -115,39 +115,31 @@
 #define S_ENCRYPTED 16384 /* Encrypted file (using fs/crypto/) */
 
 // #define S_IFMT 00170000
-#define S_IFSOCK 0140000
-#define S_IFLNK 0120000
-#define S_IFREG 0100000
-#define S_IFBLK 0060000
-#define S_IFDIR 0040000
-#define S_IFCHR 0020000
-#define S_IFIFO 0010000
-#define S_ISUID 0004000
-#define S_ISGID 0002000
-#define S_ISVTX 0001000
+// #define S_IFSOCK 0140000
+// #define S_IFLNK 0120000
+// #define S_IFREG 0100000
+// #define S_IFBLK 0060000
+// #define S_IFDIR 0040000
+// #define S_IFCHR 0020000
+// #define S_IFIFO 0010000
+// #define S_ISUID 0004000
+// #define S_ISGID 0002000
+// #define S_ISVTX 0001000
 
-#define S_ISLNK(m) (((m)&S_IFMT) == S_IFLNK)
-#define S_ISREG(m) (((m)&S_IFMT) == S_IFREG)
-#define S_ISDIR(m) (((m)&S_IFMT) == S_IFDIR)
-#define S_ISCHR(m) (((m)&S_IFMT) == S_IFCHR)
-#define S_ISBLK(m) (((m)&S_IFMT) == S_IFBLK)
-#define S_ISFIFO(m) (((m)&S_IFMT) == S_IFIFO)
-#define S_ISSOCK(m) (((m)&S_IFMT) == S_IFSOCK)
+// #define S_IRWXU 00700
+// #define S_IRUSR 00400
+// #define S_IWUSR 00200
+// #define S_IXUSR 00100
 
-#define S_IRWXU 00700
-#define S_IRUSR 00400
-#define S_IWUSR 00200
-#define S_IXUSR 00100
+// #define S_IRWXG 00070
+// #define S_IRGRP 00040
+// #define S_IWGRP 00020
+// #define S_IXGRP 00010
 
-#define S_IRWXG 00070
-#define S_IRGRP 00040
-#define S_IWGRP 00020
-#define S_IXGRP 00010
-
-#define S_IRWXO 00007
-#define S_IROTH 00004
-#define S_IWOTH 00002
-#define S_IXOTH 00001
+// #define S_IRWXO 00007
+// #define S_IROTH 00004
+// #define S_IWOTH 00002
+// #define S_IXOTH 00001
 
 #define pgoff_t unsigned long
 typedef unsigned __bitwise fmode_t;
@@ -863,6 +855,34 @@ struct iattr {
     struct file *ia_file;
 };
 
+struct kstat {
+	u32		result_mask;	/* What fields the user got */
+	umode_t		mode;
+	unsigned int	nlink;
+	uint32_t	blksize;	/* Preferred I/O size */
+	u64		attributes;
+	u64		attributes_mask;
+#define KSTAT_ATTR_FS_IOC_FLAGS				\
+	(STATX_ATTR_COMPRESSED |			\
+	 STATX_ATTR_IMMUTABLE |				\
+	 STATX_ATTR_APPEND |				\
+	 STATX_ATTR_NODUMP |				\
+	 STATX_ATTR_ENCRYPTED				\
+	 )/* Attrs corresponding to FS_*_FL flags */
+	u64		ino;
+	dev_t		dev;
+	dev_t		rdev;
+	kuid_t		uid;
+	kgid_t		gid;
+	loff_t		size;
+	struct timespec atime;
+	struct timespec mtime;
+	struct timespec ctime;
+	struct timespec btime;			/* File creation time */
+	u64		blocks;
+};
+
+
 struct inode_operations {
     int (*create)(struct inode *, struct dentry *, umode_t, bool);
     struct dentry *(*lookup)(struct inode *, struct dentry *, unsigned int);
@@ -892,6 +912,11 @@ struct inode_operations {
     int (*tmpfile)(struct inode *, struct dentry *, umode_t);
     int (*dentry_open)(struct dentry *, struct file *, const struct cred *);
 };
+
+static inline unsigned int i_blocksize(const struct inode *node)
+{
+	return (1 << node->i_blkbits);
+}
 
 /*
  * NOTE: in a 32bit arch with a preemptable kernel and
@@ -944,6 +969,56 @@ static inline void i_size_write(struct inode *inode, loff_t i_size) {
     // #else
     inode->i_size = i_size;
     // #endif
+}
+
+static force_inline void generic_fillattr(struct inode *inode, struct kstat *stat)
+{
+	// stat->dev = inode->i_sb->s_dev;
+	stat->dev = 0;
+	stat->ino = inode->i_ino;
+	stat->mode = inode->i_mode;
+	stat->nlink = inode->i_nlink;
+	// stat->uid = inode->i_uid;
+	// stat->gid = inode->i_gid;
+    stat->uid = 0;
+	stat->gid = 0;
+	stat->rdev = 0;
+	stat->size = i_size_read(inode);
+	stat->atime = inode->i_atime;
+	stat->mtime = inode->i_mtime;
+	stat->ctime = inode->i_ctime;
+	stat->blksize = i_blocksize(inode);
+	stat->blocks = inode->i_blocks;
+
+	// if (IS_NOATIME(inode))
+	// 	stat->result_mask &= ~STATX_ATIME;
+	// if (IS_AUTOMOUNT(inode))
+	// 	stat->attributes |= STATX_ATTR_AUTOMOUNT;
+}
+
+static force_inline void cp_kstat_2_stat(struct stat *s, struct kstat *ks) {
+    memset(s, 0, sizeof(struct stat));
+    // s->st_dev = old_encode_dev(ks->dev);
+	s->st_ino = ks->ino;
+	// if (sizeof(s->st_ino) < sizeof(ks->ino) && s->st_ino != ks->ino)
+	// 	return -EOVERFLOW;
+	s->st_mode = ks->mode;
+	s->st_nlink = ks->nlink;
+	// if (s->st_nlink != ks->nlink)
+	// 	return -EOVERFLOW;
+	// SET_UID(s->st_uid, from_kuid_munged(current_user_ns(), ks->uid));
+	// SET_GID(s->st_gid, from_kgid_munged(current_user_ns(), ks->gid));
+	// s->st_rdev = old_encode_dev(ks->rdev);
+// #if BITS_PER_LONG == 32
+// 	if (ks->size > MAX_NON_LFS)
+// 		return -EOVERFLOW;
+// #endif
+	s->st_size = ks->size;
+    s->st_blksize = ks->blksize;
+    s->st_blocks = ks->blocks;
+	s->st_atime = ks->atime.tv_sec;
+	s->st_mtime = ks->mtime.tv_sec;
+	s->st_ctime = ks->ctime.tv_sec;
 }
 
 // extern bool atime_needs_update(const struct path *, struct inode *);
@@ -1041,6 +1116,8 @@ static force_inline void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->format = true;
 }
 
+void setattr_copy(struct inode *inode, const struct iattr *attr);
+
 void vfs_init(vfs_cfg* cfg);
 void vfs_destroy_file();
 void vfs_destroy();
@@ -1052,5 +1129,7 @@ ssize_t do_write(int fd, const char* buf, size_t count);
 loff_t generic_file_llseek(struct file *file, loff_t offset, int whence);
 off_t do_lseek(int fd, off_t offset, int whence);
 int do_fsync(int fd);
+int do_dentry_truncate(dentry* d, off_t length, unsigned int time_attrs, struct file *filp);
+int do_ftruncate(int fd, off_t length);
 
 #endif

@@ -305,7 +305,7 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	// }
 
 	// /* Align start and end to cacheline boundaries */
-	// start = start & CACHELINE_MASK;
+	// start = start & CACHELINE_UNMASK;
 	// end = CACHELINE_ALIGN(end);
 	// do {
 	// 	unsigned long nvmm;
@@ -406,7 +406,7 @@ const struct file_operations nova_dax_file_operations = {
 };
 
 const struct inode_operations nova_file_inode_operations = {
-	// .setattr	= nova_notify_change,
-	// .getattr	= nova_getattr,
+	.setattr	= nova_notify_change,
+	.getattr	= nova_getattr,
 	// .get_acl	= NULL,
 };

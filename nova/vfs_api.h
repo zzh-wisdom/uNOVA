@@ -48,4 +48,12 @@ static force_inline int vfs_fsync(int fd) {
     return do_fsync(fd);
 }
 
+// SYSCALL_DEFINE2(stat
+int vfs_stat(const char *path, struct stat *buf);
+
+int vfs_truncate(const char *path, off_t length);
+static force_inline int vfs_ftruncate(int fd, off_t length) {
+    return do_ftruncate(fd, length);
+}
+
 #endif

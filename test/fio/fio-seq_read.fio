@@ -1,0 +1,33 @@
+; fio-seq-read.job for fiotest
+
+[global]
+; 基于时间来决定任务是否终止
+time_based
+runtime=32
+; 测试项目名称
+name=fio-seq-reads
+; 测试文件，也可以制定到裸设备上
+filename=/tmp/nova/fio-seq-reads
+; filename=/mnt/pmem2/fio/fio-seq-reads
+rw=read
+bs=4K
+; direct=1
+; max-job=32
+; 线程或者进程数
+numjobs=32
+; 使用线程
+thread=1
+cpus_allowed=20-39,60-79
+cpus_allowed_policy=split
+numa_cpu_nodes=1
+numa_mem_policy=bind:1
+; verify=md5
+; do_verify=1
+
+; –filesize= 单独的文件大小，也可以是一个范围，fio在设定的size只内随机的选择大小，如果没有指定，每个子文件大小相同。
+
+[file1]
+; 文件大小
+size=8M
+ioengine=sync
+;iodepth=16

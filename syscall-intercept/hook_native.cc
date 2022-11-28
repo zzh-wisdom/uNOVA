@@ -5,66 +5,75 @@
 
 inline int mkdir_native(const char *path, mode_t mode) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 inline int rmdir_native(const char *cpath) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 
 inline int open_native(const char* cpath, int flags, mode_t mode) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 inline int close_native(int fd) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 inline int unlink_native(const char *cpath) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 inline int fsync_native(int fd) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 inline ssize_t read_native(int fd, void *buf, size_t len) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 inline ssize_t write_native(int fd, const char *buf, size_t len) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 inline off_t lseek_native(int fd, off_t off, int flag) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
+}
+
+inline int truncate_native(const char *path, off_t length) {
+    r_error("Hook do nothing --------------------------- %s", __func__);
+	return -ENOTSUP;
+}
+inline int ftruncate_native(int fd, off_t length) {
+    r_error("Hook do nothing --------------------------- %s", __func__);
+	return -ENOTSUP;
 }
 
 inline int statfs_native(const char *path, struct statfs *sf) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 inline int stat_native(const char *cpath, struct stat *st) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 inline int fstat_native(int fd, struct stat *st) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 int access_native(const char *path, int mask) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 
 inline int getdents_native(int fd, struct linux_dirent *dirp, int count) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 inline int getdents64_native(int fd, struct linux_dirent64 *dirp, int count) {
     r_error("Hook do nothing --------------------------- %s", __func__);
-	return -1;
+	return -ENOTSUP;
 }
 
 inline int register_thread_native(int* proc_id) {
@@ -101,6 +110,8 @@ struct hook_operations hook_op_native = {
     .read       = read_native       ,
     .write      = write_native      ,
     .lseek      = lseek_native      ,
+    .truncate   = truncate_native   ,
+    .ftruncate  = ftruncate_native  ,
     .statfs     = statfs_native     ,
     .stat       = stat_native       ,
     .fstat      = fstat_native      ,

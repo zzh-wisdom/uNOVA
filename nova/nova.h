@@ -967,9 +967,9 @@ extern struct inode *nova_iget(struct super_block *sb, unsigned long ino);
 extern void nova_evict_inode(struct inode *inode);
 extern int nova_write_inode(struct inode *inode, struct writeback_control *wbc);
 extern void nova_dirty_inode(struct inode *inode, int flags);
-// extern int nova_notify_change(struct dentry *dentry, struct iattr *attr);
-// int nova_getattr(struct vfsmount *mnt, struct dentry *dentry,
-// 		struct kstat *stat);
+extern int nova_notify_change(struct dentry *dentry, struct iattr *attr);
+int nova_getattr(struct vfsmount *mnt, struct dentry *dentry,
+		struct kstat *stat);
 extern void nova_set_inode_flags(struct inode *inode, struct nova_inode *pi,
 	unsigned int flags);
 extern unsigned long nova_find_region(struct inode *inode, loff_t *offset,

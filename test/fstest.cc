@@ -15,10 +15,12 @@
 #include <time.h>
 
 #include <libsyscall_intercept_hook_point.h>
-
+#include <dlfcn.h>
 
 int main(int argc, char* argv[]) {
 
+    void *handle = dlopen("./libfs_hook.so", RTLD_LAZY);
+	assert(handle);
     /**
         /tmp/mountdir
         ├── top_plus
@@ -41,7 +43,6 @@ int main(int argc, char* argv[]) {
     int ret;
     // int fd;
     // DIR * dirstream = NULL;
-    // struct stat dirstat;
 
     if(syscall_hook_in_process_allowed()) {
         printf("syscall Enable!\n");
@@ -158,12 +159,32 @@ int main(int argc, char* argv[]) {
     close(fd);
 
     // Test stat on existing dir
-    // ret = stat(topdir.c_str(), &dirstat);
-    // if(ret != 0){
-    //     std::cerr << "Error stating topdir: " << std::strerror(errno) << std::endl;
-    //     return -1;
-    // }
-    // assert(S_ISDIR(dirstat.st_mode));
+    struct stat st;
+    ret = stat(dir1.c_str(), &st);
+    assert(ret == 0);
+    assert(S_ISDIR(st.st_mode));
+    ret = stat(files_f1.c_str(), &st);
+    assert(ret == 0);
+    assert(S_ISREG(st.st_mode));
+
+    ret = stat(mntdir.c_str(), &st);
+    assert(ret == 0);
+    assert(S_ISDIR(st.st_mode));
+
+    const std::string top_file = mntdir + "/fio-seq-reads";
+    fd = open(top_file.c_str(), O_RDWR | O_CREAT | O_TRUNC, 666);
+    assert(fd > 0);
+    ret = ftruncate(fd, 64);
+    assert(ret == 0);
+    ret = stat(top_file.c_str(), &st);
+    assert(ret == 0);
+    assert(st.st_size == 64);
+    close(fd);
+    ret = truncate(top_file.c_str(), 128);
+    assert(ret == 0);
+    ret = stat(top_file.c_str(), &st);
+    assert(ret == 0);
+    assert(st.st_size == 128);
 
     printf("Test pass\n");
 }

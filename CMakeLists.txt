@@ -57,7 +57,7 @@ target_link_libraries(fs_hook
 # )
 add_executable(fstest test/fstest.cc)
 target_link_libraries(fstest
-    pthread syscall_intercept
+    pthread syscall_intercept dl
 )
 
 add_executable(nova_basic_test

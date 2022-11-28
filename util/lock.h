@@ -48,8 +48,6 @@
 #define atomic_set_bit(P, V) __sync_or_and_fetch((P), 1<<(V))
 #define atomic_clear_bit(P, V) __sync_and_and_fetch((P), ~(1<<(V)))
 
-#define barrier() asm volatile("": : :"memory")
-
 #define cpu_relax() asm volatile("pause\n": : :"memory")
 
 force_inline static void *xchg_64(void *ptr, void *x)

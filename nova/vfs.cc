@@ -5,6 +5,7 @@
 #include "util/aep.h"
 #include "util/log.h"
 #include "util/mem.h"
+#include "util/cpu.h"
 
 const struct qstr empty_name = QSTR_INIT("", 0);
 const struct qstr slash_name = QSTR_INIT("/", 1);
@@ -732,7 +733,7 @@ int do_open(dentry *parent, qstr name, struct open_flags *op) {
         goto err;
     }
 
-    printf("inode->mode: %d\n", op->mode);
+    printf("create: %s hash %d, inode->mode: %d\n", cur->d_name.name, cur->d_name.hash, op->mode);
     // 需要新建文件
     ret = dir->i_op->create(dir, cur, op->mode, op->open_flag & O_EXCL);
     if (ret != 0) {
@@ -768,7 +769,7 @@ ssize_t do_read(int fd, char *buf, size_t count) {
     struct file *file = vfs_file_get(fd);
     if (file == nullptr) {
         rd_error("%s fail, fd %d is illegal.", __func__, fd);
-        return ret;
+        return -EBADF;
     }
     loff_t pos = file_pos_read(file);
     rd_info("%s src_buf=%p, count=%lu, pos=%ld", __func__, buf, count, pos);
@@ -776,25 +777,25 @@ ssize_t do_read(int fd, char *buf, size_t count) {
     if (file->f_op->read)
         ret = file->f_op->read(file, buf, count, &pos);
     else
-        ret - EINVAL;
+        ret = EINVAL;
     if (ret >= 0) file_pos_write(file, pos);
     return ret;
 }
 
 ssize_t do_write(int fd, const char *buf, size_t count) {
-    ssize_t ret = -1;
     struct file *file = vfs_file_get(fd);
     if (file == nullptr) {
         rd_error("%s fail, fd %d is illegal.", __func__, fd);
-        return ret;
+        return -EBADF;
     }
     loff_t pos = file_pos_read(file);
     rd_info("%s src_buf=%p, count=%lu, pos=%ld", __func__, buf, count, pos);
 
+    ssize_t ret = -1;
     if (file->f_op->read)
         ret = file->f_op->write(file, buf, count, &pos);
     else
-        ret - EINVAL;
+        ret = EINVAL;
     if (ret >= 0) file_pos_write(file, pos);
     return ret;
 }
@@ -891,4 +892,145 @@ int do_fsync(int fd) {
 	    sb->s_op->dirty_inode(inode, I_DIRTY_INODE | I_DIRTY_TIME);
 
     return file->f_op->fsync(file, 0, __LONG_MAX__, 0);
+}
+
+static force_inline void truncate_setsize(struct inode *inode, loff_t newsize)
+{
+	loff_t oldsize = inode->i_size;
+
+	i_size_write(inode, newsize);
+	// if (newsize > oldsize)
+	// 	pagecache_isize_extended(inode, oldsize, newsize);
+	// truncate_pagecache(inode, newsize);
+}
+
+void setattr_copy(struct inode *inode, const struct iattr *attr)
+{
+	unsigned int ia_valid = attr->ia_valid;
+
+	// if (ia_valid & ATTR_UID)
+	// 	inode->i_uid = attr->ia_uid;
+	// if (ia_valid & ATTR_GID)
+	// 	inode->i_gid = attr->ia_gid;
+	if (ia_valid & ATTR_ATIME)
+		inode->i_atime = attr->ia_atime;
+	if (ia_valid & ATTR_MTIME)
+		inode->i_mtime = attr->ia_mtime;
+	if (ia_valid & ATTR_CTIME)
+		inode->i_ctime = attr->ia_ctime;
+	if (ia_valid & ATTR_MODE) {
+		umode_t mode = attr->ia_mode;
+		// if (!in_group_p(inode->i_gid) &&
+		//     !capable_wrt_inode_uidgid(inode, CAP_FSETID))
+		// 	mode &= ~S_ISGID;
+		inode->i_mode = mode;
+	}
+}
+
+static force_inline int simple_setattr(struct dentry *dentry, struct iattr *iattr)
+{
+	struct inode *inode = dentry->d_inode;
+    int ret;
+
+	// ret = setattr_prepare(dentry, iattr);
+	// if (error)
+	// 	return error; // 一些检查
+
+	if (iattr->ia_valid & ATTR_SIZE)
+		truncate_setsize(inode, iattr->ia_size);
+	setattr_copy(inode, iattr);
+	// mark_inode_dirty(inode);
+	return 0;
+}
+
+static inline void fsnotify_change(struct dentry *dentry, unsigned int ia_valid)
+{
+	// struct inode *inode = dentry->d_inode;
+	// __u32 mask = 0;
+
+	// if (ia_valid & ATTR_UID)
+	// 	mask |= FS_ATTRIB;
+	// if (ia_valid & ATTR_GID)
+	// 	mask |= FS_ATTRIB;
+	// if (ia_valid & ATTR_SIZE)
+	// 	mask |= FS_MODIFY;
+
+	// /* both times implies a utime(s) call */
+	// if ((ia_valid & (ATTR_ATIME | ATTR_MTIME)) == (ATTR_ATIME | ATTR_MTIME))
+	// 	mask |= FS_ATTRIB;
+	// else if (ia_valid & ATTR_ATIME)
+	// 	mask |= FS_ACCESS;
+	// else if (ia_valid & ATTR_MTIME)
+	// 	mask |= FS_MODIFY;
+
+	// if (ia_valid & ATTR_MODE)
+	// 	mask |= FS_ATTRIB;
+
+	// if (mask) {
+	// 	if (S_ISDIR(inode->i_mode))
+	// 		mask |= FS_ISDIR;
+
+	// 	fsnotify_parent(NULL, dentry, mask);
+	// 	fsnotify(inode, mask, inode, FSNOTIFY_EVENT_INODE, NULL, 0);
+	// }
+}
+
+int do_dentry_truncate(dentry* d, off_t length, unsigned int time_attrs, struct file *filp) {
+    int ret;
+    struct iattr newattrs;
+    /* Not pretty: "inode->i_size" shouldn't really be signed. But it is. */
+	if (length < 0)
+		return -EINVAL;
+    newattrs.ia_size = length;
+	newattrs.ia_valid = ATTR_SIZE | time_attrs;
+	if (filp) {
+		newattrs.ia_file = filp;
+		newattrs.ia_valid |= ATTR_FILE;
+	}
+    inode_lock(d->d_inode);
+    mutex_lock(&d->d_inode->i_mutex);
+    struct timespec now = get_cur_time_spec();
+    newattrs.ia_ctime = now;
+	if (!(newattrs.ia_valid & ATTR_ATIME_SET))
+		newattrs.ia_atime = now;
+	if (!(newattrs.ia_valid & ATTR_MTIME_SET))
+		newattrs.ia_mtime = now;
+	if (newattrs.ia_valid & ATTR_KILL_PRIV) {
+		// error = security_inode_need_killpriv(dentry);
+		// if (error < 0)
+		// 	return error;
+		// if (error == 0)
+		// 	ia_valid = attr->ia_valid &= ~ATTR_KILL_PRIV;
+	}
+    if (d->d_inode->i_op->setattr)
+		ret = d->d_inode->i_op->setattr(d, &newattrs);
+	else
+		ret = simple_setattr(d, &newattrs);
+
+    if (!ret) {
+		fsnotify_change(d, newattrs.ia_valid);
+		// ima_inode_post_setattr(dentry);
+		// evm_inode_post_setattr(dentry, ia_valid);
+	}
+    mutex_unlock(&d->d_inode->i_mutex);
+    inode_unlock(d->d_inode);
+	return ret;
+}
+
+#define IS_APPEND(inode)	((inode)->i_flags & S_APPEND)
+
+int do_ftruncate(int fd, off_t length) {
+    if (length < 0)
+		return -EINVAL;
+    struct file *file = vfs_file_get(fd);
+    if (file == nullptr) {
+        rd_error("%s fail, fd %d is illegal.", __func__, fd);
+        return -EBADF;
+    }
+    dentry* den = file->f_dentry;
+    if (!S_ISREG(den->d_inode->i_mode)) //  || !(f.file->f_mode & FMODE_WRITE)
+		return -EINVAL;
+    if (IS_APPEND(den->d_inode))
+		return -EPERM;
+    return do_dentry_truncate(den, length, ATTR_MTIME|ATTR_CTIME, file);
 }

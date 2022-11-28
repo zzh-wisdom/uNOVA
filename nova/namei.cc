@@ -891,11 +891,11 @@ const struct inode_operations nova_dir_inode_operations = {
 	.rmdir		= nova_rmdir,
 	// .mknod		= nova_mknod,
 	// .rename		= nova_rename,
-	// .setattr	= nova_notify_change,
+	.setattr	= nova_notify_change,
 	// .get_acl	= NULL,
 };
 
 const struct inode_operations nova_special_inode_operations = {
-	// .setattr	= nova_notify_change,
 	.get_acl	= NULL,
+	.setattr	= nova_notify_change,
 };

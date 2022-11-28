@@ -24,6 +24,8 @@ int fsync_native(int fd);
 ssize_t read_native(int fd, void *buf, size_t len);
 ssize_t write_native(int fd, const char *buf, size_t len);
 off_t lseek_native(int fd, off_t off, int flag);
+int truncate_native(const char *path, off_t length);
+int ftruncate_native(int fd, off_t length);
 int statfs_native(const char *path, struct statfs *sf);
 int stat_native(const char *cpath, struct stat *st);
 int fstat_native(int fd, struct stat *st);
@@ -49,6 +51,8 @@ struct hook_operations {
     ssize_t (*read      )(int fd, void *buf, size_t len);
     ssize_t (*write     )(int fd, const char *buf, size_t len);
     off_t (*lseek     )(int fd, off_t off, int flag);
+    int (*truncate)(const char *path, off_t length);
+    int (*ftruncate)(int fd, off_t length);
     int (*statfs    )(const char *path, struct statfs *sf);
     int (*stat      )(const char *cpath, struct stat *st);
     int (*fstat     )(int fd, struct stat *st);

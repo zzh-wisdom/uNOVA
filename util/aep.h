@@ -18,17 +18,12 @@
 #error "Not support, should run on __x86_64__"
 #endif
 
-#define CACHELINE_SIZE ((uintptr_t)64)
-#define CACHELINE_MASK (CACHELINE_SIZE - 1)
-#define CACHELINE_UNMASK (~CACHELINE_MASK)
-
 #define clflush(addr) asm volatile("clflush %0" : "+m"(*(volatile char *)(addr)))
 #define clflushopt(addr) asm volatile(".byte 0x66; clflush %0" : "+m"(*(volatile char *)(addr)));
 #define clwb(addr) asm volatile(".byte 0x66; xsaveopt %0" : "+m"(*(volatile char *)(addr)));
 #define lfence() __asm__ __volatile__("lfence" : : : "memory")
 #define sfence() __asm__ __volatile__("sfence" : : : "memory")
 #define mfence() __asm__ __volatile__("mfence" : : : "memory")
-#define barrier() __asm__ __volatile__("" : : : "memory")
 
 static force_inline void clwb_extent(const char *addr, size_t len) {
     uintptr_t uptr;

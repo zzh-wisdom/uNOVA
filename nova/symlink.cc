@@ -108,5 +108,5 @@ const struct inode_operations nova_symlink_inode_operations = {
 // #else
 	// .follow_link	= nova_follow_link,
 // #endif
-	// .setattr	= nova_notify_change,
+	.setattr	= nova_notify_change,
 };
