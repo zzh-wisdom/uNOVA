@@ -50,6 +50,10 @@ static force_inline int vfs_fsync(int fd) {
 
 // SYSCALL_DEFINE2(stat
 int vfs_stat(const char *path, struct stat *buf);
+// 目前不支持文件link
+static force_inline int vfs_lstat(const char *path, struct stat *buf) {
+    return vfs_stat(path, buf);
+}
 
 int vfs_truncate(const char *path, off_t length);
 static force_inline int vfs_ftruncate(int fd, off_t length) {

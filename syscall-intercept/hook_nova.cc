@@ -37,6 +37,7 @@ struct hook_operations hook_op_nova = {
     .truncate   = vfs_truncate   ,
     .ftruncate  = vfs_ftruncate  ,
     .statfs     = statfs_native     ,
+    .lstat      = vfs_lstat         ,
     .stat       = vfs_stat          ,
     .fstat      = fstat_native      ,
     .access     = access_native     ,

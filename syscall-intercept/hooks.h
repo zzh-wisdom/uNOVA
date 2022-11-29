@@ -54,6 +54,7 @@ struct hook_operations {
     int (*truncate)(const char *path, off_t length);
     int (*ftruncate)(int fd, off_t length);
     int (*statfs    )(const char *path, struct statfs *sf);
+    int (*lstat      )(const char *pathname, struct stat *st);
     int (*stat      )(const char *cpath, struct stat *st);
     int (*fstat     )(int fd, struct stat *st);
     int (*access    )(const char *path, int mask);

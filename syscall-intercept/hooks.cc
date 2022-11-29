@@ -175,12 +175,19 @@ static inline int hook_statfs(const char *path, struct statfs *sf, long *res) {
     *res = 0;
     return 0;
 }
+static inline int hook_lstat(const char *pathname, struct stat *st, long *res) {
+    if (!is_hook(pathname)) return -1;
+    // printf("------------- %s path = %s\n", __func__, pathname);
+    thread_bind();
+    *res = hook_op->lstat(pathname, st);
+    return 0;
+}
 static inline int hook_stat(const char *cpath, struct stat *st, long *res) {
     if (!is_hook(cpath)) return -1;
     // printf("------------- %s path = %s\n", __func__, cpath);
     thread_bind();
     *res = hook_op->stat(cpath, st);
-    printf("%s ret %ld\n", __func__, *res);
+    // printf("%s ret %ld\n", __func__, *res);
     // assert(*res == 0);
     return 0;
 }
@@ -262,6 +269,8 @@ int hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long 
             printf("SYS_unlink %s\n", (const char *)a0);
             return hook_unlinkat(AT_FDCWD, (const char *)a0, res);
 
+        case SYS_lstat:
+            printf("=== SYS_lstat %s\n", (const char *)a0);
         case SYS_stat:
             printf("=== SYS_stat %s\n", (const char *)a0);
             return hook_stat((const char *)a0, (struct stat *)a1, res);
@@ -286,7 +295,7 @@ int hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long 
             // case SYS_renameat:
 
         default:
-            // printf("=== SYS_unhook: %ld\n", syscall_number);
+            printf("=== SYS_unhook: %ld\n", syscall_number);
             // SYS_clone linux用来创建线程的
             assert(syscall_number != SYS_fork && syscall_number != SYS_vfork);
             return -1;

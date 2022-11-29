@@ -1,0 +1,30 @@
+# 顺序写文件，每个线程单独一个文件
+
+[global]
+; 目录需要事先存在
+directory=/tmp/nova
+direct=1
+buffered=0
+thread=1
+cpus_allowed=20-39,60-79
+cpus_allowed_policy=split
+numa_cpu_nodes=1
+numa_mem_policy=bind:1
+kb_base=1024
+; verify=md5
+do_verify=1
+ioengine=sync
+create_fsync=1
+; create_only=1
+; time_based
+; runtime=8
+numjobs=1
+
+[seq-write1]
+description=顺序写文件,单线程多文件,文件数变化
+# overwrite=1
+rw=write
+# 这个大小会在多个文件中平均分
+size=40K
+bs=4K
+nrfiles=10

@@ -54,6 +54,10 @@ inline int statfs_native(const char *path, struct statfs *sf) {
     r_error("Hook do nothing --------------------------- %s", __func__);
 	return -ENOTSUP;
 }
+inline int lstat_native(const char *cpath, struct stat *st) {
+    r_error("Hook do nothing --------------------------- %s", __func__);
+	return -ENOTSUP;
+}
 inline int stat_native(const char *cpath, struct stat *st) {
     r_error("Hook do nothing --------------------------- %s", __func__);
 	return -ENOTSUP;
@@ -113,6 +117,7 @@ struct hook_operations hook_op_native = {
     .truncate   = truncate_native   ,
     .ftruncate  = ftruncate_native  ,
     .statfs     = statfs_native     ,
+    .lstat      = lstat_native      ,
     .stat       = stat_native       ,
     .fstat      = fstat_native      ,
     .access     = access_native     ,
