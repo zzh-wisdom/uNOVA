@@ -16,15 +16,15 @@ do_verify=1
 ioengine=sync
 create_fsync=1
 ; create_only=1
-; time_based
-; runtime=8
-numjobs=1
+time_based
+runtime=60
+numjobs=32
 
 [seq-write1]
 description=顺序写文件,单线程多文件,文件数变化
 # overwrite=1
 rw=write
 # 这个大小会在多个文件中平均分
-size=40K
+size=3G
 bs=4K
-nrfiles=10
+nrfiles=1

@@ -733,7 +733,7 @@ int do_open(dentry *parent, qstr name, struct open_flags *op) {
         goto err;
     }
 
-    r_info("create file:%s hash %d, inode->mode: %d\n", cur->d_name.name, cur->d_name.hash, op->mode);
+    rd_info("create file:%s hash %d, inode->mode: %d\n", cur->d_name.name, cur->d_name.hash, op->mode);
     // 需要新建文件
     ret = dir->i_op->create(dir, cur, op->mode, op->open_flag & O_EXCL);
     if (ret != 0) {

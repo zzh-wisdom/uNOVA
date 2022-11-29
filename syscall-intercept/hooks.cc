@@ -206,6 +206,22 @@ static inline int hook_access(const char *path, int mask, long *res) {
     return 0;
 }
 
+static inline int hook_ioctl(int fd, int cmd, unsigned long arg, long *res) {
+    if (fd < hook_start_fd) return -1;
+    // printf("------------- %s path = %s\n", __func__, path);
+    // thread_bind();
+    *res = 0;
+    return 0;
+}
+
+static inline int hook_fadvise64(int fd, loff_t offset, loff_t len, int advise, long *res) {
+    if (fd < hook_start_fd) return -1;
+    // printf("------------- %s path = %s\n", __func__, path);
+    // thread_bind();
+    *res = 0;
+    return 0;
+}
+
 static inline int hook_getdents(int fd, struct linux_dirent *dirp, int count, long *res) {
     if (fd < hook_start_fd) return -1;
     // printf("hook %s\n", __func__);
@@ -283,7 +299,12 @@ int hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long 
         case SYS_access:
             // printf("SYS_access %s\n", (const char *)a0);
             return hook_access((const char *)a0, (int)a1, res);
-
+        case SYS_ioctl:
+            // printf("SYS_ioctl %d\n", (int)a0);
+            return hook_ioctl((int)a0, (int)a1, (unsigned long)a2, res);
+        case SYS_fadvise64:
+            // printf("SYS_fadvise64 %d\n", (int)a0);
+            return hook_fadvise64((int)a0, (loff_t )a1, (loff_t )a2, (int)a3, res);
         case SYS_getdents:
             // printf("SYS_getdents %d\n", (int)a0);
             return hook_getdents((int)a0, (linux_dirent *)a1, (int)a2, res);
