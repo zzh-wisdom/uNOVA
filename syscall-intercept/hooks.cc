@@ -69,7 +69,7 @@ static inline void thread_bind() {
 static inline int hook_mkdirat(int dirfd, const char *path, mode_t mode, long *res) {
     if (dirfd != AT_FDCWD) return -1;
     if (!is_hook(path)) return -1;
-    printf("%s %s\n", __func__, path);
+    // printf("%s %s\n", __func__, path);
     thread_bind();
     *res = hook_op->mkdir(path, mode);
     return 0;
@@ -77,7 +77,7 @@ static inline int hook_mkdirat(int dirfd, const char *path, mode_t mode, long *r
 static inline int hook_rmdir(int dirfd, const char *cpath, long *res) {
     if (dirfd != AT_FDCWD) return -1;
     if (!is_hook(cpath)) return -1;
-    printf("%s %s\n", __func__, cpath);
+    // printf("%s %s\n", __func__, cpath);
     thread_bind();
     *res = hook_op->rmdir(cpath);
     return 0;
@@ -90,14 +90,14 @@ static inline int hook_openat(int dirfd, const char *cpath, int flags, mode_t mo
         *res = -ENOTSUP;
         return 0;
     }
-    printf("%s cpath = %s\n", __func__, cpath);
+    // printf("%s cpath = %s\n", __func__, cpath);
     thread_bind();
     *res = hook_op->open(cpath, flags, mode);
     return 0;
 }
 static inline int hook_close(int fd, long *res) {
     if (fd < hook_start_fd) return -1;
-    printf("%s fd = %d\n", __func__, fd);
+    // printf("%s fd = %d\n", __func__, fd);
     thread_bind();
     *res = hook_op->close(fd);
     return 0;
@@ -105,35 +105,35 @@ static inline int hook_close(int fd, long *res) {
 static inline int hook_unlinkat(int dirfd, const char *cpath, long *res) {
     if (dirfd != AT_FDCWD) return -1;
     if (!is_hook(cpath)) return -1;
-    printf("%s cpath = %s\n", __func__, cpath);
+    // printf("%s cpath = %s\n", __func__, cpath);
     thread_bind();
     *res = hook_op->unlink(cpath);
     return 0;
 }
 static inline int hook_fsync(int fd, long *res) {
     if (fd < hook_start_fd) return -1;
-    printf("%s fd = %d\n", __func__, fd);
+    // printf("%s fd = %d\n", __func__, fd);
     thread_bind();
     *res = hook_op->fsync(fd);
     return 0;
 }
 static inline int hook_read(int fd, void *buf, size_t len, long *res) {
     if (fd < hook_start_fd) return -1;
-    printf("%s fd = %d\n", __func__, fd);
+    // printf("%s fd = %d\n", __func__, fd);
     thread_bind();
     *res = hook_op->read(fd, buf, len);
     return 0;
 }
 static inline int hook_write(int fd, const char *buf, size_t len, long *res) {
     if (fd < hook_start_fd) return -1;
-    printf("%s fd = %d\n", __func__, fd);
+    // printf("%s fd = %d\n", __func__, fd);
     thread_bind();
     *res = hook_op->write(fd, buf, len);
     return 0;
 }
 static inline int hook_lseek(int fd, long off, int flag, long *res) {
     if (fd < hook_start_fd) return -1;
-    printf("%s fd = %d\n", __func__, fd);
+    // printf("%s fd = %d\n", __func__, fd);
     thread_bind();
     *res = hook_op->lseek(fd, off, flag);
     return 0;
@@ -142,7 +142,7 @@ static inline int hook_lseek(int fd, long off, int flag, long *res) {
 static inline int hook_truncate(const char *path, off_t length, long *res) {
     // if (dirfd != AT_FDCWD) return -1;
     if (!is_hook(path)) return -1;
-    printf("%s path = %s\n", __func__, path);
+    // printf("%s path = %s\n", __func__, path);
     thread_bind();
     *res = hook_op->truncate(path, length);
     return 0;
@@ -150,7 +150,7 @@ static inline int hook_truncate(const char *path, off_t length, long *res) {
 
 static inline int hook_ftruncate(int fd, off_t length, long *res) {
     if (fd < hook_start_fd) return -1;
-    printf("%s fd = %d\n", __func__, fd);
+    // printf("%s fd = %d\n", __func__, fd);
     thread_bind();
     *res = hook_op->ftruncate(fd, length);
     return 0;
@@ -170,7 +170,7 @@ static inline int hook_statfs(const char *path, struct statfs *sf, long *res) {
     sf->f_frsize = 0;
     sf->f_flags = ST_NOSUID | ST_NODEV;
 
-    printf("------------- %s path = %s\n", __func__, path);
+    // printf("------------- %s path = %s\n", __func__, path);
     thread_bind();
     *res = 0;
     return 0;
@@ -193,14 +193,14 @@ static inline int hook_stat(const char *cpath, struct stat *st, long *res) {
 }
 static inline int hook_fstat(int fd, struct stat *st, long *res) {
     if (fd < hook_start_fd) return -1;
-    printf("------------- %s fd = %d\n", __func__, fd);
+    // printf("------------- %s fd = %d\n", __func__, fd);
     thread_bind();
     *res = 0;
     return 0;
 }
 static inline int hook_access(const char *path, int mask, long *res) {
     if (!is_hook(path)) return -1;
-    printf("------------- %s path = %s\n", __func__, path);
+    // printf("------------- %s path = %s\n", __func__, path);
     thread_bind();
     *res = 0;
     return 0;
@@ -208,14 +208,14 @@ static inline int hook_access(const char *path, int mask, long *res) {
 
 static inline int hook_getdents(int fd, struct linux_dirent *dirp, int count, long *res) {
     if (fd < hook_start_fd) return -1;
-    printf("hook %s\n", __func__);
+    // printf("hook %s\n", __func__);
     thread_bind();
     *res = 0;
     return 0;
 }
 static inline int hook_getdents64(int fd, struct linux_dirent64 *dirp, int count, long *res) {
     if (fd < hook_start_fd) return -1;
-    printf("hook %s\n", __func__);
+    // printf("hook %s\n", __func__);
     thread_bind();
     *res = 0;
     return 0;
@@ -227,75 +227,75 @@ static inline int hook_getdents64(int fd, struct linux_dirent64 *dirp, int count
 int hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long a5, long *res) {
     switch (syscall_number) {
         case SYS_mkdirat:
-            printf("=== SYS_mkdirat %s\n", (const char *)a1);
+            // printf("=== SYS_mkdirat %s\n", (const char *)a1);
             return hook_mkdirat((int)a0, (const char *)a1, (mode_t)a2, res);
         case SYS_mkdir:
-            printf("=== SYS_mkdir %s\n", (const char *)a0);
+            // printf("=== SYS_mkdir %s\n", (const char *)a0);
             return hook_mkdirat(AT_FDCWD, (const char *)a0, (mode_t)a1, res);
         case SYS_rmdir:
-            printf("SYS_rmdir %s\n", (const char *)a0);
+            // printf("SYS_rmdir %s\n", (const char *)a0);
             return hook_rmdir(AT_FDCWD, (const char *)a0, res);
         case SYS_open:
-            printf("SYS_open %s\n", (char *)a0);
+            // printf("SYS_open %s\n", (char *)a0);
             return hook_openat(AT_FDCWD, (char *)a0, (int)a1, (mode_t)a2, res);
         case SYS_openat:
-            printf("SYS_openat %d %s\n", (int)a0, (char *)a1);
+            // printf("SYS_openat %d %s\n", (int)a0, (char *)a1);
             return hook_openat((int)a0, (char *)a1, (int)a2, (mode_t)a3, res);
         case SYS_creat:
-            printf("SYS_create %s\n", (char *)a0);
+            // printf("SYS_create %s\n", (char *)a0);
             return hook_openat(AT_FDCWD, (char *)a0, O_WRONLY | O_CREAT | O_TRUNC, (mode_t)a1, res);
         case SYS_close:
-            printf("SYS_close, fd: %d\n", (int)a0);
+            // printf("SYS_close, fd: %d\n", (int)a0);
             return hook_close((int)a0, res);
         case SYS_write:
             // printf("SYS_write, fd: %d\n", (int)a0);
             return hook_write((int)a0, (char *)a1, (size_t)a2, res);
         case SYS_read:
-            printf("SYS_read, fd: %d\n", (int)a0);
+            // printf("SYS_read, fd: %d\n", (int)a0);
             return hook_read((int)a0, (void *)a1, (size_t)a2, res);
         case SYS_lseek:
-            printf("SYS_lseek %d\n", (int)a0);
+            // printf("SYS_lseek %d\n", (int)a0);
             return hook_lseek((int)a0, a1, (int)a2, res);
         case SYS_ftruncate:
-            printf("SYS_ftruncate fd=%d length=%d\n", (int)a0, (off_t)a1);
+            // printf("SYS_ftruncate fd=%d length=%d\n", (int)a0, (off_t)a1);
             return hook_ftruncate((int)a0, (off_t)a1, res);
         case SYS_truncate:
-            printf("SYS_truncate %s length=%d\n", (char *)a0, (off_t)a1);
+            // printf("SYS_truncate %s length=%d\n", (char *)a0, (off_t)a1);
             return hook_truncate((char *)a0, (off_t)a1, res);
         case SYS_fsync:
-            printf("SYS_fsync %d\n", (int)a0);
+            // printf("SYS_fsync %d\n", (int)a0);
             return hook_fsync((int)a0, res);
         case SYS_unlink:
-            printf("SYS_unlink %s\n", (const char *)a0);
+            // printf("SYS_unlink %s\n", (const char *)a0);
             return hook_unlinkat(AT_FDCWD, (const char *)a0, res);
 
         case SYS_lstat:
-            printf("=== SYS_lstat %s\n", (const char *)a0);
+            // printf("=== SYS_lstat %s\n", (const char *)a0);
         case SYS_stat:
-            printf("=== SYS_stat %s\n", (const char *)a0);
+            // printf("=== SYS_stat %s\n", (const char *)a0);
             return hook_stat((const char *)a0, (struct stat *)a1, res);
         case SYS_fstat:
-            printf("SYS_fstat fd:%d\n", (int)a0);
+            // printf("SYS_fstat fd:%d\n", (int)a0);
             return hook_fstat((int)a0, (struct stat *)a1, res);
         case SYS_statfs:
-            printf("SYS_statfs %s\n", (const char *)a0);
+            // printf("SYS_statfs %s\n", (const char *)a0);
             return hook_statfs((const char *)a0, (struct statfs *)a1, res);
         case SYS_access:
-            printf("SYS_access %s\n", (const char *)a0);
+            // printf("SYS_access %s\n", (const char *)a0);
             return hook_access((const char *)a0, (int)a1, res);
 
         case SYS_getdents:
-            printf("SYS_getdents %d\n", (int)a0);
+            // printf("SYS_getdents %d\n", (int)a0);
             return hook_getdents((int)a0, (linux_dirent *)a1, (int)a2, res);
         case SYS_getdents64:
-            printf("SYS_getdents64 %d\n", (int)a0);
+            // printf("SYS_getdents64 %d\n", (int)a0);
             return hook_getdents64((int)a0, (linux_dirent64 *)a1, (int)a3, res);
             // case SYS_rename:
             //     return hook_renameat(AT_FDCWD, (const char))
             // case SYS_renameat:
 
         default:
-            printf("=== SYS_unhook: %ld\n", syscall_number);
+            // printf("=== SYS_unhook: %ld\n", syscall_number);
             // SYS_clone linux用来创建线程的
             assert(syscall_number != SYS_fork && syscall_number != SYS_vfork);
             return -1;

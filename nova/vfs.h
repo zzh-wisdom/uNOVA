@@ -1049,6 +1049,75 @@ static force_inline void d_instantiate(struct dentry *dentry, struct inode *inod
     inode->i_dentry = dentry;
 }
 
+/**
+ * d_splice_alias - splice a disconnected dentry into the tree if one exists
+ * @inode:  the inode which may have a disconnected dentry
+ * @dentry: a negative dentry which we want to point to the inode.
+ *
+ * If inode is a directory and has an IS_ROOT alias, then d_move that in
+ * place of the given dentry and return it, else simply d_add the inode
+ * to the dentry and return NULL.
+ *
+ * If a non-IS_ROOT directory is found, the filesystem is corrupt, and
+ * we should error out: directories can't have multiple aliases.
+ *
+ * This is needed in the lookup routine of any filesystem that is exportable
+ * (via knfsd) so that we can build dcache paths to directories effectively.
+ *
+ * If a dentry was found and moved, then it is returned.  Otherwise NULL
+ * is returned.  This matches the expected return value of ->lookup.
+ *
+ * Cluster filesystems may call this function with a negative, hashed dentry.
+ * In that case, we know that the inode will be a regular file, and also this
+ * will only occur during atomic_open. So we need to check for the dentry
+ * being already hashed only in the final case.
+ */
+static force_inline struct dentry *d_splice_alias(struct inode *inode, struct dentry *dentry)
+{
+	if (!inode)
+		goto out;
+    d_instantiate(dentry, inode);
+    // 不支持别名
+	// security_d_instantiate(dentry, inode);
+	// spin_lock(&inode->i_lock);
+	// if (S_ISDIR(inode->i_mode)) {
+	// 	struct dentry *new = __d_find_any_alias(inode);
+	// 	if (unlikely(new)) {
+	// 		/* The reference to new ensures it remains an alias */
+	// 		spin_unlock(&inode->i_lock);
+	// 		write_seqlock(&rename_lock);
+	// 		if (unlikely(d_ancestor(new, dentry))) {
+	// 			write_sequnlock(&rename_lock);
+	// 			dput(new);
+	// 			new = ERR_PTR(-ELOOP);
+	// 			pr_warn_ratelimited(
+	// 				"VFS: Lookup of '%s' in %s %s"
+	// 				" would have caused loop\n",
+	// 				dentry->d_name.name,
+	// 				inode->i_sb->s_type->name,
+	// 				inode->i_sb->s_id);
+	// 		} else if (!IS_ROOT(new)) {
+	// 			struct dentry *old_parent = dget(new->d_parent);
+	// 			int err = __d_unalias(inode, dentry, new);
+	// 			write_sequnlock(&rename_lock);
+	// 			if (err) {
+	// 				dput(new);
+	// 				new = ERR_PTR(err);
+	// 			}
+	// 			dput(old_parent);
+	// 		} else {
+	// 			__d_move(new, dentry, false);
+	// 			write_sequnlock(&rename_lock);
+	// 		}
+	// 		iput(inode);
+	// 		return new;
+	// 	}
+	// }
+out:
+	// __d_add(dentry, inode);
+	return NULL;
+}
+
 // 返回的dentry已经被引用
 static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool create, bool lock) {
     if (strncmp(qs.name, ".", 1) == 0) {
@@ -1061,8 +1130,8 @@ static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool cre
     }
     dentry *child = dentry_get_child(parent, qs, lock);
     if (child) return child;
-    r_warning("%s not in dentry hash, lookup from nvm\n", qs.name);
-    if (create == false) return nullptr;
+    rd_warning("%s not in dentry hash, lookup from nvm", qs.name);
+    if (create == false) return nullptr; // TODO: 恢复时需要完善
 
     child = d_alloc(parent, &qs);
     if (unlikely(!child)) {

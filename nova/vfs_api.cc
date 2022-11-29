@@ -466,7 +466,7 @@ int vfs_open(const char* filename, int flags, mode_t mode) {
     }
     // 参考 path_openat
     fd = do_open(parent, last, &op);
-    printf("open success, %s fd %d\n", filename, fd);
+    // printf("open success, %s fd %d\n", filename, fd);
 out:
     dentry_unref(parent);
     return fd;
@@ -493,7 +493,7 @@ int vfs_unlink(const char* pathname) {
     int ret = 0;
     struct dentry* child = get_dentry_by_hash(parent, last, false, false);
     if (child == nullptr) {
-        r_error("%s fail, file %s not exist.", __func__, pathname + name_start);
+        rd_error("%s fail, file %s not exist.", __func__, pathname + name_start);
         ret = -ENOENT;
         goto out;
     }
@@ -538,7 +538,7 @@ int vfs_stat(const char* path, struct stat* buf) {
         }
         child = get_dentry_by_hash(parent, last, false, true);
         if (child == nullptr) {
-            r_error("%s fail, file %s not exist.", __func__, path + name_start);
+            rd_error("%s fail, file %s not exist.", __func__, path + name_start);
             dentry_unref(parent);
             return -ENOENT;
         }

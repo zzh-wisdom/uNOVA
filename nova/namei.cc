@@ -34,39 +34,40 @@ static ino_t nova_inode_by_name(struct inode *dir, struct qstr *entry,
 	return direntry->ino;
 }
 
+// dentry 是新分配的dentry
 static struct dentry *nova_lookup(struct inode *dir, struct dentry *dentry,
 				   unsigned int flags)
 {
-	r_warning("TODO");
-	return nullptr;
-	// struct inode *inode = NULL;
-	// struct nova_dentry *de;
-	// ino_t ino;
-	// timing_t lookup_time;
+	struct inode *inode = NULL;
+	struct nova_dentry *de;
+	ino_t ino;
+	timing_t lookup_time;
 
-	// NOVA_START_TIMING(lookup_t, lookup_time);
-	// if (dentry->d_name.len > NOVA_NAME_LEN) {
-	// 	nova_dbg("%s: namelen %u exceeds limit",
-	// 		__func__, dentry->d_name.len);
-	// 	return ERR_PTR(-ENAMETOOLONG);
-	// }
+	NOVA_START_TIMING(lookup_t, lookup_time);
+	if (dentry->d_name.len > NOVA_NAME_LEN) {
+		rd_error("%s: namelen %u exceeds limit",
+			__func__, dentry->d_name.len);
+		return nullptr;
+	}
 
-	// nova_dbg_verbose("%s: %s", __func__, dentry->d_name.name);
-	// ino = nova_inode_by_name(dir, &dentry->d_name, &de);
-	// nova_dbg_verbose("%s: ino %lu", __func__, ino);
-	// if (ino) {
-	// 	inode = nova_iget(dir->i_sb, ino);
-	// 	if (inode == ERR_PTR(-ESTALE) || inode == ERR_PTR(-ENOMEM)
-	// 			|| inode == ERR_PTR(-EACCES)) {
-	// 		nova_err(dir->i_sb,
-	// 			  "%s: get inode failed: %lu",
-	// 			  __func__, (unsigned long)ino);
-	// 		return ERR_PTR(-EIO);
-	// 	}
-	// }
-
-	// NOVA_END_TIMING(lookup_t, lookup_time);
-	// return d_splice_alias(inode, dentry);
+	rdv_proc("%s: %s", __func__, dentry->d_name.name);
+	ino = nova_inode_by_name(dir, &dentry->d_name, &de);
+	rdv_proc("%s: ino %lu", __func__, ino);
+	if (ino) {
+		// 从NVM重建该inode
+		inode = nova_iget(dir->i_sb, ino);
+		DLOG_ASSERT(inode);
+		// if (inode == ERR_PTR(-ESTALE) || inode == ERR_PTR(-ENOMEM)
+		// 		|| inode == ERR_PTR(-EACCES)) {
+		// 	nova_err(dir->i_sb,
+		// 		  "%s: get inode failed: %lu",
+		// 		  __func__, (unsigned long)ino);
+		// 	return ERR_PTR(-EIO);
+		// }
+		inode_unref(inode);
+	}
+	NOVA_END_TIMING(lookup_t, lookup_time);
+	return d_splice_alias(inode, dentry);
 }
 
 // 完成一个创建事务
