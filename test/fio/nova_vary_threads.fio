@@ -20,60 +20,45 @@ create_fsync=1
 unlink=1
 time_based
 runtime=60
-numjobs=1
+# numjobs=1
 description=顺序写文件,单个线程单独一个文件,io大小变化
 size=3G
 # overwrite=1
 rw=write
-
-[seq-write-16B]
-wait_for_previous
-bs=16B
-
-[seq-write-32B]
-wait_for_previous
-bs=32B
-
-[seq-write-64B]
-wait_for_previous
-bs=64B
-
-[seq-write-128B]
-wait_for_previous
-bs=128B
-
-[seq-write-256B]
-wait_for_previous
-bs=256B
-
-[seq-write-512B]
-wait_for_previous
-bs=512B
-
-[seq-write-1K]
-wait_for_previous
-bs=1K
-
-[seq-write-2K]
-wait_for_previous
-bs=2K
-
-[seq-write-4K]
-wait_for_previous
 bs=4K
 
-[seq-write-8K]
+[seq-write-1]
 wait_for_previous
-bs=8K
+numjobs=1
 
-[seq-write-16K]
+[seq-write-2]
 wait_for_previous
-bs=16K
+numjobs=2
 
-[seq-write-32K]
-wait_for_previous
-bs=32K
+# [seq-write-3]
+# wait_for_previous
+# numjobs=3
 
-[seq-write-64K]
+[seq-write-4]
 wait_for_previous
-bs=64K
+numjobs=4
+
+# [seq-write-5]
+# wait_for_previous
+# numjobs=5
+
+# [seq-write-6]
+# wait_for_previous
+# numjobs=6
+
+[seq-write-8]
+wait_for_previous
+numjobs=8
+
+[seq-write-16]
+wait_for_previous
+numjobs=16
+
+[seq-write-32]
+wait_for_previous
+numjobs=32

@@ -304,7 +304,6 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb, struct nova_i
 int nova_delete_file_tree(struct super_block *sb, struct nova_inode_info_header *sih,
                           unsigned long start_blocknr, unsigned long last_blocknr, bool delete_nvmm,
                           bool delete_mmap) {
-    r_error("%s unexpected reach!", __func__);
     struct nova_file_write_entry *entry;
     struct nova_inode *pi;
     unsigned long free_blocknr = 0, num_free = 0;
@@ -665,78 +664,78 @@ static int nova_alloc_unused_inode(struct super_block *sb, int cpuid, unsigned l
     return 0;
 }
 
-// static int nova_free_inuse_inode(struct super_block *sb, unsigned long ino)
-// {
-// 	struct nova_sb_info *sbi = NOVA_SB(sb);
-// 	struct inode_map *inode_map;
-// 	struct nova_range_node *i = NULL;
-// 	struct nova_range_node *curr_node;
-// 	int found = 0;
-// 	int cpuid = ino % sbi->cpus;
-// 	unsigned long internal_ino = ino / sbi->cpus;
-// 	int ret = 0;
+static int nova_free_inuse_inode(struct super_block *sb, unsigned long ino)
+{
+	struct nova_sb_info *sbi = NOVA_SB(sb);
+	struct inode_map *inode_map;
+	struct nova_range_node *i = NULL;
+	struct nova_range_node *curr_node;
+	int found = 0;
+	int cpuid = ino % sbi->cpus;
+	unsigned long internal_ino = ino / sbi->cpus;
+	int ret = 0;
 
-// 	nova_dbg_verbose("Free inuse ino: %lu", ino);
-// 	inode_map = &sbi->inode_maps[cpuid];
+	rdv_proc("Free inuse ino: %lu", ino);
+	inode_map = &sbi->inode_maps[cpuid];
 
-// 	mutex_lock(&inode_map->inode_table_mutex);
-// 	found = nova_search_inodetree(sbi, ino, &i);
-// 	if (!found) {
-// 		nova_dbg("%s ERROR: ino %lu not found", __func__, ino);
-// 		mutex_unlock(&inode_map->inode_table_mutex);
-// 		return -EINVAL;
-// 	}
+	mutex_lock(&inode_map->inode_table_mutex);
+	found = nova_search_inodetree(sbi, ino, &i);
+	if (!found) {
+		r_error("%s ERROR: ino %lu not found", __func__, ino);
+		mutex_unlock(&inode_map->inode_table_mutex);
+		return -EINVAL;
+	}
 
-// 	if ((internal_ino == i->range_low) && (internal_ino == i->range_high)) {
-// 		/* fits entire node */
-// 		rb_erase(&i->node, &inode_map->inode_inuse_tree);
-// 		nova_free_inode_node(sb, i);
-// 		inode_map->num_range_node_inode--;
-// 		goto block_found;
-// 	}
-// 	if ((internal_ino == i->range_low) && (internal_ino < i->range_high)) {
-// 		/* Aligns left */
-// 		i->range_low = internal_ino + 1;
-// 		goto block_found;
-// 	}
-// 	if ((internal_ino > i->range_low) && (internal_ino == i->range_high)) {
-// 		/* Aligns right */
-// 		i->range_high = internal_ino - 1;
-// 		goto block_found;
-// 	}
-// 	if ((internal_ino > i->range_low) && (internal_ino < i->range_high)) {
-// 		/* Aligns somewhere in the middle */
-// 		curr_node = nova_alloc_inode_node(sb);
-// 		NOVA_ASSERT(curr_node);
-// 		if (curr_node == NULL) {
-// 			/* returning without freeing the block */
-// 			goto block_found;
-// 		}
-// 		curr_node->range_low = internal_ino + 1;
-// 		curr_node->range_high = i->range_high;
-// 		i->range_high = internal_ino - 1;
-// 		ret = nova_insert_inodetree(sbi, curr_node, cpuid);
-// 		if (ret) {
-// 			nova_free_inode_node(sb, curr_node);
-// 			goto err;
-// 		}
-// 		inode_map->num_range_node_inode++;
-// 		goto block_found;
-// 	}
+	if ((internal_ino == i->range_low) && (internal_ino == i->range_high)) {
+		/* fits entire node */
+		rb_erase(&i->node, &inode_map->inode_inuse_tree);
+		nova_free_inode_node(sb, i);
+		inode_map->num_range_node_inode--;
+		goto block_found;
+	}
+	if ((internal_ino == i->range_low) && (internal_ino < i->range_high)) {
+		/* Aligns left */
+		i->range_low = internal_ino + 1;
+		goto block_found;
+	}
+	if ((internal_ino > i->range_low) && (internal_ino == i->range_high)) {
+		/* Aligns right */
+		i->range_high = internal_ino - 1;
+		goto block_found;
+	}
+	if ((internal_ino > i->range_low) && (internal_ino < i->range_high)) {
+		/* Aligns somewhere in the middle */
+		curr_node = nova_alloc_inode_node(sb);
+		log_assert(curr_node);
+		if (curr_node == NULL) {
+			/* returning without freeing the block */
+			goto block_found;
+		}
+		curr_node->range_low = internal_ino + 1;
+		curr_node->range_high = i->range_high;
+		i->range_high = internal_ino - 1;
+		ret = nova_insert_inodetree(sbi, curr_node, cpuid);
+		if (ret) {
+			nova_free_inode_node(sb, curr_node);
+			goto err;
+		}
+		inode_map->num_range_node_inode++;
+		goto block_found;
+	}
 
-// err:
-// 	nova_error_mng(sb, "Unable to free inode %lu", ino);
-// 	nova_error_mng(sb, "Found inuse block %lu - %lu",
-// 				 i->range_low, i->range_high);
-// 	mutex_unlock(&inode_map->inode_table_mutex);
-// 	return ret;
+err:
+	r_error("Unable to free inode %lu", ino);
+	r_error("Found inuse block %lu - %lu",
+				 i->range_low, i->range_high);
+	mutex_unlock(&inode_map->inode_table_mutex);
+	return ret;
 
-// block_found:
-// 	sbi->s_inodes_used_count--;
-// 	inode_map->freed++;
-// 	mutex_unlock(&inode_map->inode_table_mutex);
-// 	return ret;
-// }
+block_found:
+	sbi->s_inodes_used_count--;
+	inode_map->freed++;
+	mutex_unlock(&inode_map->inode_table_mutex);
+	return ret;
+}
 
 /*
  * NOTE! When we get the inode, we're the only people
@@ -746,50 +745,50 @@ static int nova_alloc_unused_inode(struct super_block *sb, int cpuid, unsigned l
  * through the filesystem because the directory entry
  * has been deleted earlier.
  */
-// static int nova_free_inode(struct inode *inode,
-// 	struct nova_inode_info_header *sih)
-// {
-// 	struct super_block *sb = inode->i_sb;
-// 	struct nova_inode *pi;
-// 	int err = 0;
-// 	timing_t free_time;
+static int nova_free_inode(struct inode *inode,
+	struct nova_inode_info_header *sih)
+{
+	struct super_block *sb = inode->i_sb;
+	struct nova_inode *pi;
+	int err = 0;
+	timing_t free_time;
 
-// 	NOVA_START_TIMING(free_inode_t, free_time);
+	NOVA_START_TIMING(free_inode_t, free_time);
 
-// 	pi = nova_get_inode(sb, inode);
+	pi = nova_get_inode(sb, inode);
 
-// 	if (pi->valid) {
-// 		nova_dbg("%s: inode %lu still valid",
-// 				__func__, inode->i_ino);
-// 		pi->valid = 0;
-// 	}
+	if (pi->valid) {
+		rd_info("%s: inode %lu still valid",
+				__func__, inode->i_ino);
+		pi->valid = 0;
+	}
 
-// 	if (pi->nova_ino != inode->i_ino) {
-// 		nova_err(sb, "%s: inode %lu ino does not match: %lu",
-// 				__func__, inode->i_ino, pi->nova_ino);
-// 		nova_dbg("inode size %lu, pi addr 0x%lx, pi head 0x%lx, "
-// 				"tail 0x%lx, mode %u",
-// 				inode->i_size, sih->pi_addr, pi->log_head,
-// 				pi->log_tail, pi->i_mode);
-// 		nova_dbg("sih: ino %lu, inode size %lu, mode %u, "
-// 				"inode mode %u", sih->ino, sih->i_size,
-// 				sih->i_mode, inode->i_mode);
-// 		nova_print_inode_log(sb, inode);
-// 	}
+	if (pi->nova_ino != inode->i_ino) {
+		r_error("%s: inode %lu ino does not match: %lu",
+				__func__, inode->i_ino, pi->nova_ino);
+		rd_info("inode size %lu, pi addr 0x%lx, pi head 0x%lx, "
+				"tail 0x%lx, mode %u",
+				inode->i_size, sih->pi_addr, pi->log_head,
+				pi->log_tail, pi->i_mode);
+		rd_info("sih: ino %lu, inode size %lu, mode %u, "
+				"inode mode %u", sih->ino, sih->i_size,
+				sih->i_mode, inode->i_mode);
+		// nova_print_inode_log(sb, inode);
+	}
 
-// 	nova_free_inode_log(sb, pi);
-// 	pi->i_blocks = 0;
+	nova_free_inode_log(sb, pi);
+	pi->i_blocks = 0;
 
-// 	sih->log_pages = 0;
-// 	sih->i_mode = 0;
-// 	sih->pi_addr = 0;
-// 	sih->i_size = 0;
+	sih->log_pages = 0;
+	sih->i_mode = 0;
+	sih->pi_addr = 0;
+	sih->i_size = 0;
 
-// 	err = nova_free_inuse_inode(sb, pi->nova_ino);
+	err = nova_free_inuse_inode(sb, pi->nova_ino);
 
-// 	NOVA_END_TIMING(free_inode_t, free_time);
-// 	return err;
-// }
+	NOVA_END_TIMING(free_inode_t, free_time);
+	return err;
+}
 
 // 获取指定ino的内存结构，如果不存在，则分配空间返回
 // 返回的inode已经存储在sb的哈希map中
@@ -865,79 +864,82 @@ unsigned long nova_get_last_blocknr(struct super_block *sb, struct nova_inode_in
 
 void nova_evict_inode(struct inode *inode)
 {
-    r_error("TODO");
-// 	struct super_block *sb = inode->i_sb;
-// 	struct nova_inode *pi = nova_get_inode(sb, inode);
-// 	struct nova_inode_info *si = NOVA_I(inode);
-// 	struct nova_inode_info_header *sih = &si->header;
-// 	unsigned long last_blocknr;
-// 	timing_t evict_time;
-// 	int err = 0;
-// 	int freed = 0;
-// 	int destroy = 0;
+	struct super_block *sb = inode->i_sb;
+	struct nova_inode *pi = nova_get_inode(sb, inode);
+	struct nova_inode_info *si = NOVA_I(inode);
+	struct nova_inode_info_header *sih = &si->header;
+	unsigned long last_blocknr;
+	timing_t evict_time;
+	int err = 0;
+	int freed = 0;
+	int destroy = 0;
 
-// 	if (!sih) {
-// 		nova_err(sb, "%s: ino %lu sih is NULL!",
-// 				__func__, inode->i_ino);
-// 		NOVA_ASSERT(0);
-// 		goto out;
-// 	}
+	if (!sih) {
+		r_error("%s: ino %lu sih is NULL!",
+				__func__, inode->i_ino);
+		log_assert(0);
+		goto out;
+	}
 
-// 	NOVA_START_TIMING(evict_inode_t, evict_time);
-// 	nova_dbg_verbose("%s: %lu", __func__, inode->i_ino);
-// 	if (!inode->i_nlink && !is_bad_inode(inode)) {
-// 		if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
-// 			goto out;
+	NOVA_START_TIMING(evict_inode_t, evict_time);
+	rdv_proc("%s: %lu", __func__, inode->i_ino);
+    // FIXME: 目前保证删除时，link数为0
+    log_assert(!inode->i_nlink);
+	if (!inode->i_nlink) { // !is_bad_inode(inode)
+		// if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
+		// 	goto out;
 
-// 		destroy = 1;
-// 		/* We need the log to free the blocks from the b-tree */
-// 		switch (inode->i_mode & S_IFMT) {
-// 		case S_IFREG:
-// 			last_blocknr = nova_get_last_blocknr(sb, sih);
-// 			nova_dbgv("%s: file ino %lu", __func__, inode->i_ino);
-// 			freed = nova_delete_file_tree(sb, sih, 0,
-// 						last_blocknr, true, true);
-// 			break;
-// 		case S_IFDIR:
-// 			nova_dbgv("%s: dir ino %lu", __func__, inode->i_ino);
-// 			nova_delete_dir_tree(sb, sih);
-// 			break;
-// 		case S_IFLNK:
-// 			/* Log will be freed later */
-// 			nova_dbgv("%s: symlink ino %lu",
-// 					__func__, inode->i_ino);
-// 			freed = nova_delete_file_tree(sb, sih, 0, 0,
-// 							true, true);
-// 			break;
-// 		default:
-// 			nova_dbgv("%s: special ino %lu",
-// 					__func__, inode->i_ino);
-// 			break;
-// 		}
+		destroy = 1;
+		/* We need the log to free the blocks from the b-tree */
+		switch (inode->i_mode & S_IFMT) {
+		case S_IFREG:
+			last_blocknr = nova_get_last_blocknr(sb, sih);
+			rd_info("%s: file ino %lu", __func__, inode->i_ino);
+			freed = nova_delete_file_tree(sb, sih, 0,
+						last_blocknr, true, true);
+			break;
+		case S_IFDIR:
+			rd_info("%s: dir ino %lu", __func__, inode->i_ino);
+			nova_delete_dir_tree(sb, sih);
+			break;
+		case S_IFLNK:
+            log_assert(0);
+			/* Log will be freed later */
+			rd_info("%s: symlink ino %lu",
+					__func__, inode->i_ino);
+			freed = nova_delete_file_tree(sb, sih, 0, 0,
+							true, true);
+			break;
+		default:
+			rd_info("%s: special ino %lu",
+					__func__, inode->i_ino);
+            log_assert(0);
+			break;
+		}
 
-// 		nova_dbg_verbose("%s: Freed %d", __func__, freed);
-// 		/* Then we can free the inode */
-// 		err = nova_free_inode(inode, sih);
-// 		if (err) {
-// 			nova_err(sb, "%s: free inode %lu failed",
-// 					__func__, inode->i_ino);
-// 			goto out;
-// 		}
-// 		pi = NULL; /* we no longer own the nova_inode */
+		rdv_proc("%s: Freed %d", __func__, freed);
+		/* Then we can free the inode */
+		err = nova_free_inode(inode, sih);
+		if (err) {
+			r_error("%s: free inode %lu failed",
+					__func__, inode->i_ino);
+			goto out;
+		}
+		pi = NULL; /* we no longer own the nova_inode */
 
-// 		inode->i_mtime = inode->i_ctime = CURRENT_TIME_SEC;
-// 		inode->i_size = 0;
-// 	}
-// out:
-// 	if (destroy == 0)
-// 		nova_free_dram_resource(sb, sih);
+		inode->i_mtime = inode->i_ctime = get_cur_time_spec();
+		inode->i_size = 0;
+	}
+out:
+	if (destroy == 0)
+		nova_free_dram_resource(sb, sih);
 
-// 	/* TODO: Since we don't use page-cache, do we really need the following
-// 	 * call? */
-// 	truncate_inode_pages(&inode->i_data, 0);
+	/* TODO: Since we don't use page-cache, do we really need the following
+	 * call? */
+	// truncate_inode_pages(&inode->i_data, 0);
 
-// 	clear_inode(inode);
-// 	NOVA_END_TIMING(evict_inode_t, evict_time);
+	clear_inode(inode);
+	NOVA_END_TIMING(evict_inode_t, evict_time);
 }
 
 /* Returns 0 on failure */
@@ -1730,7 +1732,7 @@ static int nova_inode_log_thorough_gc(struct super_block *sb, struct nova_inode 
     curr_p = pi->log_head;
     old_curr_p = curr_p;
     old_head = pi->log_head;
-    rdv_proc("Log head 0x%lx, tail 0x%lx", curr_p, pi->log_tail);
+    rv_proc("%s Log head 0x%lx, tail 0x%lx", __func__, curr_p, pi->log_tail);
     if (curr_p == 0 && pi->log_tail == 0) goto out;
 
     if (curr_p >> PAGE_SHIFT == pi->log_tail >> PAGE_SHIFT) goto out;
@@ -1766,7 +1768,7 @@ static int nova_inode_log_thorough_gc(struct super_block *sb, struct nova_inode 
             extended = 0;
             new_curr = nova_get_append_head(sb, pi, NULL, new_curr, length, &extended);
             if (extended) {
-                r_warning("%s extent gc log! blocks: %lu", __func__, blocks);
+                rd_warning("%s extent gc log! blocks: %lu", __func__, blocks);
                 blocks++;
             }
 
@@ -1847,7 +1849,7 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
     curr = pi->log_head;
     sih->valid_bytes = 0;
 
-    rdv_proc("%s: log head 0x%lx, tail 0x%lx", __func__, curr, curr_tail);
+    r_info("%s: log head 0x%lx, tail 0x%lx", __func__, curr, curr_tail);
     while (1) {
         if (curr >> PAGE_SHIFT == pi->log_tail >> PAGE_SHIFT) {
             /* Don't recycle tail page 不回收最后一个page，避免即修改head又修改tail，不能原子*/

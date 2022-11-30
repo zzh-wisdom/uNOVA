@@ -510,7 +510,7 @@ void d_put(struct dentry *parent) {
     log_assert(parent->d_inode == nullptr);
     log_assert(list_empty(&parent->d_child));
     log_assert(parent->d_subdirs.empty());
-    rdv_proc("%s: %s", __func__, parent->d_name.name);
+    r_info("%s: %s", __func__, parent->d_name.name);
     if (dname_external(parent)) {
         FREE(external_name(parent));
     }
@@ -771,6 +771,7 @@ ssize_t do_read(int fd, char *buf, size_t count) {
         rd_error("%s fail, fd %d is illegal.", __func__, fd);
         return -EBADF;
     }
+    log_assert(inode_is_valid(file->f_inode));
     loff_t pos = file_pos_read(file);
     rd_info("%s src_buf=%p, count=%lu, pos=%ld", __func__, buf, count, pos);
 
@@ -788,6 +789,7 @@ ssize_t do_write(int fd, const char *buf, size_t count) {
         rd_error("%s fail, fd %d is illegal.", __func__, fd);
         return -EBADF;
     }
+    log_assert(inode_is_valid(file->f_inode));
     loff_t pos = file_pos_read(file);
     rd_info("%s src_buf=%p, count=%lu, pos=%ld", __func__, buf, count, pos);
 
@@ -872,6 +874,7 @@ off_t do_lseek(int fd, off_t offset, int whence) {
         rd_error("%s fail, fd %d is illegal.", __func__, fd);
         return -1;
     }
+    log_assert(inode_is_valid(file->f_inode));
     loff_t (*fn)(struct file *, loff_t, int);
     fn = no_llseek;
     if (file->f_op->llseek) fn = file->f_op->llseek;
@@ -884,6 +887,7 @@ int do_fsync(int fd) {
         rd_error("%s fail, fd %d is illegal.", __func__, fd);
         return -1;
     }
+    log_assert(inode_is_valid(file->f_inode));
     struct inode* inode = file->f_inode;
     super_block* sb = inode->i_sb;
     if (!file->f_op->fsync)
@@ -1027,6 +1031,8 @@ int do_ftruncate(int fd, off_t length) {
         rd_error("%s fail, fd %d is illegal.", __func__, fd);
         return -EBADF;
     }
+    log_assert(inode_is_valid(file->f_inode));
+    // r_info("%s fd=%d length=%d", __func__, fd, length);
     dentry* den = file->f_dentry;
     if (!S_ISREG(den->d_inode->i_mode)) //  || !(f.file->f_mode & FMODE_WRITE)
 		return -EINVAL;

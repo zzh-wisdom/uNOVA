@@ -264,7 +264,7 @@ int hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long 
             // printf("SYS_close, fd: %d\n", (int)a0);
             return hook_close((int)a0, res);
         case SYS_write:
-            // printf("SYS_write, fd: %d\n", (int)a0);
+            // printf("SYS_write, fd: %d, %lu\n", (int)a0, (size_t)a2);
             return hook_write((int)a0, (char *)a1, (size_t)a2, res);
         case SYS_read:
             // printf("SYS_read, fd: %d\n", (int)a0);

@@ -135,7 +135,7 @@ static int nova_find_range_node(struct nova_sb_info *sbi,
 	return ret;
 }
 
-inline int nova_search_inodetree(struct nova_sb_info *sbi,
+int nova_search_inodetree(struct nova_sb_info *sbi,
 	unsigned long ino, struct nova_range_node **ret_node)
 {
 	struct rb_root *tree;

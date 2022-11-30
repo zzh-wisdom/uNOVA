@@ -889,7 +889,7 @@ extern int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 extern int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
 	unsigned long *blocknr, unsigned int num, int zero, int cpuid = -1);
 extern unsigned long nova_count_free_blocks(struct super_block *sb);
-inline int nova_search_inodetree(struct nova_sb_info *sbi,
+int nova_search_inodetree(struct nova_sb_info *sbi,
 	unsigned long ino, struct nova_range_node **ret_node);
 inline int nova_insert_blocktree(struct nova_sb_info *sbi,
 	struct rb_root *tree, struct nova_range_node *new_node);

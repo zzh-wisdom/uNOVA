@@ -13,18 +13,36 @@ numa_mem_policy=bind:1
 kb_base=1024
 ; verify=md5
 do_verify=1
-ioengine=sync
 create_fsync=1
-; create_only=1
-time_based
-runtime=60
-numjobs=32
-
-[seq-write1]
+# create_only=1
 description=顺序写文件,单线程多文件,文件数变化
+time_based
+runtime=30
+numjobs=1
 # overwrite=1
+# ioengine=sync
+ioengine=ftruncate
 rw=write
-# 这个大小会在多个文件中平均分
-size=3G
 bs=4K
+# 这个大小会在多个文件中平均分，如果没指定filesize
+size=3G
+# filesize=1G
+file_service_type=roundrobin
+# io个数
+# number_ios=1000000
+
+[seq-write-1]
+wait_for_previous
 nrfiles=1
+
+# [seq-write-2]
+# wait_for_previous
+# nrfiles=2
+
+# [seq-write-4]
+# wait_for_previous
+# nrfiles=4
+
+# [seq-write-8]
+# wait_for_previous
+# nrfiles=8

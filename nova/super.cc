@@ -417,7 +417,7 @@ static inline void set_default_opts(struct nova_sb_info *sbi) {
 // }
 
 static struct inode *nova_alloc_inode(struct super_block *sb) {
-    rdv_proc("%s\n", __func__);
+    rdv_proc("%s", __func__);
     struct nova_inode_info *vi;
     vi = (struct nova_inode_info *)kmem_cache_alloc(nova_inode_cachep);
     if (!vi) return NULL;

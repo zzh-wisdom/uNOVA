@@ -81,11 +81,14 @@ int main(int argc, char* argv[]) {
     // printf("errno=%d\n", errno); // EACCES
     assert(fd2 > 0);
     printf("open %s, fd = %d\n", files_f1.c_str(), fd2);
-    assert(close(fd1) == 0);
-    assert(close(fd2) == 0);
+    ret = close(fd1);
+    assert(ret == 0);
+    ret = close(fd2);
+    assert(ret == 0);
     fd1 = open(files_f2.c_str(), O_RDWR | O_CREAT, 0);
     assert(fd1 > 0);
-    assert(close(fd1) == 0);
+    ret = close(fd1);
+    assert(ret == 0);
     printf("open %s, fd = %d\n", files_f2.c_str(), fd1);
 
     // 读写测试
@@ -142,8 +145,10 @@ int main(int argc, char* argv[]) {
         assert(ret == 1);
         assert(c == 'a');
     }
-    assert(close(fd_w) == 0);
-    assert(close(fd_r) == 0);
+    ret = close(fd_w);
+    assert(ret == 0);
+    ret = close(fd_r);
+    assert(ret == 0);
 
     int fd = open(files_f2.c_str(), O_RDWR | O_CREAT, 666);
     assert(fd > 0);
