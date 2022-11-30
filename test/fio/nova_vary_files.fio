@@ -6,7 +6,7 @@ directory=/tmp/nova
 direct=1
 buffered=0
 thread=1
-cpus_allowed=20-39,60-79
+cpus_allowed=22-39,60-79
 cpus_allowed_policy=split
 numa_cpu_nodes=1
 numa_mem_policy=bind:1
@@ -15,6 +15,8 @@ kb_base=1024
 do_verify=1
 create_fsync=1
 # create_only=1
+# 运行完负载后，删除文件
+unlink=1
 description=顺序写文件,单线程多文件,文件数变化
 time_based
 runtime=30
@@ -30,19 +32,36 @@ size=3G
 file_service_type=roundrobin
 # io个数
 # number_ios=1000000
+group_reporting
 
-[seq-write-1]
-wait_for_previous
-nrfiles=1
+# [ftruncate-1]
+# wait_for_previous
+# nrfiles=1
 
-# [seq-write-2]
+# [ftruncate-2]
 # wait_for_previous
 # nrfiles=2
 
-# [seq-write-4]
+# [ftruncate-4]
 # wait_for_previous
 # nrfiles=4
 
-# [seq-write-8]
+# [ftruncate-8]
 # wait_for_previous
 # nrfiles=8
+
+[ftruncate-10]
+wait_for_previous
+nrfiles=10
+
+[ftruncate-100]
+wait_for_previous
+nrfiles=100
+
+[ftruncate-1000]
+wait_for_previous
+nrfiles=1000
+
+[ftruncate-10000]
+wait_for_previous
+nrfiles=10000
