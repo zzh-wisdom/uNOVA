@@ -54,10 +54,19 @@ ATTR_CONSTRUCTOR void preload(int argc, char **argv) {
     //     hook_op = &hook_op_native;
     // } else if (strcmp(hook_fs, "nova") == 0) {
     //     hook_op = &hook_op_nova;
+    // } else if (strcmp(hook_fs, "finefs") == 0) {
+    //     hook_op = &hook_op_finefs;
     // } else {
     //     hook_op = &hook_op_native;
     // }
-	hook_op = &hook_op_nova;
+#if FS_HOOK==1
+    hook_op = &hook_op_nova;
+#elif FS_HOOK==2
+    hook_op = &hook_op_finefs;
+#else
+    hook_op = &hook_op_native;
+#endif
+
 	static const std::string dev_name = "/dev/dax3.0";
     printf("HOOK [%s], dev_name:[%s] root_path:[%s]\n", hook_op->label.c_str(), dev_name.c_str(),
            hook_op->root_name.c_str());

@@ -28,12 +28,6 @@ set(INCLUDE_HEAD_LIST
 )
 include_directories(${INCLUDE_HEAD_LIST})
 
-file(GLOB HOOK_SRC
-    ${PROJECT_SOURCE_DIR}/syscall-intercept/*.cc
-    ${PROJECT_SOURCE_DIR}/util/*.cc
-    ${PROJECT_SOURCE_DIR}/nova/*.cc
-)
-
 file(GLOB UTIL_SRC
     ${PROJECT_SOURCE_DIR}/util/*.cc
 )
@@ -42,12 +36,32 @@ file(GLOB UNOVA_SRC
     ${PROJECT_SOURCE_DIR}/nova/*.cc
 )
 
-set(HOOK_HEAD_LIST ${PROJECT_SOURCE_DIR})
-add_library(fs_hook SHARED ${HOOK_SRC})
-target_link_libraries(fs_hook
+# set(HOOK_HEAD_LIST ${PROJECT_SOURCE_DIR})
+
+file(GLOB NOVA_HOOK_SRC
+    ${PROJECT_SOURCE_DIR}/syscall-intercept/*.cc
+    ${PROJECT_SOURCE_DIR}/util/*.cc
+    ${PROJECT_SOURCE_DIR}/nova/*.cc
+)
+add_library(nova_hook SHARED ${NOVA_HOOK_SRC})
+target_link_libraries(nova_hook
     syscall_intercept
     glog pthread numa pmem2
 )
+target_compile_definitions(nova_hook PRIVATE FS_HOOK=1)
+
+file(GLOB FINEFS_HOOK_SRC
+    ${PROJECT_SOURCE_DIR}/syscall-intercept/*.cc
+    ${PROJECT_SOURCE_DIR}/util/*.cc
+    ${PROJECT_SOURCE_DIR}/finefs/*.cc
+)
+add_library(finefs_hook SHARED ${FINEFS_HOOK_SRC})
+target_link_libraries(finefs_hook
+    syscall_intercept
+    glog pthread numa pmem2
+)
+target_compile_definitions(finefs_hook PRIVATE FS_HOOK=2)
+
 # target_include_directories(demo_hook PUBLIC ${HOOK_HEAD_LIST})
 
 # add_executable(fstest test/fstest.cc ${HOOK_SRC})
