@@ -1,41 +1,42 @@
-#ifndef UNOVA_NOVA_CFG_H_
-#define UNOVA_NOVA_CFG_H_
+#ifndef UNOVA_FS_CFG_H_
+#define UNOVA_FS_CFG_H_
 
 #include <libpmem2.h>
 #include <numa.h>
 #include <pthread.h>
 
-#include "nova/vfs_api.h"
+#include "vfs/vfs_api.h"
 
 #include "util/util.h"
 #include "util/common.h"
 #include "util/log.h"
 
 #define NOVA_CUT_OUT
+#define FINEFS_CUT_OUT
 
 #define ALLOC_BLOCK_RETRY 3
-#define NOVA_MAX_CPU_NUM 64
+#define FS_MAX_CPU_NUM 64
 
-extern bool nova_cfg_inited;
-extern int nova_cpu_num;
+extern bool fs_cfg_inited;
+extern int fs_cpu_num;
 extern thread_local int processor_id;
 
 extern pmem2_memset_fn pmem_memset_func;
 extern pmem2_memcpy_fn pmem_memcpy_func;
 extern pmem2_drain_fn pmem_drain_func;
 
-void nova_cfg_init(pmem2_map* pmap, struct vfs_cfg* cfg);
+void fs_cfg_init(pmem2_map* pmap, struct vfs_cfg* cfg);
 // 返回线程id
-int nova_register_thread(int* proc_id);
+int fs_register_thread(int* proc_id);
 
 static force_inline int get_processor_id() {
-    dlog_assert(nova_cfg_inited);
-    dlog_assert(processor_id >= 0 && processor_id < nova_cpu_num);
+    dlog_assert(fs_cfg_inited);
+    dlog_assert(processor_id >= 0 && processor_id < fs_cpu_num);
     return processor_id;
 }
 static force_inline int num_online_cpus() {
-    dlog_assert(nova_cfg_inited);
-    return nova_cpu_num;
+    dlog_assert(fs_cfg_inited);
+    return fs_cpu_num;
 }
 
 static force_inline void *pmem_memset_nt(void *pmem, int c, size_t n) {

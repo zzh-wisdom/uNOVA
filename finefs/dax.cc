@@ -13,8 +13,8 @@
  * warranty of any kind, whether express or implied.
  */
 
-#include "nova/nova.h"
-#include "nova/wprotect.h"
+#include "finefs/finefs.h"
+#include "finefs/wprotect.h"
 
 #include "util/cpu.h"
 
@@ -27,9 +27,9 @@ do_dax_mapping_read(struct file *filp, char *buf,
 	// struct inode *inode = filp->f_mapping->host;
 	struct inode *inode = filp->f_inode;
 	struct super_block *sb = inode->i_sb;
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
-	struct nova_file_write_entry *entry;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
+	struct finefs_file_write_entry *entry;
 	pgoff_t index, end_index;
 	unsigned long offset;
 	loff_t isize, pos;
@@ -78,7 +78,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 			}
 		}
 
-		entry = nova_get_write_entry(sb, si, index);
+		entry = finefs_get_write_entry(sb, si, index);
 		if (unlikely(entry == NULL)) {
 			// 一个空洞的页
 			rdv_proc("Required extent not found: pgoff %lu, "
@@ -104,14 +104,14 @@ do_dax_mapping_read(struct file *filp, char *buf,
 		}
 
 		nvmm = get_nvmm(sb, sih, entry, index);
-		dax_mem = nova_get_block(sb, (nvmm << PAGE_SHIFT));
+		dax_mem = finefs_get_block(sb, (nvmm << PAGE_SHIFT));
 
 memcpy:
 		nr = nr - offset;
 		if (nr > len - copied)
 			nr = len - copied;
 
-		NOVA_START_TIMING(memcpy_r_nvmm_t, memcpy_time);
+		FINEFS_START_TIMING(memcpy_r_nvmm_t, memcpy_time);
 
 		if (!zero)
 			left = __copy_to_user(buf + copied,
@@ -119,7 +119,7 @@ memcpy:
 		else
 			left = __clear_user(buf + copied, nr);
 
-		NOVA_END_TIMING(memcpy_r_nvmm_t, memcpy_time);
+		FINEFS_END_TIMING(memcpy_r_nvmm_t, memcpy_time);
 
 		if (left) {
 			r_error("%s ERROR!: bytes %lu, left %lu",
@@ -139,7 +139,7 @@ out:
 	// if (filp)
 	// 	file_accessed(filp);
 
-	NOVA_STATS_ADD(read_bytes, copied);
+	FINEFS_STATS_ADD(read_bytes, copied);
 
 	rd_info("%s returned %zu", __func__, copied);
 	return (copied ? copied : err);
@@ -150,17 +150,17 @@ out:
  * concurrent truncate operation. No problem for write because we held
  * i_mutex.
  */
-ssize_t nova_dax_file_read(struct file *filp, char *buf,
+ssize_t finefs_dax_file_read(struct file *filp, char *buf,
 			    size_t len, loff_t *ppos)
 {
 	ssize_t res;
 	timing_t dax_read_time;
 
-	NOVA_START_TIMING(dax_read_t, dax_read_time);
+	FINEFS_START_TIMING(dax_read_t, dax_read_time);
 //	rcu_read_lock();
 	res = do_dax_mapping_read(filp, buf, len, ppos);
 //	rcu_read_unlock();
-	NOVA_END_TIMING(dax_read_t, dax_read_time);
+	FINEFS_END_TIMING(dax_read_t, dax_read_time);
 	return res;
 }
 
@@ -168,16 +168,16 @@ ssize_t nova_dax_file_read(struct file *filp, char *buf,
 // kmem 新nvm block的地址
 // 拷贝未覆盖的block内容
 // is_end_blk为true，表示覆盖的是尾部，则就要拷贝头部数据
-static inline int nova_copy_partial_block(struct super_block *sb,
-	struct nova_inode_info_header *sih,
-	struct nova_file_write_entry *entry, unsigned long index,
+static inline int finefs_copy_partial_block(struct super_block *sb,
+	struct finefs_inode_info_header *sih,
+	struct finefs_file_write_entry *entry, unsigned long index,
 	size_t offset, void* kmem, bool is_end_blk)
 {
 	void *ptr;
 	unsigned long nvmm;
 
 	nvmm = get_nvmm(sb, sih, entry, index);
-	ptr = nova_get_block(sb, (nvmm << PAGE_SHIFT));
+	ptr = finefs_get_block(sb, (nvmm << PAGE_SHIFT));
 	if (ptr != NULL) {
 		if (is_end_blk)
 			memcpy(kmem + offset, ptr + offset,
@@ -194,22 +194,22 @@ static inline int nova_copy_partial_block(struct super_block *sb,
  * Do nothing if fully covered; copy if original blocks present;
  * Fill zero otherwise.
  */
-static void nova_handle_head_tail_blocks(struct super_block *sb,
-	struct nova_inode *pi, struct inode *inode, loff_t pos, size_t count,
+static void finefs_handle_head_tail_blocks(struct super_block *sb,
+	struct finefs_inode *pi, struct inode *inode, loff_t pos, size_t count,
 	void *kmem)
 {
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
 	size_t offset, eblk_offset;
 	unsigned long start_blk, end_blk, num_blocks;
-	struct nova_file_write_entry *entry;
+	struct finefs_file_write_entry *entry;
 	timing_t partial_time;
 
-	NOVA_START_TIMING(partial_block_t, partial_time);
+	FINEFS_START_TIMING(partial_block_t, partial_time);
 	offset = pos & (sb->s_blocksize - 1);
 	num_blocks = ((count + offset - 1) >> sb->s_blocksize_bits) + 1;
 	/* offset in the actual block size block */
-	offset = pos & (nova_inode_blk_size(pi) - 1);
+	offset = pos & (finefs_inode_blk_size(pi) - 1);
 	start_blk = pos >> sb->s_blocksize_bits;
 	end_blk = start_blk + num_blocks - 1;
 
@@ -219,50 +219,50 @@ static void nova_handle_head_tail_blocks(struct super_block *sb,
 	rdv_proc("%s: start offset %lu start blk %lu %p", __func__,
 				offset, start_blk, kmem);
 	if (offset != 0) {
-		entry = nova_get_write_entry(sb, si, start_blk);
+		entry = finefs_get_write_entry(sb, si, start_blk);
 		if (entry == NULL) {
 			/* Fill zero */
 		    	memset(kmem, 0, offset);
 		} else {
 			/* Copy from original block */
 			// 处理第一个非对齐的块
-			nova_copy_partial_block(sb, sih, entry, start_blk,
+			finefs_copy_partial_block(sb, sih, entry, start_blk,
 					offset, kmem, false);
 		}
-		nova_flush_buffer(kmem, offset, 0);
+		finefs_flush_buffer(kmem, offset, 0);
 	}
 
 	kmem = (void *)((char *)kmem +
 			((num_blocks - 1) << sb->s_blocksize_bits));
 	// 处理尾部部分块
-	eblk_offset = (pos + count) & (nova_inode_blk_size(pi) - 1);
+	eblk_offset = (pos + count) & (finefs_inode_blk_size(pi) - 1);
 	rdv_proc("%s: end offset %lu, end blk %lu %p", __func__,
 				eblk_offset, end_blk, kmem);
 	if (eblk_offset != 0) {
-		entry = nova_get_write_entry(sb, si, end_blk);
+		entry = finefs_get_write_entry(sb, si, end_blk);
 		if (entry == NULL) {
 			/* Fill zero */
 		    	memset(kmem + eblk_offset, 0,
 					sb->s_blocksize - eblk_offset);
 		} else {
 			/* Copy from original block */
-			nova_copy_partial_block(sb, sih, entry, end_blk,
+			finefs_copy_partial_block(sb, sih, entry, end_blk,
 					eblk_offset, kmem, true);
 		}
-		nova_flush_buffer(kmem + eblk_offset,
+		finefs_flush_buffer(kmem + eblk_offset,
 					sb->s_blocksize - eblk_offset, 0);
 	}
 
-	NOVA_END_TIMING(partial_block_t, partial_time);
+	FINEFS_END_TIMING(partial_block_t, partial_time);
 }
 
-int nova_reassign_file_tree(struct super_block *sb,
-	struct nova_inode *pi, struct nova_inode_info_header *sih,
+int finefs_reassign_file_tree(struct super_block *sb,
+	struct finefs_inode *pi, struct finefs_inode_info_header *sih,
 	u64 begin_tail)
 {
-	struct nova_file_write_entry *entry_data;
+	struct finefs_file_write_entry *entry_data;
 	u64 curr_p = begin_tail;
-	size_t entry_size = sizeof(struct nova_file_write_entry);
+	size_t entry_size = sizeof(struct finefs_file_write_entry);
 
 	while (curr_p != pi->log_tail) {
 		if (is_last_entry(curr_p, entry_size))
@@ -270,37 +270,37 @@ int nova_reassign_file_tree(struct super_block *sb,
 
 		if (curr_p == 0) {
 			r_error("%s: File inode %lu log is NULL!",
-				__func__, pi->nova_ino);
+				__func__, pi->finefs_ino);
 			return -EINVAL;
 		}
 
-		entry_data = (struct nova_file_write_entry *)
-					nova_get_block(sb, curr_p);
+		entry_data = (struct finefs_file_write_entry *)
+					finefs_get_block(sb, curr_p);
 
-		if (nova_get_entry_type(entry_data) != FILE_WRITE) {
+		if (finefs_get_entry_type(entry_data) != FILE_WRITE) {
 			r_error("%s: entry type is not write? %d",
-				__func__, nova_get_entry_type(entry_data));
+				__func__, finefs_get_entry_type(entry_data));
 			curr_p += entry_size;
 			continue;
 		}
 
-		nova_assign_write_entry(sb, pi, sih, entry_data, true);
+		finefs_assign_write_entry(sb, pi, sih, entry_data, true);
 		curr_p += entry_size;
 	}
 
 	return 0;
 }
 
-static int nova_cleanup_incomplete_write(struct super_block *sb,
-	struct nova_inode *pi, struct nova_inode_info_header *sih,
+static int finefs_cleanup_incomplete_write(struct super_block *sb,
+	struct finefs_inode *pi, struct finefs_inode_info_header *sih,
 	unsigned long blocknr, int allocated, u64 begin_tail, u64 end_tail)
 {
-	struct nova_file_write_entry *entry;
+	struct finefs_file_write_entry *entry;
 	u64 curr_p = begin_tail;
-	size_t entry_size = sizeof(struct nova_file_write_entry);
+	size_t entry_size = sizeof(struct finefs_file_write_entry);
 
 	if (blocknr > 0 && allocated > 0)
-		nova_free_data_blocks(sb, pi, blocknr, allocated);
+		finefs_free_data_blocks(sb, pi, blocknr, allocated);
 
 	if (begin_tail == 0 || end_tail == 0)
 		return 0;
@@ -311,39 +311,39 @@ static int nova_cleanup_incomplete_write(struct super_block *sb,
 
 		if (curr_p == 0) {
 			r_error("%s: File inode %lu log is NULL!",
-				__func__, pi->nova_ino);
+				__func__, pi->finefs_ino);
 			return -EINVAL;
 		}
 
-		entry = (struct nova_file_write_entry *)
-					nova_get_block(sb, curr_p);
+		entry = (struct finefs_file_write_entry *)
+					finefs_get_block(sb, curr_p);
 
-		if (nova_get_entry_type(entry) != FILE_WRITE) {
+		if (finefs_get_entry_type(entry) != FILE_WRITE) {
 			r_error("%s: entry type is not write? %d",
-				__func__, nova_get_entry_type(entry));
+				__func__, finefs_get_entry_type(entry));
 			curr_p += entry_size;
 			continue;
 		}
 
 		blocknr = entry->block >> PAGE_SHIFT;
-		nova_free_data_blocks(sb, pi, blocknr, entry->num_pages);
+		finefs_free_data_blocks(sb, pi, blocknr, entry->num_pages);
 		curr_p += entry_size;
 	}
 
 	return 0;
 }
 
-ssize_t nova_cow_file_write(struct file *filp,
+ssize_t finefs_cow_file_write(struct file *filp,
 	const char *buf, size_t len, loff_t *ppos, bool need_mutex)
 {
 	// struct address_space *mapping = filp->f_mapping;
 	// struct inode    *inode = mapping->host;
 	struct inode    *inode = filp->f_inode;
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
 	struct super_block *sb = inode->i_sb;
-	struct nova_inode *pi;
-	struct nova_file_write_entry entry_data;
+	struct finefs_inode *pi;
+	struct finefs_file_write_entry entry_data;
 	ssize_t     written = 0;  // 已经拷贝的用户数据
 	loff_t pos;
 	size_t count, offset, copied, ret;
@@ -372,7 +372,7 @@ ssize_t nova_cow_file_write(struct file *filp,
 	// if (mapping_mapped(mapping))
 	// 	return -EACCES;
 
-	NOVA_START_TIMING(cow_write_t, cow_write_time);
+	FINEFS_START_TIMING(cow_write_t, cow_write_time);
 
 	// 一些加锁同步的操作
 	// sb_start_write(inode->i_sb);
@@ -390,7 +390,7 @@ ssize_t nova_cow_file_write(struct file *filp,
 
 	count = len;
 
-	pi = nova_get_inode(sb, inode);
+	pi = finefs_get_inode(sb, inode);
 
 	// 块内偏移
 	offset = pos & (sb->s_blocksize - 1);
@@ -411,11 +411,11 @@ ssize_t nova_cow_file_write(struct file *filp,
 
 	temp_tail = pi->log_tail;
 	while (num_blocks > 0) {
-		offset = pos & (nova_inode_blk_size(pi) - 1);
+		offset = pos & (finefs_inode_blk_size(pi) - 1);
 		start_blk = pos >> sb->s_blocksize_bits;
 
 		/* don't zero-out the allocated blocks */
-		allocated = nova_new_data_blocks(sb, pi, &blocknr, num_blocks,
+		allocated = finefs_new_data_blocks(sb, pi, &blocknr, num_blocks,
 						start_blk, 0, 1);
 		rdv_proc("%s: alloc %d blocks @ %lu", __func__,
 						allocated, blocknr);
@@ -433,35 +433,35 @@ ssize_t nova_cow_file_write(struct file *filp,
 			bytes = count;
 
 		// 新配备区域的nvm虚拟地址
-		kmem = nova_get_block(inode->i_sb,
-			nova_get_block_off(sb, blocknr,	pi->i_blk_type));
+		kmem = finefs_get_block(inode->i_sb,
+			finefs_get_block_off(sb, blocknr,	pi->i_blk_type));
 
 		if (offset || ((offset + bytes) & (PAGE_SIZE - 1)) != 0)
-			nova_handle_head_tail_blocks(sb, pi, inode, pos, bytes,
+			finefs_handle_head_tail_blocks(sb, pi, inode, pos, bytes,
 								kmem);
 
 		/* Now copy from user buf */
-//		nova_dbg("Write: %p", kmem);
-		NOVA_START_TIMING(memcpy_w_nvmm_t, memcpy_time);
+//		finefs_dbg("Write: %p", kmem);
+		FINEFS_START_TIMING(memcpy_w_nvmm_t, memcpy_time);
 		copied = bytes - memcpy_to_pmem_nocache(kmem + offset,
 						buf, bytes);
-		NOVA_END_TIMING(memcpy_w_nvmm_t, memcpy_time);
+		FINEFS_END_TIMING(memcpy_w_nvmm_t, memcpy_time);
 
 		entry_data.pgoff = cpu_to_le64(start_blk);
 		entry_data.num_pages = cpu_to_le32(allocated);
 		entry_data.invalid_pages = 0;
-		entry_data.block = cpu_to_le64(nova_get_block_off(sb, blocknr,
+		entry_data.block = cpu_to_le64(finefs_get_block_off(sb, blocknr,
 							pi->i_blk_type));
 		entry_data.mtime = cpu_to_le32(time);
 		/* Set entry type after set block */
-		nova_set_entry_type((void *)&entry_data, FILE_WRITE);
+		finefs_set_entry_type((void *)&entry_data, FILE_WRITE);
 
 		if (pos + copied > inode->i_size)
 			entry_data.size = cpu_to_le64(pos + copied);
 		else
 			entry_data.size = cpu_to_le64(inode->i_size);
 
-		curr_entry = nova_append_file_write_entry(sb, pi, inode,
+		curr_entry = finefs_append_file_write_entry(sb, pi, inode,
 							&entry_data, temp_tail);
 		if (curr_entry == 0) {
 			rd_warning("%s: append inode entry failed", __func__);
@@ -489,28 +489,28 @@ ssize_t nova_cow_file_write(struct file *filp,
 
 		if (begin_tail == 0)
 			begin_tail = curr_entry;
-		temp_tail = curr_entry + sizeof(struct nova_file_write_entry);
+		temp_tail = curr_entry + sizeof(struct finefs_file_write_entry);
 	}
 
-	nova_memunlock_inode(sb, pi);
-	data_bits = blk_type_to_shift[pi->i_blk_type];
+	finefs_memunlock_inode(sb, pi);
+	data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
 	le64_add_cpu(&pi->i_blocks,
 			(total_blocks << (data_bits - sb->s_blocksize_bits)));
-	nova_memlock_inode(sb, pi);
+	finefs_memlock_inode(sb, pi);
 
 	// 提交写操作
-	nova_update_tail(pi, temp_tail);
+	finefs_update_tail(pi, temp_tail);
 
 	/* Free the overlap blocks after the write is committed */
 	// 更改内存中的索引
-	ret = nova_reassign_file_tree(sb, pi, sih, begin_tail);
+	ret = finefs_reassign_file_tree(sb, pi, sih, begin_tail);
 	if (ret)
 		goto out;
 
 	inode->i_blocks = le64_to_cpu(pi->i_blocks);
 
 	ret = written;
-	NOVA_STATS_ADD(write_breaks, step);
+	FINEFS_STATS_ADD(write_breaks, step);
 	rd_info("blocks: %lu, %lu", inode->i_blocks, pi->i_blocks);
 
 	*ppos = pos;
@@ -522,7 +522,7 @@ ssize_t nova_cow_file_write(struct file *filp,
 out:
 	if (ret < 0) {
 		r_error("Unexpected!!");
-		nova_cleanup_incomplete_write(sb, pi, sih, blocknr, allocated,
+		finefs_cleanup_incomplete_write(sb, pi, sih, blocknr, allocated,
 						begin_tail, temp_tail);
 	}
 
@@ -530,33 +530,33 @@ out:
 	if (need_mutex)
 		mutex_unlock(&inode->i_mutex);
 	// sb_end_write(inode->i_sb);
-	NOVA_END_TIMING(cow_write_t, cow_write_time);
-	NOVA_STATS_ADD(cow_write_bytes, written);
+	FINEFS_END_TIMING(cow_write_t, cow_write_time);
+	FINEFS_STATS_ADD(cow_write_bytes, written);
 	return ret;
 }
 
-ssize_t nova_dax_file_write(struct file *filp, const char *buf,
+ssize_t finefs_dax_file_write(struct file *filp, const char *buf,
 	size_t len, loff_t *ppos)
 {
-	return nova_cow_file_write(filp, buf, len, ppos, true);
+	return finefs_cow_file_write(filp, buf, len, ppos, true);
 }
 
-#ifndef NOVA_CUT_OUT
+#if 0
 
 /*
  * return > 0, # of blocks mapped or allocated.
  * return = 0, if plain lookup failed.
  * return < 0, error case.
  */
-static int nova_dax_get_blocks(struct inode *inode, sector_t iblock,
+static int finefs_dax_get_blocks(struct inode *inode, sector_t iblock,
 	unsigned long max_blocks, struct buffer_head *bh, int create)
 {
 	struct super_block *sb = inode->i_sb;
-	struct nova_inode *pi;
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
-	struct nova_file_write_entry *entry = NULL;
-	struct nova_file_write_entry entry_data;
+	struct finefs_inode *pi;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
+	struct finefs_file_write_entry *entry = NULL;
+	struct finefs_file_write_entry entry_data;
 	u64 temp_tail = 0;
 	u64 curr_entry;
 	u32 time;
@@ -571,10 +571,10 @@ static int nova_dax_get_blocks(struct inode *inode, sector_t iblock,
 	if (max_blocks == 0)
 		return 0;
 
-	nova_dbgv("%s: pgoff %lu, num %lu, create %d",
+	finefs_dbgv("%s: pgoff %lu, num %lu, create %d",
 				__func__, iblock, max_blocks, create);
 
-	entry = nova_get_write_entry(sb, si, iblock);
+	entry = finefs_get_write_entry(sb, si, iblock);
 	if (entry) {
 		/* Find contiguous blocks */
 		if (entry->invalid_pages == 0)
@@ -587,20 +587,20 @@ static int nova_dax_get_blocks(struct inode *inode, sector_t iblock,
 
 		nvmm = get_nvmm(sb, sih, entry, iblock);
 		clear_buffer_new(bh);
-		nova_dbgv("%s: pgoff %lu, block %lu", __func__, iblock, nvmm);
+		finefs_dbgv("%s: pgoff %lu, block %lu", __func__, iblock, nvmm);
 		goto out;
 	}
 
 	if (create == 0)
 		return 0;
 
-	pi = nova_get_inode(sb, inode);
+	pi = finefs_get_inode(sb, inode);
 	num_blocks = max_blocks;
 	inode->i_ctime = inode->i_mtime = CURRENT_TIME_SEC;
 	time = CURRENT_TIME_SEC.tv_sec;
 
 	/* Fill the hole */
-	entry = nova_find_next_entry(sb, sih, iblock);
+	entry = finefs_find_next_entry(sb, sih, iblock);
 	if (entry) {
 		next_pgoff = entry->pgoff;
 		if (next_pgoff <= iblock) {
@@ -615,10 +615,10 @@ static int nova_dax_get_blocks(struct inode *inode, sector_t iblock,
 	}
 
 	/* Return initialized blocks to the user */
-	allocated = nova_new_data_blocks(sb, pi, &blocknr, num_blocks,
+	allocated = finefs_new_data_blocks(sb, pi, &blocknr, num_blocks,
 						iblock, 1, 1);
 	if (allocated <= 0) {
-		nova_dbg("%s alloc blocks failed %d", __func__,
+		finefs_dbg("%s alloc blocks failed %d", __func__,
 							allocated);
 		ret = allocated;
 		goto out;
@@ -628,32 +628,32 @@ static int nova_dax_get_blocks(struct inode *inode, sector_t iblock,
 	entry_data.pgoff = cpu_to_le64(iblock);
 	entry_data.num_pages = cpu_to_le32(num_blocks);
 	entry_data.invalid_pages = 0;
-	entry_data.block = cpu_to_le64(nova_get_block_off(sb, blocknr,
+	entry_data.block = cpu_to_le64(finefs_get_block_off(sb, blocknr,
 							pi->i_blk_type));
 	/* Set entry type after set block */
-	nova_set_entry_type((void *)&entry_data, FILE_WRITE);
+	finefs_set_entry_type((void *)&entry_data, FILE_WRITE);
 	entry_data.mtime = cpu_to_le32(time);
 
 	/* Do not extend file size */
 	entry_data.size = cpu_to_le64(inode->i_size);
 
-	curr_entry = nova_append_file_write_entry(sb, pi, inode,
+	curr_entry = finefs_append_file_write_entry(sb, pi, inode,
 						&entry_data, pi->log_tail);
 	if (curr_entry == 0) {
-		nova_dbg("%s: append inode entry failed", __func__);
+		finefs_dbg("%s: append inode entry failed", __func__);
 		ret = -ENOSPC;
 		goto out;
 	}
 
 	nvmm = blocknr;
-	data_bits = blk_type_to_shift[pi->i_blk_type];
+	data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
 	le64_add_cpu(&pi->i_blocks,
 			(num_blocks << (data_bits - sb->s_blocksize_bits)));
 
-	temp_tail = curr_entry + sizeof(struct nova_file_write_entry);
-	nova_update_tail(pi, temp_tail);
+	temp_tail = curr_entry + sizeof(struct finefs_file_write_entry);
+	finefs_update_tail(pi, temp_tail);
 
-	ret = nova_reassign_file_tree(sb, pi, sih, curr_entry);
+	ret = finefs_reassign_file_tree(sb, pi, sih, curr_entry);
 	if (ret)
 		goto out;
 
@@ -663,7 +663,7 @@ static int nova_dax_get_blocks(struct inode *inode, sector_t iblock,
 
 out:
 	if (ret < 0) {
-		nova_cleanup_incomplete_write(sb, pi, sih, blocknr, allocated,
+		finefs_cleanup_incomplete_write(sb, pi, sih, blocknr, allocated,
 						0, temp_tail);
 		return ret;
 	}
@@ -675,33 +675,33 @@ out:
 	return num_blocks;
 }
 
-int nova_dax_get_block(struct inode *inode, sector_t iblock,
+int finefs_dax_get_block(struct inode *inode, sector_t iblock,
 	struct buffer_head *bh, int create)
 {
 	unsigned long max_blocks = bh->b_size >> inode->i_blkbits;
 	int ret;
 	timing_t gb_time;
 
-	NOVA_START_TIMING(dax_get_block_t, gb_time);
+	FINEFS_START_TIMING(dax_get_block_t, gb_time);
 
-	ret = nova_dax_get_blocks(inode, iblock, max_blocks, bh, create);
+	ret = finefs_dax_get_blocks(inode, iblock, max_blocks, bh, create);
 	if (ret > 0) {
 		bh->b_size = ret << inode->i_blkbits;
 		ret = 0;
 	}
-	NOVA_END_TIMING(dax_get_block_t, gb_time);
+	FINEFS_END_TIMING(dax_get_block_t, gb_time);
 	return ret;
 }
 
 #endif
 
 #if 0
-static ssize_t nova_flush_mmap_to_nvmm(struct super_block *sb,
-	struct inode *inode, struct nova_inode *pi, loff_t pos,
+static ssize_t finefs_flush_mmap_to_nvmm(struct super_block *sb,
+	struct inode *inode, struct finefs_inode *pi, loff_t pos,
 	size_t count, void *kmem)
 {
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
 	unsigned long start_blk;
 	unsigned long cache_addr;
 	u64 nvmm_block;
@@ -719,17 +719,17 @@ static ssize_t nova_flush_mmap_to_nvmm(struct super_block *sb,
 		if (bytes > count)
 			bytes = count;
 
-		cache_addr = nova_get_cache_addr(sb, si, start_blk);
+		cache_addr = finefs_get_cache_addr(sb, si, start_blk);
 		if (cache_addr == 0) {
-			nova_dbg("%s: ino %lu %lu mmap page %lu not found!",
+			finefs_dbg("%s: ino %lu %lu mmap page %lu not found!",
 					__func__, inode->i_ino, sih->ino, start_blk);
-			nova_dbg("mmap pages %lu", sih->mmap_pages);
+			finefs_dbg("mmap pages %lu", sih->mmap_pages);
 			ret = -EINVAL;
 			goto out;
 		}
 
 		nvmm_block = MMAP_ADDR(cache_addr);
-		nvmm_addr = nova_get_block(sb, nvmm_block);
+		nvmm_addr = finefs_get_block(sb, nvmm_block);
 		copied = bytes - memcpy_to_pmem_nocache(kmem + offset,
 				nvmm_addr + offset, bytes);
 
@@ -741,7 +741,7 @@ static ssize_t nova_flush_mmap_to_nvmm(struct super_block *sb,
 			kmem += offset + copied;
 		}
 		if (unlikely(copied != bytes)) {
-			nova_dbg("%s ERROR!: %p, bytes %lu, copied %lu",
+			finefs_dbg("%s ERROR!: %p, bytes %lu, copied %lu",
 				__func__, kmem, bytes, copied);
 			if (status >= 0)
 				status = -EFAULT;
@@ -756,11 +756,11 @@ out:
 	return ret;
 }
 
-ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
-	struct nova_inode *pi, loff_t pos, size_t count, u64 *begin,
+ssize_t finefs_copy_to_nvmm(struct super_block *sb, struct inode *inode,
+	struct finefs_inode *pi, loff_t pos, size_t count, u64 *begin,
 	u64 *end)
 {
-	struct nova_file_write_entry entry_data;
+	struct finefs_file_write_entry entry_data;
 	unsigned long start_blk, num_blocks;
 	unsigned long blocknr = 0;
 	unsigned long total_blocks;
@@ -777,7 +777,7 @@ ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 	u32 time;
 	timing_t memcpy_time, copy_to_nvmm_time;
 
-	NOVA_START_TIMING(copy_to_nvmm_t, copy_to_nvmm_time);
+	FINEFS_START_TIMING(copy_to_nvmm_t, copy_to_nvmm_time);
 	sb_start_write(inode->i_sb);
 
 	offset = pos & (sb->s_blocksize - 1);
@@ -786,18 +786,18 @@ ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 	inode->i_ctime = inode->i_mtime = CURRENT_TIME_SEC;
 	time = CURRENT_TIME_SEC.tv_sec;
 
-	nova_dbgv("%s: ino %lu, block %lu, offset %lu, count %lu",
+	finefs_dbgv("%s: ino %lu, block %lu, offset %lu, count %lu",
 		__func__, inode->i_ino, pos >> sb->s_blocksize_bits,
 		(unsigned long)offset, count);
 
 	temp_tail = *end;
 	while (num_blocks > 0) {
-		offset = pos & (nova_inode_blk_size(pi) - 1);
+		offset = pos & (finefs_inode_blk_size(pi) - 1);
 		start_blk = pos >> sb->s_blocksize_bits;
-		allocated = nova_new_data_blocks(sb, pi, &blocknr, num_blocks,
+		allocated = finefs_new_data_blocks(sb, pi, &blocknr, num_blocks,
 						start_blk, 0, 0);
 		if (allocated <= 0) {
-			nova_dbg("%s alloc blocks failed %d", __func__,
+			finefs_dbg("%s alloc blocks failed %d", __func__,
 								allocated);
 			ret = allocated;
 			goto out;
@@ -807,39 +807,39 @@ ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 		if (bytes > count)
 			bytes = count;
 
-		kmem = nova_get_block(inode->i_sb,
-			nova_get_block_off(sb, blocknr,	pi->i_blk_type));
+		kmem = finefs_get_block(inode->i_sb,
+			finefs_get_block_off(sb, blocknr,	pi->i_blk_type));
 
 		if (offset || ((offset + bytes) & (PAGE_SIZE - 1)))
-			nova_handle_head_tail_blocks(sb, pi, inode, pos,
+			finefs_handle_head_tail_blocks(sb, pi, inode, pos,
 							bytes, kmem);
 
-		NOVA_START_TIMING(memcpy_w_wb_t, memcpy_time);
-		copied = nova_flush_mmap_to_nvmm(sb, inode, pi, pos, bytes,
+		FINEFS_START_TIMING(memcpy_w_wb_t, memcpy_time);
+		copied = finefs_flush_mmap_to_nvmm(sb, inode, pi, pos, bytes,
 							kmem);
-		NOVA_END_TIMING(memcpy_w_wb_t, memcpy_time);
+		FINEFS_END_TIMING(memcpy_w_wb_t, memcpy_time);
 
 		entry_data.pgoff = cpu_to_le64(start_blk);
 		entry_data.num_pages = cpu_to_le32(allocated);
 		entry_data.invalid_pages = 0;
-		entry_data.block = cpu_to_le64(nova_get_block_off(sb, blocknr,
+		entry_data.block = cpu_to_le64(finefs_get_block_off(sb, blocknr,
 							pi->i_blk_type));
 		/* FIXME: should we use the page cache write time? */
 		entry_data.mtime = cpu_to_le32(time);
 		/* Set entry type after set block */
-		nova_set_entry_type((void *)&entry_data, FILE_WRITE);
+		finefs_set_entry_type((void *)&entry_data, FILE_WRITE);
 
 		entry_data.size = cpu_to_le64(inode->i_size);
 
-		curr_entry = nova_append_file_write_entry(sb, pi, inode,
+		curr_entry = finefs_append_file_write_entry(sb, pi, inode,
 						&entry_data, temp_tail);
 		if (curr_entry == 0) {
-			nova_dbg("%s: append inode entry failed", __func__);
+			finefs_dbg("%s: append inode entry failed", __func__);
 			ret = -ENOSPC;
 			goto out;
 		}
 
-		nova_dbgv("Write: %p, %ld", kmem, copied);
+		finefs_dbgv("Write: %p, %ld", kmem, copied);
 		if (copied > 0) {
 			status = copied;
 			written += copied;
@@ -848,7 +848,7 @@ ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 			num_blocks -= allocated;
 		}
 		if (unlikely(copied != bytes)) {
-			nova_dbg("%s ERROR!: %p, bytes %lu, copied %lu",
+			finefs_dbg("%s ERROR!: %p, bytes %lu, copied %lu",
 				__func__, kmem, bytes, copied);
 			if (status >= 0)
 				status = -EFAULT;
@@ -860,14 +860,14 @@ ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 
 		if (begin_tail == 0)
 			begin_tail = curr_entry;
-		temp_tail = curr_entry + sizeof(struct nova_file_write_entry);
+		temp_tail = curr_entry + sizeof(struct finefs_file_write_entry);
 	}
 
-	nova_memunlock_inode(sb, pi);
-	data_bits = blk_type_to_shift[pi->i_blk_type];
+	finefs_memunlock_inode(sb, pi);
+	data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
 	le64_add_cpu(&pi->i_blocks,
 			(total_blocks << (data_bits - sb->s_blocksize_bits)));
-	nova_memlock_inode(sb, pi);
+	finefs_memlock_inode(sb, pi);
 	inode->i_blocks = le64_to_cpu(pi->i_blocks);
 
 	*begin = begin_tail;
@@ -876,19 +876,19 @@ ssize_t nova_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 	ret = written;
 out:
 	if (ret < 0)
-		nova_cleanup_incomplete_write(sb, pi, sih, blocknr, allocated,
+		finefs_cleanup_incomplete_write(sb, pi, sih, blocknr, allocated,
 						begin_tail, temp_tail);
 
 	sb_end_write(inode->i_sb);
-	NOVA_END_TIMING(copy_to_nvmm_t, copy_to_nvmm_time);
+	FINEFS_END_TIMING(copy_to_nvmm_t, copy_to_nvmm_time);
 	return ret;
 }
 
-static int nova_get_nvmm_pfn(struct super_block *sb, struct nova_inode *pi,
-	struct nova_inode_info *si, u64 nvmm, pgoff_t pgoff,
+static int finefs_get_nvmm_pfn(struct super_block *sb, struct finefs_inode *pi,
+	struct finefs_inode_info *si, u64 nvmm, pgoff_t pgoff,
 	vm_flags_t vm_flags, void **kmem, unsigned long *pfn)
 {
-	struct nova_inode_info_header *sih = &si->header;
+	struct finefs_inode_info_header *sih = &si->header;
 	u64 mmap_block;
 	unsigned long cache_addr = 0;
 	unsigned long blocknr = 0;
@@ -896,41 +896,41 @@ static int nova_get_nvmm_pfn(struct super_block *sb, struct nova_inode *pi,
 	void *nvmm_addr;
 	int ret;
 
-	cache_addr = nova_get_cache_addr(sb, si, pgoff);
+	cache_addr = finefs_get_cache_addr(sb, si, pgoff);
 
 	if (cache_addr) {
 		mmap_block = MMAP_ADDR(cache_addr);
-		mmap_addr = nova_get_block(sb, mmap_block);
+		mmap_addr = finefs_get_block(sb, mmap_block);
 	} else {
-		ret = nova_new_data_blocks(sb, pi, &blocknr, 1,
+		ret = finefs_new_data_blocks(sb, pi, &blocknr, 1,
 						pgoff, 0, 1);
 
 		if (ret <= 0) {
-			nova_dbg("%s alloc blocks failed %d",
+			finefs_dbg("%s alloc blocks failed %d",
 					__func__, ret);
 			return ret;
 		}
 
 		mmap_block = blocknr << PAGE_SHIFT;
-		mmap_addr = nova_get_block(sb, mmap_block);
+		mmap_addr = finefs_get_block(sb, mmap_block);
 
 		if (vm_flags & VM_WRITE)
 			mmap_block |= MMAP_WRITE_BIT;
 
-		nova_dbgv("%s: inode %lu, pgoff %lu, mmap block 0x%lx",
+		finefs_dbgv("%s: inode %lu, pgoff %lu, mmap block 0x%lx",
 			__func__, sih->ino, pgoff, mmap_block);
 
 		ret = radix_tree_insert(&sih->cache_tree, pgoff,
 					(void *)mmap_block);
 		if (ret) {
-			nova_dbg("%s: ERROR %d", __func__, ret);
+			finefs_dbg("%s: ERROR %d", __func__, ret);
 			return ret;
 		}
 
 		sih->mmap_pages++;
 		if (nvmm) {
 			/* Copy from NVMM to dram */
-			nvmm_addr = nova_get_block(sb, nvmm);
+			nvmm_addr = finefs_get_block(sb, nvmm);
 			memcpy(mmap_addr, nvmm_addr, PAGE_SIZE);
 		} else {
 			memset(mmap_addr, 0, PAGE_SIZE);
@@ -938,27 +938,27 @@ static int nova_get_nvmm_pfn(struct super_block *sb, struct nova_inode *pi,
 	}
 
 	*kmem = mmap_addr;
-	*pfn = nova_get_pfn(sb, mmap_block);
+	*pfn = finefs_get_pfn(sb, mmap_block);
 
 	return 0;
 }
 
-static int nova_get_mmap_addr(struct inode *inode, struct vm_area_struct *vma,
+static int finefs_get_mmap_addr(struct inode *inode, struct vm_area_struct *vma,
 	pgoff_t pgoff, int create, void **kmem, unsigned long *pfn)
 {
 	struct super_block *sb = inode->i_sb;
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
-	struct nova_inode *pi;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
+	struct finefs_inode *pi;
 	u64 nvmm;
 	vm_flags_t vm_flags = vma->vm_flags;
 	int ret;
 
-	pi = nova_get_inode(sb, inode);
+	pi = finefs_get_inode(sb, inode);
 
-	nvmm = nova_find_nvmm_block(sb, si, NULL, pgoff);
+	nvmm = finefs_find_nvmm_block(sb, si, NULL, pgoff);
 
-	ret = nova_get_nvmm_pfn(sb, pi, si, nvmm, pgoff, vm_flags,
+	ret = finefs_get_nvmm_pfn(sb, pi, si, nvmm, pgoff, vm_flags,
 						kmem, pfn);
 
 	if (vm_flags & VM_WRITE) {
@@ -974,7 +974,7 @@ static int nova_get_mmap_addr(struct inode *inode, struct vm_area_struct *vma,
 /* OOM err return with dax file fault handlers doesn't mean anything.
  * It would just cause the OS to go an unnecessary killing spree !
  */
-static int __nova_dax_file_fault(struct vm_area_struct *vma,
+static int __finefs_dax_file_fault(struct vm_area_struct *vma,
 				  struct vm_fault *vmf)
 {
 	struct address_space *mapping = vma->vm_file->f_mapping;
@@ -988,27 +988,27 @@ static int __nova_dax_file_fault(struct vm_area_struct *vma,
 	mutex_lock(&inode->i_mutex);
 	size = (i_size_read(inode) + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	if (vmf->pgoff >= size) {
-		nova_dbg("[%s:%d] pgoff >= size(SIGBUS). vm_start(0x%lx),"
+		finefs_dbg("[%s:%d] pgoff >= size(SIGBUS). vm_start(0x%lx),"
 			" vm_end(0x%lx), pgoff(0x%lx), VA(%lx), size 0x%lx",
 			__func__, __LINE__, vma->vm_start, vma->vm_end,
 			vmf->pgoff, (unsigned long)vmf->virtual_address, size);
 		goto out;
 	}
 
-	err = nova_get_mmap_addr(inode, vma, vmf->pgoff, 1,
+	err = finefs_get_mmap_addr(inode, vma, vmf->pgoff, 1,
 						&dax_mem, &dax_pfn);
 	if (unlikely(err)) {
-		nova_dbg("[%s:%d] get_mmap_addr failed. vm_start(0x%lx),"
+		finefs_dbg("[%s:%d] get_mmap_addr failed. vm_start(0x%lx),"
 			" vm_end(0x%lx), pgoff(0x%lx), VA(%lx)",
 			__func__, __LINE__, vma->vm_start, vma->vm_end,
 			vmf->pgoff, (unsigned long)vmf->virtual_address);
 		goto out;
 	}
 
-	nova_dbgv("%s flags: vma 0x%lx, vmf 0x%x",
+	finefs_dbgv("%s flags: vma 0x%lx, vmf 0x%x",
 			__func__, vma->vm_flags, vmf->flags);
 
-	nova_dbgv("DAX mmap: inode %lu, vm_start(0x%lx), vm_end(0x%lx), "
+	finefs_dbgv("DAX mmap: inode %lu, vm_start(0x%lx), vm_end(0x%lx), "
 			"pgoff(0x%lx), vma pgoff(0x%lx), "
 			"VA(0x%lx)->PA(0x%lx)",
 			inode->i_ino, vma->vm_start, vma->vm_end, vmf->pgoff,
@@ -1041,54 +1041,54 @@ out:
 	return ret;
 }
 
-static int nova_dax_file_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+static int finefs_dax_file_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	int ret = 0;
 	timing_t fault_time;
 
-	NOVA_START_TIMING(mmap_fault_t, fault_time);
-	ret = __nova_dax_file_fault(vma, vmf);
-	NOVA_END_TIMING(mmap_fault_t, fault_time);
+	FINEFS_START_TIMING(mmap_fault_t, fault_time);
+	ret = __finefs_dax_file_fault(vma, vmf);
+	FINEFS_END_TIMING(mmap_fault_t, fault_time);
 	return ret;
 }
 #endif
 
-#ifndef NOVA_CUT_OUT
+#if 0
 
-static int nova_dax_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+static int finefs_dax_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct inode *inode = file_inode(vma->vm_file);
 	int ret = 0;
 	timing_t fault_time;
 
-	NOVA_START_TIMING(mmap_fault_t, fault_time);
+	FINEFS_START_TIMING(mmap_fault_t, fault_time);
 
 	mutex_lock(&inode->i_mutex);
-	ret = dax_fault(vma, vmf, nova_dax_get_block, NULL);
+	ret = dax_fault(vma, vmf, finefs_dax_get_block, NULL);
 	mutex_unlock(&inode->i_mutex);
 
-	NOVA_END_TIMING(mmap_fault_t, fault_time);
+	FINEFS_END_TIMING(mmap_fault_t, fault_time);
 	return ret;
 }
 
-static int nova_dax_pmd_fault(struct vm_area_struct *vma, unsigned long addr,
+static int finefs_dax_pmd_fault(struct vm_area_struct *vma, unsigned long addr,
 	pmd_t *pmd, unsigned int flags)
 {
 	struct inode *inode = file_inode(vma->vm_file);
 	int ret = 0;
 	timing_t fault_time;
 
-	NOVA_START_TIMING(mmap_fault_t, fault_time);
+	FINEFS_START_TIMING(mmap_fault_t, fault_time);
 
 	mutex_lock(&inode->i_mutex);
-	ret = dax_pmd_fault(vma, addr, pmd, flags, nova_dax_get_block, NULL);
+	ret = dax_pmd_fault(vma, addr, pmd, flags, finefs_dax_get_block, NULL);
 	mutex_unlock(&inode->i_mutex);
 
-	NOVA_END_TIMING(mmap_fault_t, fault_time);
+	FINEFS_END_TIMING(mmap_fault_t, fault_time);
 	return ret;
 }
 
-static int nova_dax_pfn_mkwrite(struct vm_area_struct *vma,
+static int finefs_dax_pfn_mkwrite(struct vm_area_struct *vma,
 	struct vm_fault *vmf)
 {
 	struct inode *inode = file_inode(vma->vm_file);
@@ -1096,7 +1096,7 @@ static int nova_dax_pfn_mkwrite(struct vm_area_struct *vma,
 	int ret = 0;
 	timing_t fault_time;
 
-	NOVA_START_TIMING(mmap_fault_t, fault_time);
+	FINEFS_START_TIMING(mmap_fault_t, fault_time);
 
 	mutex_lock(&inode->i_mutex);
 	size = (i_size_read(inode) + PAGE_SIZE - 1) >> PAGE_SHIFT;
@@ -1106,25 +1106,25 @@ static int nova_dax_pfn_mkwrite(struct vm_area_struct *vma,
 		ret = dax_pfn_mkwrite(vma, vmf);
 	mutex_unlock(&inode->i_mutex);
 
-	NOVA_END_TIMING(mmap_fault_t, fault_time);
+	FINEFS_END_TIMING(mmap_fault_t, fault_time);
 	return ret;
 }
 
-static const struct vm_operations_struct nova_dax_vm_ops = {
-	.fault	= nova_dax_fault,
-	.pmd_fault = nova_dax_pmd_fault,
-	.page_mkwrite = nova_dax_fault,
-	.pfn_mkwrite = nova_dax_pfn_mkwrite,
+static const struct vm_operations_struct finefs_dax_vm_ops = {
+	.fault	= finefs_dax_fault,
+	.pmd_fault = finefs_dax_pmd_fault,
+	.page_mkwrite = finefs_dax_fault,
+	.pfn_mkwrite = finefs_dax_pfn_mkwrite,
 };
 
-int nova_dax_file_mmap(struct file *file, struct vm_area_struct *vma)
+int finefs_dax_file_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	file_accessed(file);
 
 	vma->vm_flags |= VM_MIXEDMAP | VM_HUGEPAGE;
 
-	vma->vm_ops = &nova_dax_vm_ops;
-	nova_dbg_mmap4k("[%s:%d] MMAP 4KPAGE vm_start(0x%lx),"
+	vma->vm_ops = &finefs_dax_vm_ops;
+	finefs_dbg_mmap4k("[%s:%d] MMAP 4KPAGE vm_start(0x%lx),"
 			" vm_end(0x%lx), vm_flags(0x%lx), "
 			"vm_page_prot(0x%lx)", __func__,
 			__LINE__, vma->vm_start, vma->vm_end,

@@ -1,5 +1,5 @@
-#include "nova/vfs_api.h"
-#include "nova/nova_cfg.h"
+#include "vfs/vfs_api.h"
+#include "vfs/fs_cfg.h"
 #include "syscall-intercept/hooks.h"
 #include "util/cpu.h"
 
@@ -16,15 +16,16 @@ int nova_fs_init(void** sb_, const std::string& dev_name, const std::string& roo
 
     int ret = 0;
     ret = fs_mount(sb_, dev_name, root_path, &fs_cfg);
+    printf("ret=%d\n", ret);
     return ret;
 }
 
 struct hook_operations hook_op_nova = {
     .label = "nova",
     .root_name = "/tmp/nova",
-    .register_thread = nova_register_thread,
+    .register_thread = fs_register_thread,
     .fs_init = nova_fs_init,
-    .fs_unmount = vfs_fs_unmount,
+    .fs_unmount = fs_unmount,
     .mkdir      = vfs_mkdir     ,
     .rmdir      = vfs_rmdir      ,
     .open       = vfs_open       ,

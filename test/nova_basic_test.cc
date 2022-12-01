@@ -1,7 +1,7 @@
-#include "nova/vfs_api.h"
+#include "vfs/vfs_api.h"
 
 #include "util/cpu.h"
-#include "nova/nova_cfg.h"
+#include "vfs/fs_cfg.h"
 
 int main(int argc, char* argv[]) {
     LogCfg log_cfg = {
@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
     ret = fs_mount((void**)&sb, dev_name, root_path, &fs_cfg);
     log_assert(ret == 0);
 
-    nova_register_thread(nullptr);
+    fs_register_thread(nullptr);
 
     ret = vfs_mkdir("/tmp/nova/dir1", 0);
     log_assert(ret == 0);
@@ -159,6 +159,6 @@ int main(int argc, char* argv[]) {
     ret = vfs_ls("/tmp/nova/");
     log_assert(ret == 0);
 
-    vfs_fs_unmount((void**)&sb, root_path);
+    fs_unmount((void**)&sb, root_path);
     return 0;
 }

@@ -1,5 +1,5 @@
 /*
- * NOVA journaling facility.
+ * FINEFS journaling facility.
  *
  * This file contains journaling code to guarantee the atomicity of directory
  * operations that span multiple inodes (unlink, rename, etc).
@@ -25,15 +25,15 @@
 
 #include <errno.h>
 
-#include "nova/nova.h"
-#include "nova/journal.h"
+#include "finefs/finefs.h"
+#include "finefs/journal.h"
 #include "util/log.h"
 
 /**************************** Lite journal ******************************/
 
 static u64 next_lite_journal(u64 curr_p)
 {
-	size_t size = sizeof(struct nova_lite_journal_entry);
+	size_t size = sizeof(struct finefs_lite_journal_entry);
 
 	/* One page holds 64 entries with cacheline size */
 	if ((curr_p & (PAGE_SIZE - 1)) + size >= PAGE_SIZE)  // 回环
@@ -42,21 +42,21 @@ static u64 next_lite_journal(u64 curr_p)
 	return curr_p + size;
 }
 
-static void nova_recover_lite_journal_entry(struct super_block *sb,
+static void finefs_recover_lite_journal_entry(struct super_block *sb,
 	u64 addr, u64 value, u8 type)
 {
 	switch (type) {
 		case 1:
-			*(u8 *)nova_get_block(sb, addr) = (u8)value;
+			*(u8 *)finefs_get_block(sb, addr) = (u8)value;
 			break;
 		case 2:
-			*(u16 *)nova_get_block(sb, addr) = (u16)value;
+			*(u16 *)finefs_get_block(sb, addr) = (u16)value;
 			break;
 		case 4:
-			*(u32 *)nova_get_block(sb, addr) = (u32)value;
+			*(u32 *)finefs_get_block(sb, addr) = (u32)value;
 			break;
 		case 8:
-			*(u64 *)nova_get_block(sb, addr) = (u64)value;
+			*(u64 *)finefs_get_block(sb, addr) = (u64)value;
 			break;
 		default:
 			rd_info("%s: unknown data type %u",
@@ -64,10 +64,10 @@ static void nova_recover_lite_journal_entry(struct super_block *sb,
 			break;
 	}
 
-	nova_flush_buffer((void *)nova_get_block(sb, addr), CACHELINE_SIZE, 0);
+	finefs_flush_buffer((void *)finefs_get_block(sb, addr), CACHELINE_SIZE, 0);
 }
 
-void nova_print_lite_transaction(struct nova_lite_journal_entry *entry)
+void finefs_print_lite_transaction(struct finefs_lite_journal_entry *entry)
 {
 	int i;
 
@@ -76,57 +76,57 @@ void nova_print_lite_transaction(struct nova_lite_journal_entry *entry)
 				i, entry->addrs[i], entry->values[i]);
 }
 
-u64 nova_create_lite_transaction(struct super_block *sb,
-	struct nova_lite_journal_entry *dram_entry1,
-	struct nova_lite_journal_entry *dram_entry2,
+u64 finefs_create_lite_transaction(struct super_block *sb,
+	struct finefs_lite_journal_entry *dram_entry1,
+	struct finefs_lite_journal_entry *dram_entry2,
 	int entries, int cpu)
 {
 	struct ptr_pair *pair;
-	struct nova_lite_journal_entry *entry;
-	size_t size = sizeof(struct nova_lite_journal_entry);
+	struct finefs_lite_journal_entry *entry;
+	size_t size = sizeof(struct finefs_lite_journal_entry);
 	u64 new_tail, temp;;
 
-	pair = nova_get_journal_pointers(sb, cpu);
+	pair = finefs_get_journal_pointers(sb, cpu);
 	if (!pair || pair->journal_head == 0 ||
 			pair->journal_head != pair->journal_tail)
 		BUG();
 
 	temp = pair->journal_head;
-	entry = (struct nova_lite_journal_entry *)nova_get_block(sb,
+	entry = (struct finefs_lite_journal_entry *)finefs_get_block(sb,
 							temp);
 
-//	nova_print_lite_transaction(dram_entry1);
+//	finefs_print_lite_transaction(dram_entry1);
 	memcpy_to_pmem_nocache(entry, dram_entry1, size);
 
 	if (entries == 2) {
 		temp = next_lite_journal(temp);
-		entry = (struct nova_lite_journal_entry *)nova_get_block(sb,
+		entry = (struct finefs_lite_journal_entry *)finefs_get_block(sb,
 							temp);
-//		nova_print_lite_transaction(dram_entry2);
+//		finefs_print_lite_transaction(dram_entry2);
 		memcpy_to_pmem_nocache(entry, dram_entry2, size); // 这里的每一次拷贝都有fence
 	}
 
 	new_tail = next_lite_journal(temp);
 	pair->journal_tail = new_tail;
-	nova_flush_buffer(&pair->journal_head, CACHELINE_SIZE, 1); //所以至少两个fence，最多三个fence
+	finefs_flush_buffer(&pair->journal_head, CACHELINE_SIZE, 1); //所以至少两个fence，最多三个fence
 
 	return new_tail;
 }
 
-void nova_commit_lite_transaction(struct super_block *sb, u64 tail, int cpu)
+void finefs_commit_lite_transaction(struct super_block *sb, u64 tail, int cpu)
 {
 	struct ptr_pair *pair;
 
-	pair = nova_get_journal_pointers(sb, cpu);
+	pair = finefs_get_journal_pointers(sb, cpu);
 	if (!pair || pair->journal_tail != tail)
 		BUG();
 
 	pair->journal_head = tail;
-	nova_flush_buffer(&pair->journal_head, CACHELINE_SIZE, 1);
+	finefs_flush_buffer(&pair->journal_head, CACHELINE_SIZE, 1);
 }
 
-static void nova_undo_lite_journal_entry(struct super_block *sb,
-	struct nova_lite_journal_entry *entry)
+static void finefs_undo_lite_journal_entry(struct super_block *sb,
+	struct finefs_lite_journal_entry *entry)
 {
 	int i;
 	u8 type;
@@ -135,7 +135,7 @@ static void nova_undo_lite_journal_entry(struct super_block *sb,
 		type = entry->addrs[i] >> 56;
 		if (entry->addrs[i] && type) {
 			rd_info("%s: recover entry %d", __func__, i);
-			nova_recover_lite_journal_entry(sb, entry->addrs[i],
+			finefs_recover_lite_journal_entry(sb, entry->addrs[i],
 					entry->values[i], type);
 		}
 	}
@@ -143,34 +143,34 @@ static void nova_undo_lite_journal_entry(struct super_block *sb,
 
 // 恢复存活的journal
 // undo log，恢复完成后，head = tail
-static int nova_recover_lite_journal(struct super_block *sb,
+static int finefs_recover_lite_journal(struct super_block *sb,
 	struct ptr_pair *pair, int recover)
 {
-	struct nova_lite_journal_entry *entry;
+	struct finefs_lite_journal_entry *entry;
 	u64 temp;
 
-	entry = (struct nova_lite_journal_entry *)nova_get_block(sb,
+	entry = (struct finefs_lite_journal_entry *)finefs_get_block(sb,
 							pair->journal_head);
-	nova_undo_lite_journal_entry(sb, entry);
+	finefs_undo_lite_journal_entry(sb, entry);
 
 	if (recover == 2) {
 		temp = next_lite_journal(pair->journal_head);
-		entry = (struct nova_lite_journal_entry *)nova_get_block(sb,
+		entry = (struct finefs_lite_journal_entry *)finefs_get_block(sb,
 							temp);
-		nova_undo_lite_journal_entry(sb, entry);
+		finefs_undo_lite_journal_entry(sb, entry);
 	}
 
 	pair->journal_tail = pair->journal_head;
-	nova_flush_buffer(&pair->journal_head, CACHELINE_SIZE, 1);
+	finefs_flush_buffer(&pair->journal_head, CACHELINE_SIZE, 1);
 
 	return 0;
 }
 
 // 初始化跟journal相关的一些dram结构
 // 并进行journal的undo恢复
-int nova_lite_journal_soft_init(struct super_block *sb)
+int finefs_lite_journal_soft_init(struct super_block *sb)
 {
-	struct nova_sb_info *sbi = NOVA_SB(sb);
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
 	struct ptr_pair *pair;
 	int i;
 	u64 temp;
@@ -183,20 +183,20 @@ int nova_lite_journal_soft_init(struct super_block *sb)
 		spin_lock_init(&sbi->journal_locks[i]);
 
 	for (i = 0; i < sbi->cpus; i++) {
-		pair = nova_get_journal_pointers(sb, i);
+		pair = finefs_get_journal_pointers(sb, i);
 		if (pair->journal_head == pair->journal_tail)
 			continue;
 
 		/* We only allow up to two uncommited entries */
 		temp = next_lite_journal(pair->journal_head);
 		if (pair->journal_tail == temp) {
-			nova_recover_lite_journal(sb, pair, 1);
+			finefs_recover_lite_journal(sb, pair, 1);
 			continue;
 		}
 
 		temp = next_lite_journal(temp);
 		if (pair->journal_tail == temp) {
-			nova_recover_lite_journal(sb, pair, 2);
+			finefs_recover_lite_journal(sb, pair, 2);
 			continue;
 		}
 
@@ -212,36 +212,36 @@ int nova_lite_journal_soft_init(struct super_block *sb)
 
 // durable初始化 journal，即会修改对应的NVM区域
 // 里面会调用soft init，即初始化dram中的易失结构部分
-int nova_lite_journal_hard_init(struct super_block *sb)
+int finefs_lite_journal_hard_init(struct super_block *sb)
 {
-	struct nova_sb_info *sbi = NOVA_SB(sb);
-	struct nova_inode fake_pi;
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
+	struct finefs_inode fake_pi;
 	struct ptr_pair *pair;
 	unsigned long blocknr = 0;
 	int allocated;
 	int i;
 	u64 block;
 
-	fake_pi.nova_ino = NOVA_LITEJOURNAL_INO;
-	fake_pi.i_blk_type = NOVA_BLOCK_TYPE_4K;
+	fake_pi.finefs_ino = FINEFS_LITEJOURNAL_INO;
+	fake_pi.i_blk_type = FINEFS_BLOCK_TYPE_4K;
 
 	for (i = 0; i < sbi->cpus; i++) {
-		pair = nova_get_journal_pointers(sb, i);
+		pair = finefs_get_journal_pointers(sb, i);
 		if (!pair)
 			return -EINVAL;
 
-		allocated = nova_new_log_blocks(sb, &fake_pi, &blocknr, 1, 1, i);
+		allocated = finefs_new_log_blocks(sb, &fake_pi, &blocknr, 1, 1, i);
 		rdv_proc("%s: allocate log @ 0x%lx", __func__, blocknr);
 
 		// 检查
 		if (allocated != 1 || blocknr == 0)
 			return -ENOSPC;
 
-		block = nova_get_block_off(sb, blocknr, NOVA_BLOCK_TYPE_4K);
+		block = finefs_get_block_off(sb, blocknr, FINEFS_BLOCK_TYPE_4K);
 		pair->journal_head = pair->journal_tail = block;
-		nova_flush_buffer(pair, CACHELINE_SIZE, 0);
+		finefs_flush_buffer(pair, CACHELINE_SIZE, 0);
 	}
 
 	PERSISTENT_BARRIER();
-	return nova_lite_journal_soft_init(sb);
+	return finefs_lite_journal_soft_init(sb);
 }

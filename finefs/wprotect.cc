@@ -18,7 +18,7 @@
  * warranty of any kind, whether express or implied.
  */
 
-#include "nova/wprotect.h"
+#include "finefs/wprotect.h"
 
 // static inline void wprotect_disable(void)
 // {
@@ -39,10 +39,10 @@
 // }
 
 /* FIXME: Assumes that we are always called in the right order.
- * nova_writeable(vaddr, size, 1);
- * nova_writeable(vaddr, size, 0);
+ * finefs_writeable(vaddr, size, 1);
+ * finefs_writeable(vaddr, size, 0);
  */
-int nova_writeable(void *vaddr, unsigned long size, int rw)
+int finefs_writeable(void *vaddr, unsigned long size, int rw)
 {
 	// static unsigned long flags;
 	// if (rw) {
@@ -55,10 +55,10 @@ int nova_writeable(void *vaddr, unsigned long size, int rw)
 	return 0;
 }
 
-int nova_dax_mem_protect(struct super_block *sb, void *vaddr,
+int finefs_dax_mem_protect(struct super_block *sb, void *vaddr,
 			  unsigned long size, int rw)
 {
-	if (!nova_is_wprotected(sb))
+	if (!finefs_is_wprotected(sb))
 		return 0;
-	return nova_writeable(vaddr, size, rw);
+	return finefs_writeable(vaddr, size, rw);
 }

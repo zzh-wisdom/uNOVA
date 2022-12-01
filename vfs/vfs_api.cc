@@ -1,19 +1,19 @@
-#include "nova/vfs_api.h"
+#include "vfs/vfs_api.h"
 
-#include "nova/nova_cfg.h"
+#include "finefs/super.h"
 #include "nova/super.h"
 
 typedef int (*init_fs_func_t)(struct super_block*, const std::string&, const std::string&,
                               vfs_cfg*);
-std::unordered_map<std::string, init_fs_func_t> fs_init_ops = {
-    {"nova", init_nova_fs},
-};
-
-const std::string ROOT_PREFIX = "/tmp/";
 
 // 注意需要以 /tmp/<fs-type>/ 开头
 // 没有做任何的并发安全管理，用户自己确保在完成操作前不会讲sb释放
-std::unordered_map<std::string, struct super_block*> vfs_root_2_sb;
+ATTR_PRIORITY_ONE std::unordered_map<std::string, struct super_block*> vfs_root_2_sb;
+ATTR_PRIORITY_ONE static std::unordered_map<std::string, init_fs_func_t> fs_init_ops = {
+    {"nova", init_nova_fs},
+    {"finefs", init_finefs_fs},
+};
+ATTR_PRIORITY_ONE const std::string ROOT_PREFIX = "/tmp/";
 
 static inline bool register_mounted_fs(const std::string& root, super_block* sb) {
     auto it = vfs_root_2_sb.find(root);
@@ -40,15 +40,6 @@ static inline super_block* get_mounted_fs(const std::string& root) {
     return it->second;
 }
 
-static inline bool fs_root_valid(const std::string root_path) {
-    int prefix_len = ROOT_PREFIX.length();
-    if (root_path.size() < prefix_len + 1) return false;
-    if (strncmp(root_path.c_str(), ROOT_PREFIX.c_str(), prefix_len) != 0) return false;
-    int pos = root_path.find('/', prefix_len);
-    if (pos != std::string::npos) return false;
-    return true;
-}
-
 void vfs_cfg_print(struct vfs_cfg* cfg) {
     r_info("numa_socket=%d", cfg->numa_socket);
     r_info("cpu_num=%d", cfg->cpu_num);
@@ -62,6 +53,24 @@ void vfs_cfg_print(struct vfs_cfg* cfg) {
     r_info("measure_timing=%d", cfg->measure_timing);
     r_info("start_fd=%d", cfg->start_fd);
     r_info("format=%d", cfg->format);
+}
+
+static inline bool fs_root_valid(const std::string& root_path) {
+    int prefix_len = ROOT_PREFIX.length();
+    if (root_path.size() < prefix_len + 1) {
+        r_error("root_path.size() too small, %u < %u", root_path.size(), prefix_len + 1);
+        return false;
+    }
+    if (strncmp(root_path.c_str(), ROOT_PREFIX.c_str(), prefix_len) != 0) {
+        r_error("root_path: %*s != %s", prefix_len, root_path.size(), ROOT_PREFIX.c_str());
+        return false;
+    }
+    int pos = root_path.find('/', prefix_len);
+    if (pos != std::string::npos) {
+        r_error("root_path=%s, from=%d pos=%d", root_path.c_str(), prefix_len, pos);
+        return false;
+    }
+    return true;
 }
 
 static force_inline std::string path_find_last_compo(const std::string& path) {
@@ -82,7 +91,10 @@ static force_inline std::string path_find_last_compo(const std::string& path) {
 int fs_mount(void** sb_, const std::string& dev_name, const std::string& root_path, vfs_cfg* cfg) {
     int ret = 0;
     bool ret_bool;
-    if (fs_root_valid(root_path) == false) return -1;
+    if (fs_root_valid(root_path) == false) {
+        r_error("%s err, root_path=%s", __func__, root_path.c_str());
+        return -1;
+    }
     std::string last_part = path_find_last_compo(root_path);
     auto it = fs_init_ops.find(last_part);
     if (it == fs_init_ops.end()) {
@@ -117,6 +129,7 @@ int fs_mount(void** sb_, const std::string& dev_name, const std::string& root_pa
     log_assert(ret_bool);
 
     *sb_ = s;
+    r_info("%s success.", __func__);
     return 0;
 out2:
     destroy_super(s);
@@ -125,7 +138,7 @@ out1:
     return -1;
 }
 
-int vfs_fs_unmount(void** sb_, const std::string& root_path) {
+int fs_unmount(void** sb_, const std::string& root_path) {
     super_block* sb = (super_block*)*sb_;
     // super_block* sb = get_mounted_fs(root_path);
     // if(sb == nullptr) {
@@ -133,10 +146,10 @@ int vfs_fs_unmount(void** sb_, const std::string& root_path) {
     //     return -1;
     // }
 
-    // super_block* tmp = unregister_mounted_fs(sb->root_path);
-    // log_assert(tmp == sb);
+    super_block* tmp = unregister_mounted_fs(sb->root_path);
+    log_assert(tmp == sb);
     dlog_assert(sb->root_path == root_path);
-    rd_info("vfs_fs_unmount: %s\n", sb->root_path.c_str());
+    rd_info("fs_unmount: %s\n", sb->root_path.c_str());
     sb->s_op->put_super(sb);
     pmem2_map* pmap = sb->pmap;
     vfs_destroy_file();
@@ -159,6 +172,7 @@ static inline int find_next_slash(const char* pathname, int pos) {
 // 返回-1，表示处理错误，路径不合法
 // 若返回pathname.size，则表示传入的只是root_path
 static inline int get_sb_from_path_prefix(const char* pathname, super_block** sb) {
+    static const std::string ROOT_PREFIX = "/tmp/";
     int len = strlen(pathname);
     if (unlikely(len <= ROOT_PREFIX.size())) return -1;
     int next_pos = find_next_slash(pathname, ROOT_PREFIX.size());
@@ -292,7 +306,7 @@ int vfs_mkdir(const char* pathname, mode_t mode) {
     super_block* sb;
     int name_start = get_sb_from_path_prefix(pathname, &sb);
     dlog_assert(name_start > 0);
-    if(*(pathname + name_start) == '\0') return 0; // 不能创建根目录
+    if (*(pathname + name_start) == '\0') return 0;  // 不能创建根目录
 
     qstr last;
     dentry* parent = get_parent_entry(sb->s_root, pathname + name_start, &last);
@@ -480,7 +494,7 @@ int vfs_unlink(const char* pathname) {
     super_block* sb;
     int name_start = get_sb_from_path_prefix(pathname, &sb);
     dlog_assert(name_start > 0);
-    dlog_assert(*(pathname+name_start) != '\0');
+    dlog_assert(*(pathname + name_start) != '\0');
 
     qstr last;
     dentry* parent = get_parent_entry(sb->s_root, pathname + name_start, &last);
@@ -549,7 +563,7 @@ int vfs_stat(const char* path, struct stat* buf) {
     struct inode* inode = child->d_inode;
     struct kstat stat;
     memset(&stat, 0, sizeof(stat));
-    if(inode->i_op->getattr) {
+    if (inode->i_op->getattr) {
         inode->i_op->getattr(nullptr, child, &stat);
     } else {
         generic_fillattr(inode, &stat);
@@ -559,12 +573,12 @@ int vfs_stat(const char* path, struct stat* buf) {
     return 0;
 }
 
-int vfs_truncate(const char *path, off_t length) {
+int vfs_truncate(const char* path, off_t length) {
     rd_info("%s: %s length=%d", __func__, path, length);
     super_block* sb;
     int name_start = get_sb_from_path_prefix(path, &sb);
     dlog_assert(name_start > 0);
-    dlog_assert(*(path+name_start) != '\0');
+    dlog_assert(*(path + name_start) != '\0');
     dentry* den = get_dentry_by_name(sb->s_root, path + name_start);
     if (den == nullptr) {
         return -ENOENT;

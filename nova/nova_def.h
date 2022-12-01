@@ -22,7 +22,7 @@
 
 #include <sys/types.h>
 
-#include "nova/nova_com.h"
+#include "vfs/com.h"
 #include "util/aep.h"
 
 #define	NOVA_SUPER_MAGIC	0x4E4F5641	/* NOVA */

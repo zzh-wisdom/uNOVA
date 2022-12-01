@@ -1,5 +1,5 @@
-#ifndef UNOVA_NOVA_COM_H_
-#define UNOVA_NOVA_COM_H_
+#ifndef UNOVA_VFS_COM_H_
+#define UNOVA_VFS_COM_H_
 
 #include <stdint.h>
 #include <sys/stat.h>

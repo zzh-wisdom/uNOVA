@@ -17,51 +17,57 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -DERPC_INFINIBAND=true -D_FIL
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
 # set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
-# add_compile_options(-g)
-add_definitions(-D NDEBUG)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3")
+add_compile_options(-g)
+# add_definitions(-D NDEBUG)
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3")
 
 set(INCLUDE_HEAD_LIST
     ${PROJECT_SOURCE_DIR}
-    # ${PROJECT_SOURCE_DIR}/nova
-    # ${PROJECT_SOURCE_DIR}/util
 )
 include_directories(${INCLUDE_HEAD_LIST})
 
 file(GLOB UTIL_SRC
     ${PROJECT_SOURCE_DIR}/util/*.cc
 )
-
-file(GLOB UNOVA_SRC
-    ${PROJECT_SOURCE_DIR}/nova/*.cc
+file(GLOB VFS_SRC
+    ${PROJECT_SOURCE_DIR}/vfs/*.cc
 )
-
-# set(HOOK_HEAD_LIST ${PROJECT_SOURCE_DIR})
-
-file(GLOB NOVA_HOOK_SRC
+file(GLOB HOOK_COM_SRC
     ${PROJECT_SOURCE_DIR}/syscall-intercept/*.cc
-    ${PROJECT_SOURCE_DIR}/util/*.cc
+    ${VFS_SRC}
+)
+file(GLOB NOVA_SRC
     ${PROJECT_SOURCE_DIR}/nova/*.cc
 )
-add_library(nova_hook SHARED ${NOVA_HOOK_SRC})
+file(GLOB FINEFS_SRC
+    ${PROJECT_SOURCE_DIR}/finefs/*.cc
+)
+
+file(GLOB ALL_SRC
+    ${UTIL_SRC}
+    ${HOOK_COM_SRC}
+    ${NOVA_SRC}
+    ${FINEFS_SRC}
+)
+
+
+add_library(nova_hook SHARED ${ALL_SRC})
 target_link_libraries(nova_hook
     syscall_intercept
     glog pthread numa pmem2
 )
 target_compile_definitions(nova_hook PRIVATE FS_HOOK=1)
 
-file(GLOB FINEFS_HOOK_SRC
-    ${PROJECT_SOURCE_DIR}/syscall-intercept/*.cc
-    ${PROJECT_SOURCE_DIR}/util/*.cc
-    ${PROJECT_SOURCE_DIR}/finefs/*.cc
-)
-add_library(finefs_hook SHARED ${FINEFS_HOOK_SRC})
+add_library(finefs_hook SHARED ${ALL_SRC})
 target_link_libraries(finefs_hook
     syscall_intercept
     glog pthread numa pmem2
 )
 target_compile_definitions(finefs_hook PRIVATE FS_HOOK=2)
 
+# 一些测试和可运行文件
+
+# set(HOOK_HEAD_LIST ${PROJECT_SOURCE_DIR})
 # target_include_directories(demo_hook PUBLIC ${HOOK_HEAD_LIST})
 
 # add_executable(fstest test/fstest.cc ${HOOK_SRC})
@@ -69,15 +75,24 @@ target_compile_definitions(finefs_hook PRIVATE FS_HOOK=2)
 #     pthread syscall_intercept
 #     glog pthread numa pmem2
 # )
-add_executable(fstest test/fstest.cc)
-target_link_libraries(fstest
+add_executable(nova_fstest test/fstest.cc)
+target_link_libraries(nova_fstest
     pthread syscall_intercept dl
 )
+target_compile_definitions(nova_fstest PRIVATE FS_HOOK=1)
+
+add_executable(finefs_fstest test/fstest.cc)
+target_link_libraries(finefs_fstest
+    pthread syscall_intercept dl
+)
+target_compile_definitions(finefs_fstest PRIVATE FS_HOOK=2)
 
 add_executable(nova_basic_test
     test/nova_basic_test.cc
     ${UTIL_SRC}
-    ${UNOVA_SRC}
+    ${VFS_SRC}
+    ${NOVA_SRC}
+    ${FINEFS_SRC}
 )
 target_link_libraries(nova_basic_test
     glog pthread numa pmem2

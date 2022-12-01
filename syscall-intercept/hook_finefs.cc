@@ -1,5 +1,5 @@
-#include "finefs/vfs_api.h"
-#include "finefs/nova_cfg.h"
+#include "vfs/vfs_api.h"
+#include "vfs/fs_cfg.h"
 #include "syscall-intercept/hooks.h"
 #include "util/cpu.h"
 
@@ -22,9 +22,9 @@ int finefs_fs_init(void** sb_, const std::string& dev_name, const std::string& r
 struct hook_operations hook_op_finefs = {
     .label = "finefs",
     .root_name = "/tmp/finefs",
-    .register_thread = nova_register_thread,
+    .register_thread = fs_register_thread,
     .fs_init = finefs_fs_init,
-    .fs_unmount = vfs_fs_unmount,
+    .fs_unmount = fs_unmount,
     .mkdir      = vfs_mkdir     ,
     .rmdir      = vfs_rmdir      ,
     .open       = vfs_open       ,

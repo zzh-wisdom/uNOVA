@@ -19,11 +19,11 @@
 
 #include <stdlib.h>
 
-#include "nova/nova_cfg.h"
+#include "vfs/fs_cfg.h"
 #include "nova/journal.h"
 // #include "nova/wprotect.h"
 #include "nova/stats.h"
-#include "nova/vfs.h"
+#include "vfs/vfs.h"
 #include "nova/nova_def.h"
 
 #include "util/lock.h"

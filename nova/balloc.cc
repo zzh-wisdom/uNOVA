@@ -1,7 +1,7 @@
 #include <errno.h>
 
 #include "nova/nova.h"
-#include "nova/nova_cfg.h"
+#include "vfs/fs_cfg.h"
 #include "util/mem.h"
 #include "util/log.h"
 #include "util/util.h"

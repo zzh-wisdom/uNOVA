@@ -24,8 +24,8 @@
  */
 
 #include "nova/nova.h"
-#include "nova/nova_cfg.h"
-#include "nova/nova_com.h"
+#include "vfs/fs_cfg.h"
+#include "vfs/com.h"
 #include "nova/wprotect.h"
 
 #include "util/log.h"

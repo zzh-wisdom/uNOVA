@@ -1,7 +1,7 @@
 /*
  * BRIEF DESCRIPTION
  *
- * Memory protection definitions for the NOVA filesystem.
+ * Memory protection definitions for the FINEFS filesystem.
  *
  * Copyright 2015-2016 Regents of the University of California,
  * UCSD Non-Volatile Systems Lab, Andiry Xu <jix024@cs.ucsd.edu>
@@ -23,15 +23,15 @@
 
 #include <string.h>
 
-#include "nova/nova_def.h"
-#include "nova/nova_com.h"
-#include "nova/nova.h"
+#include "finefs/finefs_def.h"
+#include "vfs/com.h"
+#include "finefs/finefs.h"
 
 #include "util/log.h"
 
-/* nova_memunlock_super() before calling! */
+/* finefs_memunlock_super() before calling! */
 // 同步冗余的super block
-static inline void nova_sync_super(struct nova_super_block *ps)
+static inline void finefs_sync_super(struct finefs_super_block *ps)
 {
 	u16 crc = 0;
 
@@ -40,44 +40,44 @@ static inline void nova_sync_super(struct nova_super_block *ps)
 	ps->s_wtime = cpu_to_le32(0);
 	ps->s_sum = 0;
 	// crc = crc16(~0, (__u8 *)ps + sizeof(__le16),
-	// 		NOVA_SB_STATIC_SIZE(ps) - sizeof(__le16));
+	// 		FINEFS_SB_STATIC_SIZE(ps) - sizeof(__le16));
 	ps->s_sum = cpu_to_le16(crc);
 	/* Keep sync redundant super block */
-	memcpy((void *)ps + NOVA_SB_SIZE, (void *)ps,
-		sizeof(struct nova_super_block));
+	memcpy((void *)ps + FINEFS_SB_SIZE, (void *)ps,
+		sizeof(struct finefs_super_block));
 }
 
 #if 0
-/* nova_memunlock_inode() before calling! */
-static inline void nova_sync_inode(struct nova_inode *pi)
+/* finefs_memunlock_inode() before calling! */
+static inline void finefs_sync_inode(struct finefs_inode *pi)
 {
 	u16 crc = 0;
 
 	pi->i_sum = 0;
-	crc = crc16(~0, (__u8 *)pi + sizeof(__le16), NOVA_INODE_SIZE -
+	crc = crc16(~0, (__u8 *)pi + sizeof(__le16), FINEFS_INODE_SIZE -
 		    sizeof(__le16));
 	pi->i_sum = cpu_to_le16(crc);
 }
 #endif
 
-extern int nova_writeable(void *vaddr, unsigned long size, int rw);
-extern int nova_dax_mem_protect(struct super_block *sb,
+extern int finefs_writeable(void *vaddr, unsigned long size, int rw);
+extern int finefs_dax_mem_protect(struct super_block *sb,
 				 void *vaddr, unsigned long size, int rw);
 
-static inline int nova_is_protected(struct super_block *sb)
+static inline int finefs_is_protected(struct super_block *sb)
 {
-	struct nova_sb_info *sbi = (struct nova_sb_info *)sb->s_fs_info;
+	struct finefs_sb_info *sbi = (struct finefs_sb_info *)sb->s_fs_info;
 
-	return sbi->s_mount_opt & NOVA_MOUNT_PROTECT;
+	return sbi->s_mount_opt & FINEFS_MOUNT_PROTECT;
 }
 
-static inline int nova_is_wprotected(struct super_block *sb)
+static inline int finefs_is_wprotected(struct super_block *sb)
 {
-	return nova_is_protected(sb);
+	return finefs_is_protected(sb);
 }
 
 static inline void
-__nova_memunlock_range(void *p, unsigned long len)
+__finefs_memunlock_range(void *p, unsigned long len)
 {
 	/*
 	 * NOTE: Ideally we should lock all the kernel to be memory safe
@@ -86,69 +86,69 @@ __nova_memunlock_range(void *p, unsigned long len)
 	 * the operations at fs level. We can't disable the interrupts
 	 * because we could have a deadlock in this path.
 	 */
-	nova_writeable(p, len, 1);
+	finefs_writeable(p, len, 1);
 }
 
 static inline void
-__nova_memlock_range(void *p, unsigned long len)
+__finefs_memlock_range(void *p, unsigned long len)
 {
-	nova_writeable(p, len, 0);
+	finefs_writeable(p, len, 0);
 }
 
-static inline void nova_memunlock_range(struct super_block *sb, void *p,
+static inline void finefs_memunlock_range(struct super_block *sb, void *p,
 					 unsigned long len)
 {
-	if (nova_is_protected(sb))
-		__nova_memunlock_range(p, len);
+	if (finefs_is_protected(sb))
+		__finefs_memunlock_range(p, len);
 }
 
-static inline void nova_memlock_range(struct super_block *sb, void *p,
+static inline void finefs_memlock_range(struct super_block *sb, void *p,
 				       unsigned long len)
 {
-	if (nova_is_protected(sb))
-		__nova_memlock_range(p, len);
+	if (finefs_is_protected(sb))
+		__finefs_memlock_range(p, len);
 }
 
-static inline void nova_memunlock_super(struct super_block *sb,
-					 struct nova_super_block *ps)
+static inline void finefs_memunlock_super(struct super_block *sb,
+					 struct finefs_super_block *ps)
 {
-	if (nova_is_protected(sb))
-		__nova_memunlock_range(ps, NOVA_SB_SIZE);
+	if (finefs_is_protected(sb))
+		__finefs_memunlock_range(ps, FINEFS_SB_SIZE);
 }
 
-static inline void nova_memlock_super(struct super_block *sb,
-				       struct nova_super_block *ps)
+static inline void finefs_memlock_super(struct super_block *sb,
+				       struct finefs_super_block *ps)
 {
-	nova_sync_super(ps);
-	if (nova_is_protected(sb))
-		__nova_memlock_range(ps, NOVA_SB_SIZE);
+	finefs_sync_super(ps);
+	if (finefs_is_protected(sb))
+		__finefs_memlock_range(ps, FINEFS_SB_SIZE);
 }
 
-static inline void nova_memunlock_inode(struct super_block *sb,
-					 struct nova_inode *pi)
+static inline void finefs_memunlock_inode(struct super_block *sb,
+					 struct finefs_inode *pi)
 {
-	if (nova_is_protected(sb))
-		__nova_memunlock_range(pi, NOVA_SB_SIZE);
+	if (finefs_is_protected(sb))
+		__finefs_memunlock_range(pi, FINEFS_SB_SIZE);
 }
 
-static inline void nova_memlock_inode(struct super_block *sb,
-				       struct nova_inode *pi)
+static inline void finefs_memlock_inode(struct super_block *sb,
+				       struct finefs_inode *pi)
 {
-	/* nova_sync_inode(pi); */
-	if (nova_is_protected(sb))
-		__nova_memlock_range(pi, NOVA_SB_SIZE);
+	/* finefs_sync_inode(pi); */
+	if (finefs_is_protected(sb))
+		__finefs_memlock_range(pi, FINEFS_SB_SIZE);
 }
 
-static inline void nova_memunlock_block(struct super_block *sb, void *bp)
+static inline void finefs_memunlock_block(struct super_block *sb, void *bp)
 {
-	if (nova_is_protected(sb))
-		__nova_memunlock_range(bp, sb->s_blocksize);
+	if (finefs_is_protected(sb))
+		__finefs_memunlock_range(bp, sb->s_blocksize);
 }
 
-static inline void nova_memlock_block(struct super_block *sb, void *bp)
+static inline void finefs_memlock_block(struct super_block *sb, void *bp)
 {
-	if (nova_is_protected(sb))
-		__nova_memlock_range(bp, sb->s_blocksize);
+	if (finefs_is_protected(sb))
+		__finefs_memlock_range(bp, sb->s_blocksize);
 }
 
 #endif

@@ -1,5 +1,5 @@
 /*
- * NOVA journal header
+ * FINEFS journal header
  *
  * Copyright 2015-2016 Regents of the University of California,
  * UCSD Non-Volatile Systems Lab, Andiry Xu <jix024@cs.ucsd.edu>
@@ -19,25 +19,25 @@
  * this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  */
-#ifndef __NOVA_JOURNAL_H__
-#define __NOVA_JOURNAL_H__
+#ifndef __FINEFS_JOURNAL_H__
+#define __FINEFS_JOURNAL_H__
 
-#include "nova/nova_com.h"
+#include "vfs/com.h"
 
 /* Lite journal */
 // 刚好一个cacheline
-struct nova_lite_journal_entry {
+struct finefs_lite_journal_entry {
 	/* The highest byte of addr is type */
 	// 比如高位是8表示修改的是8字节
 	u64 addrs[4];  // 最大存储4个地址
 	u64 values[4];
 };
 
-int nova_lite_journal_soft_init(struct super_block *sb);
-int nova_lite_journal_hard_init(struct super_block *sb);
-u64 nova_create_lite_transaction(struct super_block *sb,
-	struct nova_lite_journal_entry *dram_entry1,
-	struct nova_lite_journal_entry *dram_entry2,
+int finefs_lite_journal_soft_init(struct super_block *sb);
+int finefs_lite_journal_hard_init(struct super_block *sb);
+u64 finefs_create_lite_transaction(struct super_block *sb,
+	struct finefs_lite_journal_entry *dram_entry1,
+	struct finefs_lite_journal_entry *dram_entry2,
 	int entries, int cpu);
-void nova_commit_lite_transaction(struct super_block *sb, u64 tail, int cpu);
-#endif    /* __NOVA_JOURNAL_H__ */
+void finefs_commit_lite_transaction(struct super_block *sb, u64 tail, int cpu);
+#endif    /* __FINEFS_JOURNAL_H__ */

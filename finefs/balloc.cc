@@ -1,7 +1,7 @@
 #include <errno.h>
 
-#include "nova/nova.h"
-#include "nova/nova_cfg.h"
+#include "finefs/finefs.h"
+#include "vfs/fs_cfg.h"
 #include "util/mem.h"
 #include "util/log.h"
 #include "util/util.h"
@@ -10,9 +10,9 @@
 #include "util/cpu.h"
 
 // 分配逐个cpu的block free list结构体空间
-int nova_alloc_block_free_lists(struct super_block *sb)
+int finefs_alloc_block_free_lists(struct super_block *sb)
 {
-	struct nova_sb_info *sbi = NOVA_SB(sb);
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
 	struct free_list *free_list;
 	int i;
 
@@ -22,7 +22,7 @@ int nova_alloc_block_free_lists(struct super_block *sb)
 		return -ENOMEM;
 
 	for (i = 0; i < sbi->cpus; i++) {
-		free_list = nova_get_free_list(sb, i);
+		free_list = finefs_get_free_list(sb, i);
 		free_list->block_free_tree = RB_ROOT;
 		spin_lock_init(&free_list->s_lock);
 	}
@@ -30,9 +30,9 @@ int nova_alloc_block_free_lists(struct super_block *sb)
 	return 0;
 }
 
-void nova_delete_free_lists(struct super_block *sb)
+void finefs_delete_free_lists(struct super_block *sb)
 {
-	struct nova_sb_info *sbi = NOVA_SB(sb);
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
 
 	/* Each tree is freed in save_blocknode_mappings */
 	FREE(sbi->free_lists);
@@ -41,12 +41,12 @@ void nova_delete_free_lists(struct super_block *sb)
 
 // 初始化每个cpu的free list，即用红黑树管理page
 // 完成整个NVM空间的每个cpu划分
-void nova_init_blockmap(struct super_block *sb, int recovery)
+void finefs_init_blockmap(struct super_block *sb, int recovery)
 {
-	struct nova_sb_info *sbi = NOVA_SB(sb);
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
 	struct rb_root *tree;
 	unsigned long num_used_block;
-	struct nova_range_node *blknode;
+	struct finefs_range_node *blknode;
 	struct free_list *free_list;
 	unsigned long per_list_blocks;
 	int i;
@@ -58,7 +58,7 @@ void nova_init_blockmap(struct super_block *sb, int recovery)
 	per_list_blocks = sbi->num_blocks / sbi->cpus;
 	sbi->per_list_blocks = per_list_blocks;
 	for (i = 0; i < sbi->cpus; i++) {
-		free_list = nova_get_free_list(sb, i);
+		free_list = finefs_get_free_list(sb, i);
 		tree = &(free_list->block_free_tree);
 		free_list->block_start = per_list_blocks * i;
 		free_list->block_end = free_list->block_start +
@@ -72,14 +72,14 @@ void nova_init_blockmap(struct super_block *sb, int recovery)
 				free_list->num_free_blocks -= num_used_block;
 			}
 
-			blknode = nova_alloc_blocknode(sb);
+			blknode = finefs_alloc_blocknode(sb);
 			if (blknode == NULL) log_assert(0);
 			blknode->range_low = free_list->block_start;
 			blknode->range_high = free_list->block_end;
-			ret = nova_insert_blocktree(sbi, tree, blknode);
+			ret = finefs_insert_blocktree(sbi, tree, blknode);
 			if (ret) {
 				r_error("%s failed", __func__);
-				nova_free_blocknode(sb, blknode);
+				finefs_free_blocknode(sb, blknode);
 				return;
 			}
 			free_list->first_node = blknode;
@@ -87,7 +87,7 @@ void nova_init_blockmap(struct super_block *sb, int recovery)
 		}
 	}
 
-	free_list = nova_get_free_list(sb, (sbi->cpus - 1));
+	free_list = finefs_get_free_list(sb, (sbi->cpus - 1));
 	if (free_list->block_end + 1 < sbi->num_blocks) {
 		/* Shared free list gets any remaining blocks */
 		sbi->shared_free_list.block_start = free_list->block_end + 1;
@@ -95,7 +95,7 @@ void nova_init_blockmap(struct super_block *sb, int recovery)
 	}
 }
 
-static inline int nova_rbtree_compare_rangenode(struct nova_range_node *curr,
+static inline int finefs_rbtree_compare_rangenode(struct finefs_range_node *curr,
 	unsigned long range_low)
 {
 	if (range_low < curr->range_low)
@@ -106,11 +106,11 @@ static inline int nova_rbtree_compare_rangenode(struct nova_range_node *curr,
 	return 0;
 }
 
-static int nova_find_range_node(struct nova_sb_info *sbi,
+static int finefs_find_range_node(struct finefs_sb_info *sbi,
 	struct rb_root *tree, unsigned long range_low,
-	struct nova_range_node **ret_node)
+	struct finefs_range_node **ret_node)
 {
-	struct nova_range_node *curr = NULL;
+	struct finefs_range_node *curr = NULL;
 	struct rb_node *temp;
 	int compVal;
 	int ret = 0;
@@ -118,8 +118,8 @@ static int nova_find_range_node(struct nova_sb_info *sbi,
 	temp = tree->rb_node;
 
 	while (temp) {
-		curr = container_of(temp, struct nova_range_node, node);
-		compVal = nova_rbtree_compare_rangenode(curr, range_low);
+		curr = container_of(temp, struct finefs_range_node, node);
+		compVal = finefs_rbtree_compare_rangenode(curr, range_low);
 
 		if (compVal == -1) {
 			temp = temp->rb_left;
@@ -135,8 +135,8 @@ static int nova_find_range_node(struct nova_sb_info *sbi,
 	return ret;
 }
 
-int nova_search_inodetree(struct nova_sb_info *sbi,
-	unsigned long ino, struct nova_range_node **ret_node)
+int finefs_search_inodetree(struct finefs_sb_info *sbi,
+	unsigned long ino, struct finefs_range_node **ret_node)
 {
 	struct rb_root *tree;
 	unsigned long internal_ino;
@@ -145,13 +145,13 @@ int nova_search_inodetree(struct nova_sb_info *sbi,
 	cpu = ino % sbi->cpus;
 	tree = &sbi->inode_maps[cpu].inode_inuse_tree;
 	internal_ino = ino / sbi->cpus;
-	return nova_find_range_node(sbi, tree, internal_ino, ret_node);
+	return finefs_find_range_node(sbi, tree, internal_ino, ret_node);
 }
 
-static int nova_insert_range_node(struct nova_sb_info *sbi,
-	struct rb_root *tree, struct nova_range_node *new_node)
+static int finefs_insert_range_node(struct finefs_sb_info *sbi,
+	struct rb_root *tree, struct finefs_range_node *new_node)
 {
-	struct nova_range_node *curr;
+	struct finefs_range_node *curr;
 	struct rb_node **temp, *parent;
 	int compVal;
 
@@ -159,8 +159,8 @@ static int nova_insert_range_node(struct nova_sb_info *sbi,
 	parent = NULL;
 
 	while (*temp) {
-		curr = container_of(*temp, struct nova_range_node, node);
-		compVal = nova_rbtree_compare_rangenode(curr,
+		curr = container_of(*temp, struct finefs_range_node, node);
+		compVal = finefs_rbtree_compare_rangenode(curr,
 					new_node->range_low);
 		parent = *temp;
 
@@ -185,12 +185,12 @@ static int nova_insert_range_node(struct nova_sb_info *sbi,
 	return 0;
 }
 
-inline int nova_insert_blocktree(struct nova_sb_info *sbi,
-	struct rb_root *tree, struct nova_range_node *new_node)
+inline int finefs_insert_blocktree(struct finefs_sb_info *sbi,
+	struct rb_root *tree, struct finefs_range_node *new_node)
 {
 	int ret;
 
-	ret = nova_insert_range_node(sbi, tree, new_node);
+	ret = finefs_insert_range_node(sbi, tree, new_node);
 	if (ret)
 		r_error("ERROR: %s failed %d", __func__, ret);
 
@@ -198,14 +198,14 @@ inline int nova_insert_blocktree(struct nova_sb_info *sbi,
 }
 
 // 将一个范围插入inode的红黑树
-int nova_insert_inodetree(struct nova_sb_info *sbi,
-	struct nova_range_node *new_node, int cpu)
+int finefs_insert_inodetree(struct finefs_sb_info *sbi,
+	struct finefs_range_node *new_node, int cpu)
 {
 	struct rb_root *tree;
 	int ret;
 
 	tree = &sbi->inode_maps[cpu].inode_inuse_tree;
-	ret = nova_insert_range_node(sbi, tree, new_node);
+	ret = finefs_insert_range_node(sbi, tree, new_node);
 	if (ret)
 		rd_error("ERROR: %s failed %d", __func__, ret);
 
@@ -213,16 +213,16 @@ int nova_insert_inodetree(struct nova_sb_info *sbi,
 }
 
 /* Used for both block free tree and inode inuse tree */
-int nova_find_free_slot(struct nova_sb_info *sbi,
+int finefs_find_free_slot(struct finefs_sb_info *sbi,
 	struct rb_root *tree, unsigned long range_low,
-	unsigned long range_high, struct nova_range_node **prev,
-	struct nova_range_node **next)
+	unsigned long range_high, struct finefs_range_node **prev,
+	struct finefs_range_node **next)
 {
-	struct nova_range_node *ret_node = NULL;
+	struct finefs_range_node *ret_node = NULL;
 	struct rb_node *temp;
 	int ret;
 
-	ret = nova_find_range_node(sbi, tree, range_low, &ret_node);
+	ret = finefs_find_range_node(sbi, tree, range_low, &ret_node);
 	if (ret) {
 		rd_error("%s ERROR: %lu - %lu already in free list",
 			__func__, range_low, range_high);
@@ -235,14 +235,14 @@ int nova_find_free_slot(struct nova_sb_info *sbi,
 		*prev = ret_node;
 		temp = rb_next(&ret_node->node);
 		if (temp)
-			*next = container_of(temp, struct nova_range_node, node);
+			*next = container_of(temp, struct finefs_range_node, node);
 		else
 			*next = NULL;
 	} else if (ret_node->range_low > range_high) {
 		*next = ret_node;
 		temp = rb_prev(&ret_node->node);
 		if (temp)
-			*prev = container_of(temp, struct nova_range_node, node);
+			*prev = container_of(temp, struct finefs_range_node, node);
 		else
 			*prev = NULL;
 	} else {
@@ -257,17 +257,17 @@ int nova_find_free_slot(struct nova_sb_info *sbi,
 }
 
 // log_page 是否为log page
-static int nova_free_blocks(struct super_block *sb, unsigned long blocknr,
+static int finefs_free_blocks(struct super_block *sb, unsigned long blocknr,
 	int num, unsigned short btype, int log_page)
 {
-	struct nova_sb_info *sbi = NOVA_SB(sb);
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
 	struct rb_root *tree;
 	unsigned long block_low;
 	unsigned long block_high;
 	unsigned long num_blocks = 0;
-	struct nova_range_node *prev = NULL;
-	struct nova_range_node *next = NULL;
-	struct nova_range_node *curr_node;
+	struct finefs_range_node *prev = NULL;
+	struct finefs_range_node *next = NULL;
+	struct finefs_range_node *curr_node;
 	struct free_list *free_list;
 	int cpuid;
 	int new_node_used = 0;
@@ -283,30 +283,30 @@ static int nova_free_blocks(struct super_block *sb, unsigned long blocknr,
 		cpuid = SHARED_CPU;
 
 	/* Pre-allocate blocknode */
-	curr_node = nova_alloc_blocknode(sb);
+	curr_node = finefs_alloc_blocknode(sb);
 	if (curr_node == NULL) {
 		/* returning without freeing the block*/
 		return -ENOMEM;
 	}
 
-	free_list = nova_get_free_list(sb, cpuid);
+	free_list = finefs_get_free_list(sb, cpuid);
 	spin_lock(&free_list->s_lock);
 
 	tree = &(free_list->block_free_tree);
 
-	num_blocks = nova_get_numblocks(btype) * num;
+	num_blocks = finefs_get_numblocks(btype) * num;
 	block_low = blocknr;
 	block_high = blocknr + num_blocks - 1;
 
 	rdv_proc("Free: %lu - %lu", block_low, block_high);
 
-	ret = nova_find_free_slot(sbi, tree, block_low,
+	ret = finefs_find_free_slot(sbi, tree, block_low,
 					block_high, &prev, &next);
 
 	if (ret) {
 		rd_info("%s: find free slot fail: %d", __func__, ret);
 		spin_unlock(&free_list->s_lock);
-		nova_free_blocknode(sb, curr_node);
+		finefs_free_blocknode(sb, curr_node);
 		return ret;
 	}
 
@@ -316,7 +316,7 @@ static int nova_free_blocks(struct super_block *sb, unsigned long blocknr,
 		rb_erase(&next->node, tree);
 		free_list->num_blocknode--;
 		prev->range_high = next->range_high;
-		nova_free_blocknode(sb, next);
+		finefs_free_blocknode(sb, next);
 		goto block_found;
 	}
 	if (prev && (block_low == prev->range_high + 1)) {
@@ -334,7 +334,7 @@ static int nova_free_blocks(struct super_block *sb, unsigned long blocknr,
 	curr_node->range_low = block_low;
 	curr_node->range_high = block_high;
 	new_node_used = 1;
-	ret = nova_insert_blocktree(sbi, tree, curr_node);
+	ret = finefs_insert_blocktree(sbi, tree, curr_node);
 	if (ret) {
 		new_node_used = 0;
 		goto out;
@@ -357,66 +357,66 @@ block_found:
 out:
 	spin_unlock(&free_list->s_lock);
 	if (new_node_used == 0)
-		nova_free_blocknode(sb, curr_node);
+		finefs_free_blocknode(sb, curr_node);
 
 	return ret;
 }
 
-int nova_free_data_blocks(struct super_block *sb, struct nova_inode *pi,
+int finefs_free_data_blocks(struct super_block *sb, struct finefs_inode *pi,
 	unsigned long blocknr, int num)
 {
 	int ret;
 	timing_t free_time;
 
 	rd_info("Inode %lu: free %d data block from %lu to %lu",
-			pi->nova_ino, num, blocknr, blocknr + num - 1);
+			pi->finefs_ino, num, blocknr, blocknr + num - 1);
 	if (blocknr == 0) {
 		r_error("%s: ERROR: %lu, %d", __func__, blocknr, num);
 		return -EINVAL;
 	}
-	NOVA_START_TIMING(free_data_t, free_time);
-	ret = nova_free_blocks(sb, blocknr, num, pi->i_blk_type, 0);
+	FINEFS_START_TIMING(free_data_t, free_time);
+	ret = finefs_free_blocks(sb, blocknr, num, pi->i_blk_type, 0);
 	if (ret)
 		r_error("Inode %lu: free %d data block from %lu to %lu "
-				"failed!", pi->nova_ino, num, blocknr,
+				"failed!", pi->finefs_ino, num, blocknr,
 				blocknr + num - 1);
-	NOVA_END_TIMING(free_data_t, free_time);
+	FINEFS_END_TIMING(free_data_t, free_time);
 
 	return ret;
 }
 
-int nova_free_log_blocks(struct super_block *sb, struct nova_inode *pi,
+int finefs_free_log_blocks(struct super_block *sb, struct finefs_inode *pi,
 	unsigned long blocknr, int num)
 {
 	int ret;
 	timing_t free_time;
 
 	rd_info("Inode %lu: free %d log block from %lu to %lu",
-			pi->nova_ino, num, blocknr, blocknr + num - 1);
+			pi->finefs_ino, num, blocknr, blocknr + num - 1);
 	if (blocknr == 0) {
 		r_error("%s: ERROR: %lu, %d", __func__, blocknr, num);
 		return -EINVAL;
 	}
-	NOVA_START_TIMING(free_log_t, free_time);
-	ret = nova_free_blocks(sb, blocknr, num, pi->i_blk_type, 1);
+	FINEFS_START_TIMING(free_log_t, free_time);
+	ret = finefs_free_blocks(sb, blocknr, num, pi->i_blk_type, 1);
 	if (ret)
 		r_error("Inode %lu: free %d log block from %lu to %lu "
-				"failed!", pi->nova_ino, num, blocknr,
+				"failed!", pi->finefs_ino, num, blocknr,
 				blocknr + num - 1);
-	NOVA_END_TIMING(free_log_t, free_time);
+	FINEFS_END_TIMING(free_log_t, free_time);
 
 	return ret;
 }
 
 // 从free list中分配空闲空间
-// btype 枚举 4k 2m 1G NOVA_BLOCK_TYPE_4K
+// btype 枚举 4k 2m 1G FINEFS_BLOCK_TYPE_4K
 // 按照指定的大小，分一个连续的空间，返回实际分配的block个数
-static unsigned long nova_alloc_blocks_in_free_list(struct super_block *sb,
+static unsigned long finefs_alloc_blocks_in_free_list(struct super_block *sb,
 	struct free_list *free_list, unsigned short btype,
 	unsigned long num_blocks, unsigned long *new_blocknr)
 {
 	struct rb_root *tree;
-	struct nova_range_node *curr, *next = NULL;
+	struct finefs_range_node *curr, *next = NULL;
 	struct rb_node *temp, *next_node;
 	unsigned long curr_blocks;
 	bool found = 0;
@@ -427,13 +427,13 @@ static unsigned long nova_alloc_blocks_in_free_list(struct super_block *sb,
 
 	while (temp) {
 		step++;
-		curr = container_of(temp, struct nova_range_node, node);
+		curr = container_of(temp, struct finefs_range_node, node);
 
 		curr_blocks = curr->range_high - curr->range_low + 1;
 
 		if (num_blocks >= curr_blocks) {
 			/* Superpage allocation must succeed */
-			// NOVA_BLOCK_TYPE_4K = 0
+			// FINEFS_BLOCK_TYPE_4K = 0
 			if (btype > 0 && num_blocks > curr_blocks) {
 				temp = rb_next(temp);
 				continue;
@@ -444,7 +444,7 @@ static unsigned long nova_alloc_blocks_in_free_list(struct super_block *sb,
 				next_node = rb_next(temp);
 				if (next_node)
 					next = container_of(next_node,
-						struct nova_range_node, node);
+						struct finefs_range_node, node);
 				free_list->first_node = next;
 			}
 
@@ -452,7 +452,7 @@ static unsigned long nova_alloc_blocks_in_free_list(struct super_block *sb,
 			free_list->num_blocknode--;
 			num_blocks = curr_blocks;
 			*new_blocknr = curr->range_low;
-			nova_free_blocknode(sb, curr);
+			finefs_free_blocknode(sb, curr);
 			found = 1;
 			break;
 		}
@@ -467,7 +467,7 @@ static unsigned long nova_alloc_blocks_in_free_list(struct super_block *sb,
 	free_list->num_free_blocks -= num_blocks;
 
 	// 统计分配block时红黑树的node跳转次数
-	NOVA_STATS_ADD(alloc_steps, step);
+	FINEFS_STATS_ADD(alloc_steps, step);
 
 	if (found == 0)
 		return -ENOSPC;
@@ -477,16 +477,16 @@ static unsigned long nova_alloc_blocks_in_free_list(struct super_block *sb,
 
 /* Find out the free list with most free blocks */
 // 找到具有最多空闲空间的cpu free list
-static int nova_get_candidate_free_list(struct super_block *sb)
+static int finefs_get_candidate_free_list(struct super_block *sb)
 {
-	struct nova_sb_info *sbi = NOVA_SB(sb);
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
 	struct free_list *free_list;
 	int cpuid = 0;
 	int num_free_blocks = 0;
 	int i;
 
 	for (i = 0; i < sbi->cpus; i++) {
-		free_list = nova_get_free_list(sb, i);
+		free_list = finefs_get_free_list(sb, i);
 		if (free_list->num_free_blocks > num_free_blocks) {
 			cpuid = i;
 			num_free_blocks = free_list->num_free_blocks;
@@ -497,11 +497,11 @@ static int nova_get_candidate_free_list(struct super_block *sb)
 }
 
 /* Return how many blocks allocated */
-// btype 枚举 4k 2m 1G  NOVA_BLOCK_TYPE_4K
+// btype 枚举 4k 2m 1G  FINEFS_BLOCK_TYPE_4K
 // blocknr 分配区间
 // zero 是否清零
 // 返回分配指定btype类型的block个数
-static int nova_new_blocks(struct super_block *sb, unsigned long *blocknr,
+static int finefs_new_blocks(struct super_block *sb, unsigned long *blocknr,
 	unsigned int num, unsigned short btype, int zero,
 	enum alloc_type atype, int cpuid = -1)
 {
@@ -511,10 +511,10 @@ static int nova_new_blocks(struct super_block *sb, unsigned long *blocknr,
 	unsigned long ret_blocks = 0;
 	unsigned long new_blocknr = 0;
 	struct rb_node *temp;
-	struct nova_range_node *first;
+	struct finefs_range_node *first;
 	int retried = 0;
 
-	num_blocks = num * nova_get_numblocks(btype);
+	num_blocks = num * finefs_get_numblocks(btype);
 	if (num_blocks == 0)
 		return -EINVAL;
 
@@ -522,7 +522,7 @@ static int nova_new_blocks(struct super_block *sb, unsigned long *blocknr,
 		cpuid = get_processor_id();
 
 retry:
-	free_list = nova_get_free_list(sb, cpuid);
+	free_list = finefs_get_free_list(sb, cpuid);
 	spin_lock(&free_list->s_lock);
 
 	if (free_list->num_free_blocks < num_blocks || !free_list->first_node) {
@@ -535,20 +535,20 @@ retry:
 			rd_info("first node is NULL "
 				"but still has free blocks");
 			temp = rb_first(&free_list->block_free_tree);
-			first = container_of(temp, struct nova_range_node, node);
+			first = container_of(temp, struct finefs_range_node, node);
 			free_list->first_node = first;
 		} else {
 			spin_unlock(&free_list->s_lock);
 			if (retried >= ALLOC_BLOCK_RETRY)
 				return -ENOSPC;
 			// 从其他cpu分配空闲空间
-			cpuid = nova_get_candidate_free_list(sb);
+			cpuid = finefs_get_candidate_free_list(sb);
 			retried++;
 			goto retry;
 		}
 	}
 
-	ret_blocks = nova_alloc_blocks_in_free_list(sb, free_list, btype,
+	ret_blocks = finefs_alloc_blocks_in_free_list(sb, free_list, btype,
 						num_blocks, &new_blocknr);
 
 	// 统计信息
@@ -566,30 +566,30 @@ retry:
 		return -ENOSPC;
 
 	if (zero) {
-		bp = nova_get_block(sb, nova_get_block_off(sb,
+		bp = finefs_get_block(sb, finefs_get_block_off(sb,
 						new_blocknr, btype));
 		memset_nt(bp, 0, PAGE_SIZE * ret_blocks);
 	}
 	*blocknr = new_blocknr;
 
 	rdv_proc("Alloc %lu NVMM blocks 0x%lx", ret_blocks, *blocknr);
-	return ret_blocks / nova_get_numblocks(btype);
+	return ret_blocks / finefs_get_numblocks(btype);
 }
 
 // 分配文件数据块
-int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
+int finefs_new_data_blocks(struct super_block *sb, struct finefs_inode *pi,
 	unsigned long *blocknr,	unsigned int num, unsigned long start_blk,
 	int zero, int cow)
 {
 	int allocated;
 	timing_t alloc_time;
-	NOVA_START_TIMING(new_data_blocks_t, alloc_time);
-	allocated = nova_new_blocks(sb, blocknr, num,
+	FINEFS_START_TIMING(new_data_blocks_t, alloc_time);
+	allocated = finefs_new_blocks(sb, blocknr, num,
 					pi->i_blk_type, zero, DATA);
-	NOVA_END_TIMING(new_data_blocks_t, alloc_time);
+	FINEFS_END_TIMING(new_data_blocks_t, alloc_time);
 	rdv_proc("Inode %lu, start blk %lu, cow %d, "
 			"alloc %d data blocks from %lu to %lu",
-			pi->nova_ino, start_blk, cow, allocated, *blocknr,
+			pi->finefs_ino, start_blk, cow, allocated, *blocknr,
 			*blocknr + allocated - 1);
 	return allocated;
 }
@@ -597,34 +597,34 @@ int nova_new_data_blocks(struct super_block *sb, struct nova_inode *pi,
 // 分配新的用于log的block
 // 返回分配指定inode类型的block个数
 // zero为1表示新分配的空间需要清零
-int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
+int finefs_new_log_blocks(struct super_block *sb, struct finefs_inode *pi,
 	unsigned long *blocknr, unsigned int num, int zero, int cpuid)
 {
 	int allocated;
 	timing_t alloc_time;
-	NOVA_START_TIMING(new_log_blocks_t, alloc_time);
-	allocated = nova_new_blocks(sb, blocknr, num,
+	FINEFS_START_TIMING(new_log_blocks_t, alloc_time);
+	allocated = finefs_new_blocks(sb, blocknr, num,
 					pi->i_blk_type, zero, LOG, cpuid);
-	NOVA_END_TIMING(new_log_blocks_t, alloc_time);
+	FINEFS_END_TIMING(new_log_blocks_t, alloc_time);
 	rdv_proc("Inode %lu, alloc %d log blocks from %lu to %lu",
-			pi->nova_ino, allocated, *blocknr,
+			pi->finefs_ino, allocated, *blocknr,
 			*blocknr + allocated - 1);
 	return allocated;
 }
 
-unsigned long nova_count_free_blocks(struct super_block *sb)
+unsigned long finefs_count_free_blocks(struct super_block *sb)
 {
-	struct nova_sb_info *sbi = NOVA_SB(sb);
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
 	struct free_list *free_list;
 	unsigned long num_free_blocks = 0;
 	int i;
 
 	for (i = 0; i < sbi->cpus; i++) {
-		free_list = nova_get_free_list(sb, i);
+		free_list = finefs_get_free_list(sb, i);
 		num_free_blocks += free_list->num_free_blocks;
 	}
 
-	free_list = nova_get_free_list(sb, SHARED_CPU);
+	free_list = finefs_get_free_list(sb, SHARED_CPU);
 	num_free_blocks += free_list->num_free_blocks;
 	return num_free_blocks;
 }

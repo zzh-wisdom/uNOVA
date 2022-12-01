@@ -24,7 +24,7 @@
 #include <string.h>
 
 #include "nova/nova_def.h"
-#include "nova/nova_com.h"
+#include "vfs/com.h"
 #include "nova/nova.h"
 
 #include "util/log.h"

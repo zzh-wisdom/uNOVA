@@ -15,40 +15,40 @@
  * warranty of any kind, whether express or implied.
  */
 
-#include "nova/nova.h"
-#include "nova/wprotect.h"
+#include "finefs/finefs.h"
+#include "finefs/wprotect.h"
 #include "util/cpu.h"
 #include "util/log.h"
 
-unsigned int blk_type_to_shift[NOVA_BLOCK_TYPE_MAX] = {12, 21, 30};
-uint32_t blk_type_to_size[NOVA_BLOCK_TYPE_MAX] = {0x1000, 0x200000, 0x40000000};
+unsigned int finefs_blk_type_to_shift[FINEFS_BLOCK_TYPE_MAX] = {12, 21, 30};
+uint32_t finefs_blk_type_to_size[FINEFS_BLOCK_TYPE_MAX] = {0x1000, 0x200000, 0x40000000};
 
-int nova_init_inode_inuse_list(struct super_block *sb) {
-    struct nova_sb_info *sbi = NOVA_SB(sb);
-    struct nova_range_node *range_node;
+int finefs_init_inode_inuse_list(struct super_block *sb) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    struct finefs_range_node *range_node;
     struct inode_map *inode_map;
     unsigned long range_high;
     int i;
     int ret;
 
     // 优先把预留的inode，设置为已经使用
-    sbi->s_inodes_used_count = NOVA_NORMAL_INODE_START;
+    sbi->s_inodes_used_count = FINEFS_NORMAL_INODE_START;
 
-    range_high = (NOVA_NORMAL_INODE_START - 1) / sbi->cpus;
-    if (NOVA_NORMAL_INODE_START % sbi->cpus) range_high++;
+    range_high = (FINEFS_NORMAL_INODE_START - 1) / sbi->cpus;
+    if (FINEFS_NORMAL_INODE_START % sbi->cpus) range_high++;
 
     for (i = 0; i < sbi->cpus; i++) {
         inode_map = &sbi->inode_maps[i];
-        range_node = nova_alloc_inode_node(sb);
+        range_node = finefs_alloc_inode_node(sb);
         if (range_node == NULL) /* FIXME: free allocated memories */
             return -ENOMEM;
 
         range_node->range_low = 0;
         range_node->range_high = range_high;
-        ret = nova_insert_inodetree(sbi, range_node, i);
+        ret = finefs_insert_inodetree(sbi, range_node, i);
         if (ret) {
             r_error("%s failed", __func__);
-            nova_free_inode_node(sb, range_node);
+            finefs_free_inode_node(sb, range_node);
             return ret;
         }
         inode_map->num_range_node_inode = 1;
@@ -58,10 +58,10 @@ int nova_init_inode_inuse_list(struct super_block *sb) {
     return 0;
 }
 
-int nova_init_inode_table(struct super_block *sb) {
-    struct nova_sb_info *sbi = NOVA_SB(sb);
+int finefs_init_inode_table(struct super_block *sb) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
     struct inode_table *inode_table;
-    struct nova_inode *pi = nova_get_inode_by_ino(sb, NOVA_INODETABLE_INO);
+    struct finefs_inode *pi = finefs_get_inode_by_ino(sb, FINEFS_INODETABLE_INO);
     unsigned long blocknr;
     u64 block;
     int allocated;
@@ -72,21 +72,21 @@ int nova_init_inode_table(struct super_block *sb) {
     pi->i_gid = 0;
     pi->i_links_count = cpu_to_le16(1);
     pi->i_flags = 0;
-    pi->nova_ino = NOVA_INODETABLE_INO;
+    pi->finefs_ino = FINEFS_INODETABLE_INO;
 
-    pi->i_blk_type = NOVA_BLOCK_TYPE_2M;
+    pi->i_blk_type = FINEFS_BLOCK_TYPE_2M;
 
     for (i = 0; i < sbi->cpus; i++) {
-        inode_table = nova_get_inode_table(sb, i);
+        inode_table = finefs_get_inode_table(sb, i);
         if (!inode_table) return -EINVAL;
 
-        allocated = nova_new_log_blocks(sb, pi, &blocknr, 1, 1, i);
+        allocated = finefs_new_log_blocks(sb, pi, &blocknr, 1, 1, i);
         rdv_proc("%s: allocate log @ 0x%lx", __func__, blocknr);
         if (allocated != 1 || blocknr == 0) return -ENOSPC;
 
-        block = nova_get_block_off(sb, blocknr, NOVA_BLOCK_TYPE_2M);
+        block = finefs_get_block_off(sb, blocknr, FINEFS_BLOCK_TYPE_2M);
         inode_table->log_head = block;
-        nova_flush_buffer(inode_table, CACHELINE_SIZE, 0);
+        finefs_flush_buffer(inode_table, CACHELINE_SIZE, 0);
     }
 
     PERSISTENT_BARRIER();
@@ -97,9 +97,9 @@ int nova_init_inode_table(struct super_block *sb) {
 // 索引信息能否搬迁到dram
 // extendable 为1时表示，当查到超过最后一个block返回时，是否分配新的block进行扩展
 // pi_addr 带回inode的NVM地址
-int nova_get_inode_address(struct super_block *sb, u64 ino, u64 *pi_addr, int extendable) {
-    struct nova_sb_info *sbi = NOVA_SB(sb);
-    struct nova_inode *pi;
+int finefs_get_inode_address(struct super_block *sb, u64 ino, u64 *pi_addr, int extendable) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    struct finefs_inode *pi;
     struct inode_table *inode_table;
     unsigned int data_bits;
     unsigned int num_inodes_bits;
@@ -113,14 +113,14 @@ int nova_get_inode_address(struct super_block *sb, u64 ino, u64 *pi_addr, int ex
     unsigned long curr_addr;
     int allocated;
 
-    pi = nova_get_inode_by_ino(sb, NOVA_INODETABLE_INO);
-    data_bits = blk_type_to_shift[pi->i_blk_type];
-    num_inodes_bits = data_bits - NOVA_INODE_BITS;  // 一个block可以容纳的inode个数的bit
+    pi = finefs_get_inode_by_ino(sb, FINEFS_INODETABLE_INO);
+    data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
+    num_inodes_bits = data_bits - FINEFS_INODE_BITS;  // 一个block可以容纳的inode个数的bit
 
     cpuid = ino % sbi->cpus;
     internal_ino = ino / sbi->cpus;
 
-    inode_table = nova_get_inode_table(sb, cpuid);
+    inode_table = finefs_get_inode_table(sb, cpuid);
     superpage_count = internal_ino >> num_inodes_bits;    // block的个数，即2MB的跳转次数
     index = internal_ino & ((1 << num_inodes_bits) - 1);  // 所在block的内部index
 
@@ -130,7 +130,7 @@ int nova_get_inode_address(struct super_block *sb, u64 ino, u64 *pi_addr, int ex
     for (i = 0; i < superpage_count; i++) {
         if (curr == 0) return -EINVAL;
 
-        curr_addr = (unsigned long)nova_get_block(sb, curr);
+        curr_addr = (unsigned long)finefs_get_block(sb, curr);
         /* Next page pointer in the last 8 bytes of the superpage */
         curr_addr += 2097152 - 8;
         curr = *(u64 *)(curr_addr);
@@ -138,29 +138,29 @@ int nova_get_inode_address(struct super_block *sb, u64 ino, u64 *pi_addr, int ex
         if (curr == 0) {
             if (extendable == 0) return -EINVAL;
 
-            allocated = nova_new_log_blocks(sb, pi, &blocknr, 1, 1);
+            allocated = finefs_new_log_blocks(sb, pi, &blocknr, 1, 1);
 
             if (allocated != 1) {
                 // return allocated;
                 return -ENOMEM;
             }
 
-            curr = nova_get_block_off(sb, blocknr, NOVA_BLOCK_TYPE_2M);
+            curr = finefs_get_block_off(sb, blocknr, FINEFS_BLOCK_TYPE_2M);
             *(u64 *)(curr_addr) = curr;
-            nova_flush_buffer((void *)curr_addr, NOVA_INODE_SIZE, 1);
+            finefs_flush_buffer((void *)curr_addr, FINEFS_INODE_SIZE, 1);
         }
     }
 
-    *pi_addr = curr + index * NOVA_INODE_SIZE;
+    *pi_addr = curr + index * FINEFS_INODE_SIZE;
 
     return 0;
 }
 
 // 释放连续的数据块
 // 返回实质释放的page个数
-static inline int nova_free_contiguous_data_blocks(
-    struct super_block *sb, struct nova_inode_info_header *sih, struct nova_inode *pi,
-    struct nova_file_write_entry *entry, unsigned long pgoff, unsigned long num_pages,
+static inline int finefs_free_contiguous_data_blocks(
+    struct super_block *sb, struct finefs_inode_info_header *sih, struct finefs_inode *pi,
+    struct finefs_file_write_entry *entry, unsigned long pgoff, unsigned long num_pages,
     unsigned long *start_blocknr, unsigned long *num_free) {
     int freed = 0;
     unsigned long nvmm;
@@ -187,7 +187,7 @@ static inline int nova_free_contiguous_data_blocks(
             (*num_free) += num_pages;
         } else {
             /* A new start */
-            nova_free_data_blocks(sb, pi, *start_blocknr,
+            finefs_free_data_blocks(sb, pi, *start_blocknr,
                                   *num_free);  // 把之前的合并一起释放
             freed = *num_free;
             *start_blocknr = nvmm;
@@ -200,9 +200,9 @@ static inline int nova_free_contiguous_data_blocks(
 
 // 释放一个用链表连接起来的log page
 // 返回实质释放的page个数
-static int nova_free_contiguous_log_blocks(struct super_block *sb, struct nova_inode *pi,
+static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct finefs_inode *pi,
                                            u64 head) {
-    struct nova_inode_log_page *curr_page;
+    struct finefs_inode_log_page *curr_page;
     unsigned long blocknr, start_blocknr = 0;
     u64 curr_block = head;
     u32 btype = pi->i_blk_type;
@@ -214,9 +214,9 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb, struct nova_i
             r_error("%s: ERROR: invalid block %lu", __func__, curr_block);
             break;
         }
-        curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr_block);
+        curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr_block);
 
-        blocknr = nova_get_blocknr(sb, le64_to_cpu(curr_block), btype);
+        blocknr = finefs_get_blocknr(sb, le64_to_cpu(curr_block), btype);
         rdv_proc("%s: free page %lu", __func__, curr_block);
         curr_block = curr_page->page_tail.next_page;
 
@@ -228,7 +228,7 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb, struct nova_i
                 num_free++;
             } else {
                 /* A new start */
-                nova_free_log_blocks(sb, pi, start_blocknr, num_free);
+                finefs_free_log_blocks(sb, pi, start_blocknr, num_free);
                 freed += num_free;
                 start_blocknr = blocknr;
                 num_free = 1;
@@ -236,15 +236,15 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb, struct nova_i
         }
     }
     if (start_blocknr) {
-        nova_free_log_blocks(sb, pi, start_blocknr, num_free);
+        finefs_free_log_blocks(sb, pi, start_blocknr, num_free);
         freed += num_free;
     }
 
     return freed;
 }
 
-// static int nova_delete_cache_tree(struct super_block *sb,
-// 	struct nova_inode *pi, struct nova_inode_info_header *sih,
+// static int finefs_delete_cache_tree(struct super_block *sb,
+// 	struct finefs_inode *pi, struct finefs_inode_info_header *sih,
 // 	unsigned long start_blocknr, unsigned long last_blocknr)
 // {
 // 	unsigned long addr;
@@ -252,7 +252,7 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb, struct nova_i
 // 	int deleted = 0;
 // 	void *ret;
 
-// 	nova_dbgv("%s: inode %lu, mmap pages %lu, start %lu, last %lu",
+// 	finefs_dbgv("%s: inode %lu, mmap pages %lu, start %lu, last %lu",
 // 			__func__, sih->ino, sih->mmap_pages,
 // 			start_blocknr, last_blocknr);
 
@@ -260,13 +260,13 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb, struct nova_i
 // 		addr = (unsigned long)radix_tree_lookup(&sih->cache_tree, i);
 // 		if (addr) {
 // 			ret = radix_tree_delete(&sih->cache_tree, i);
-// 			nova_free_data_blocks(sb, pi, addr >> PAGE_SHIFT, 1);
+// 			finefs_free_data_blocks(sb, pi, addr >> PAGE_SHIFT, 1);
 // 			sih->mmap_pages--;
 // 			deleted++;
 // 		}
 // 	}
 
-// 	nova_dbgv("%s: inode %lu, deleted mmap pages %d",
+// 	finefs_dbgv("%s: inode %lu, deleted mmap pages %d",
 // 			__func__, sih->ino, deleted);
 
 // 	if (sih->mmap_pages == 0) {
@@ -277,22 +277,22 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb, struct nova_i
 // 	return 0;
 // }
 
-// static int nova_zero_cache_tree(struct super_block *sb,
-// 	struct nova_inode *pi, struct nova_inode_info_header *sih,
+// static int finefs_zero_cache_tree(struct super_block *sb,
+// 	struct finefs_inode *pi, struct finefs_inode_info_header *sih,
 // 	unsigned long start_blocknr)
 // {
 // 	unsigned long block;
 // 	unsigned long i;
 // 	void *addr;
 
-// 	nova_dbgv("%s: inode %lu, mmap pages %lu, start %lu, last %lu, "
+// 	finefs_dbgv("%s: inode %lu, mmap pages %lu, start %lu, last %lu, "
 // 			"size %lu", __func__, sih->ino, sih->mmap_pages,
 // 			start_blocknr, sih->high_dirty, sih->i_size);
 
 // 	for (i = start_blocknr; i <= sih->high_dirty; i++) {
 // 		block = (unsigned long)radix_tree_lookup(&sih->cache_tree, i);
 // 		if (block) {
-// 			addr = nova_get_block(sb, block);
+// 			addr = finefs_get_block(sb, block);
 // 			memset(addr, 0, PAGE_SIZE);
 // 		}
 // 	}
@@ -301,43 +301,43 @@ static int nova_free_contiguous_log_blocks(struct super_block *sb, struct nova_i
 // }
 
 // 删除[start_blocknr, last_blocknr]的数据块
-int nova_delete_file_tree(struct super_block *sb, struct nova_inode_info_header *sih,
+int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_header *sih,
                           unsigned long start_blocknr, unsigned long last_blocknr, bool delete_nvmm,
                           bool delete_mmap) {
-    struct nova_file_write_entry *entry;
-    struct nova_inode *pi;
+    struct finefs_file_write_entry *entry;
+    struct finefs_inode *pi;
     unsigned long free_blocknr = 0, num_free = 0;
     unsigned long pgoff = start_blocknr;
     timing_t delete_time;
     int freed = 0;
     void *ret;
 
-    pi = (struct nova_inode *)nova_get_block(sb, sih->pi_addr);
+    pi = (struct finefs_inode *)finefs_get_block(sb, sih->pi_addr);
 
-    NOVA_START_TIMING(delete_file_tree_t, delete_time);
+    FINEFS_START_TIMING(delete_file_tree_t, delete_time);
 
     // if (delete_mmap && sih->mmap_pages) {
     //     r_error("un support mmap");
-    //     // nova_delete_cache_tree(sb, pi, sih, start_blocknr,
+    //     // finefs_delete_cache_tree(sb, pi, sih, start_blocknr,
     //     // 				last_blocknr);
     // }
 
     // if (sih->mmap_pages && start_blocknr <= sih->high_dirty)
-    // 	nova_zero_cache_tree(sb, pi, sih, start_blocknr);
+    // 	finefs_zero_cache_tree(sb, pi, sih, start_blocknr);
 
     pgoff = start_blocknr;
     while (pgoff <= last_blocknr) {
-        entry = (struct nova_file_write_entry *)radix_tree_lookup(&sih->tree, pgoff);
+        entry = (struct finefs_file_write_entry *)radix_tree_lookup(&sih->tree, pgoff);
         if (entry) {
             ret = radix_tree_delete(&sih->tree, pgoff);
             BUG_ON(!ret || ret != entry);
             if (delete_nvmm)
-                freed += nova_free_contiguous_data_blocks(sb, sih, pi, entry, pgoff, 1,
+                freed += finefs_free_contiguous_data_blocks(sb, sih, pi, entry, pgoff, 1,
                                                           &free_blocknr, &num_free);
             pgoff++;
         } else {
             /* We are finding a hole. Jump to the next entry. */
-            entry = nova_find_next_entry(sb, sih, pgoff);
+            entry = finefs_find_next_entry(sb, sih, pgoff);
             if (!entry) break;
             pgoff++;
             pgoff = pgoff > entry->pgoff ? pgoff : entry->pgoff;
@@ -345,30 +345,30 @@ int nova_delete_file_tree(struct super_block *sb, struct nova_inode_info_header 
     }
 
     if (free_blocknr) {
-        nova_free_data_blocks(sb, pi, free_blocknr, num_free);
+        finefs_free_data_blocks(sb, pi, free_blocknr, num_free);
         freed += num_free;
     }
 
-    NOVA_END_TIMING(delete_file_tree_t, delete_time);
+    FINEFS_END_TIMING(delete_file_tree_t, delete_time);
     rd_info(
         "Inode %lu: delete file tree from pgoff %lu to %lu, "
         "%d blocks freed",
-        pi->nova_ino, start_blocknr, last_blocknr, freed);
+        pi->finefs_ino, start_blocknr, last_blocknr, freed);
 
     return freed;
 }
 
-static int nova_free_dram_resource(struct super_block *sb, struct nova_inode_info_header *sih) {
+static int finefs_free_dram_resource(struct super_block *sb, struct finefs_inode_info_header *sih) {
     unsigned long last_blocknr;
     int freed = 0;
 
     if (!(S_ISREG(sih->i_mode)) && !(S_ISDIR(sih->i_mode))) return 0;
 
     if (S_ISREG(sih->i_mode)) {
-        last_blocknr = nova_get_last_blocknr(sb, sih);
-        freed = nova_delete_file_tree(sb, sih, 0, last_blocknr, false, true);
+        last_blocknr = finefs_get_last_blocknr(sb, sih);
+        freed = finefs_delete_file_tree(sb, sih, 0, last_blocknr, false, true);
     } else {
-        nova_delete_dir_tree(sb, sih);
+        finefs_delete_dir_tree(sb, sih);
         freed = 1;
     }
 
@@ -378,14 +378,14 @@ static int nova_free_dram_resource(struct super_block *sb, struct nova_inode_inf
 /*
  * Free data blocks from inode in the range start <=> end
  */
-static void nova_truncate_file_blocks(struct inode *inode, loff_t start,
+static void finefs_truncate_file_blocks(struct inode *inode, loff_t start,
 				    loff_t end)
 {
 	struct super_block *sb = inode->i_sb;
-	struct nova_inode *pi = nova_get_inode(sb, inode);
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
-	unsigned int data_bits = blk_type_to_shift[pi->i_blk_type];
+	struct finefs_inode *pi = finefs_get_inode(sb, inode);
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
+	unsigned int data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
 	unsigned long first_blocknr, last_blocknr;
 	int freed = 0;
 
@@ -403,7 +403,7 @@ static void nova_truncate_file_blocks(struct inode *inode, loff_t start,
 	if (first_blocknr > last_blocknr)
 		return;
 
-	freed = nova_delete_file_tree(sb, sih, first_blocknr,
+	freed = finefs_delete_file_tree(sb, sih, first_blocknr,
 						last_blocknr, 1, 0);
 
 	inode->i_blocks -= (freed * (1 << (data_bits -
@@ -416,11 +416,11 @@ static void nova_truncate_file_blocks(struct inode *inode, loff_t start,
 	return;
 }
 
-struct nova_file_write_entry *nova_find_next_entry(struct super_block *sb,
-                                                   struct nova_inode_info_header *sih,
+struct finefs_file_write_entry *finefs_find_next_entry(struct super_block *sb,
+                                                   struct finefs_inode_info_header *sih,
                                                    pgoff_t pgoff) {
-    struct nova_file_write_entry *entry = NULL;
-    struct nova_file_write_entry *entries[1];
+    struct finefs_file_write_entry *entry = NULL;
+    struct finefs_file_write_entry *entries[1];
     int nr_entries;
 
     nr_entries = radix_tree_gang_lookup(&sih->tree, (void **)entries, pgoff, 1);
@@ -438,12 +438,12 @@ struct nova_file_write_entry *nova_find_next_entry(struct super_block *sb,
  * @hole_found: indicates whether a hole was found
  * hole: whether we are looking for a hole or data
  */
-// static int nova_lookup_hole_in_range(struct super_block *sb,
-// 	struct nova_inode_info_header *sih,
+// static int finefs_lookup_hole_in_range(struct super_block *sb,
+// 	struct finefs_inode_info_header *sih,
 // 	unsigned long first_blocknr, unsigned long last_blocknr,
 // 	int *data_found, int *hole_found, int hole)
 // {
-// 	struct nova_file_write_entry *entry;
+// 	struct finefs_file_write_entry *entry;
 // 	unsigned long blocks = 0;
 // 	unsigned long pgoff, old_pgoff;
 
@@ -458,7 +458,7 @@ struct nova_file_write_entry *nova_find_next_entry(struct super_block *sb,
 // 			pgoff++;
 // 		} else {
 // 			*hole_found = 1;
-// 			entry = nova_find_next_entry(sb, sih, pgoff);
+// 			entry = finefs_find_next_entry(sb, sih, pgoff);
 // 			pgoff++;
 // 			if (entry) {
 // 				pgoff = pgoff > entry->pgoff ?
@@ -476,10 +476,10 @@ struct nova_file_write_entry *nova_find_next_entry(struct super_block *sb,
 // }
 
 // file 写操作时，更新radix tree
-int nova_assign_write_entry(struct super_block *sb, struct nova_inode *pi,
-                            struct nova_inode_info_header *sih, struct nova_file_write_entry *entry,
+int finefs_assign_write_entry(struct super_block *sb, struct finefs_inode *pi,
+                            struct finefs_inode_info_header *sih, struct finefs_file_write_entry *entry,
                             bool free) {
-    struct nova_file_write_entry *old_entry;
+    struct finefs_file_write_entry *old_entry;
     void **pentry;
     unsigned long old_nvmm;
     unsigned long start_pgoff = entry->pgoff;
@@ -489,17 +489,17 @@ int nova_assign_write_entry(struct super_block *sb, struct nova_inode *pi,
     int ret;
     timing_t assign_time;
 
-    NOVA_START_TIMING(assign_t, assign_time);
+    FINEFS_START_TIMING(assign_t, assign_time);
     for (i = 0; i < num; i++) {  // 插入也只能一个一个page插入
         curr_pgoff = start_pgoff + i;
 
         pentry = radix_tree_lookup_slot(&sih->tree, curr_pgoff);
         if (pentry) {
-            old_entry = (struct nova_file_write_entry *)radix_tree_deref_slot(pentry);
+            old_entry = (struct finefs_file_write_entry *)radix_tree_deref_slot(pentry);
             old_nvmm = get_nvmm(sb, sih, old_entry, curr_pgoff);
             if (free) {
                 old_entry->invalid_pages++;
-                nova_free_data_blocks(sb, pi, old_nvmm, 1);
+                finefs_free_data_blocks(sb, pi, old_nvmm, 1);
                 pi->i_blocks--;
             }
             radix_tree_replace_slot(pentry, entry);
@@ -514,26 +514,26 @@ int nova_assign_write_entry(struct super_block *sb, struct nova_inode *pi,
     }
 
 out:
-    NOVA_END_TIMING(assign_t, assign_time);
+    FINEFS_END_TIMING(assign_t, assign_time);
 
     return ret;
 }
 
 // 根据NVM的信息，初始化内存inode
-static int nova_read_inode(struct super_block *sb, struct inode *inode, u64 pi_addr) {
-    struct nova_inode_info *si = NOVA_I(inode);
-    struct nova_inode *pi;
-    struct nova_inode_info_header *sih = &si->header;
+static int finefs_read_inode(struct super_block *sb, struct inode *inode, u64 pi_addr) {
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode *pi;
+    struct finefs_inode_info_header *sih = &si->header;
     int ret = -EIO;
     unsigned long ino;
 
-    pi = (struct nova_inode *)nova_get_block(sb, pi_addr);
+    pi = (struct finefs_inode *)finefs_get_block(sb, pi_addr);
     inode->i_mode = sih->i_mode;
     // i_uid_write(inode, le32_to_cpu(pi->i_uid));
     // i_gid_write(inode, le32_to_cpu(pi->i_gid));
     set_nlink(inode, le16_to_cpu(pi->i_links_count));
     inode->i_generation = le32_to_cpu(pi->i_generation);
-    nova_set_inode_flags(inode, pi, le32_to_cpu(pi->i_flags));
+    finefs_set_inode_flags(inode, pi, le32_to_cpu(pi->i_flags));
     ino = inode->i_ino;
 
     /* check if the inode is active. */
@@ -546,24 +546,24 @@ static int nova_read_inode(struct super_block *sb, struct inode *inode, u64 pi_a
     }
 
     inode->i_blocks = le64_to_cpu(pi->i_blocks);
-    // inode->i_mapping->a_ops = &nova_aops_dax;
+    // inode->i_mapping->a_ops = &finefs_aops_dax;
 
     switch (inode->i_mode & S_IFMT) {
         case S_IFREG:
-            inode->i_op = &nova_file_inode_operations;
-            inode->i_fop = &nova_dax_file_operations;
+            inode->i_op = &finefs_file_inode_operations;
+            inode->i_fop = &finefs_dax_file_operations;
             break;
         case S_IFDIR:
-            inode->i_op = &nova_dir_inode_operations;
-            inode->i_fop = &nova_dir_operations;
+            inode->i_op = &finefs_dir_inode_operations;
+            inode->i_fop = &finefs_dir_operations;
             break;
         case S_IFLNK:
             r_error("un support S_IFLNK");
-            inode->i_op = &nova_symlink_inode_operations;
+            inode->i_op = &finefs_symlink_inode_operations;
             break;
         default:
             r_error("un support special_inode");
-            inode->i_op = &nova_special_inode_operations;
+            inode->i_op = &finefs_special_inode_operations;
             // init_special_inode(inode, inode->i_mode,
             // 		   le32_to_cpu(pi->dev.rdev));
             break;
@@ -583,22 +583,22 @@ bad_inode:
     return ret;
 }
 
-static void nova_get_inode_flags(struct inode *inode, struct nova_inode *pi) {
+static void finefs_get_inode_flags(struct inode *inode, struct finefs_inode *pi) {
     unsigned int flags = inode->i_flags;
-    unsigned int nova_flags = le32_to_cpu(pi->i_flags);
+    unsigned int finefs_flags = le32_to_cpu(pi->i_flags);
 
-    nova_flags &= ~(FS_SYNC_FL | FS_APPEND_FL | FS_IMMUTABLE_FL | FS_NOATIME_FL | FS_DIRSYNC_FL);
-    if (flags & S_SYNC) nova_flags |= FS_SYNC_FL;
-    if (flags & S_APPEND) nova_flags |= FS_APPEND_FL;
-    if (flags & S_IMMUTABLE) nova_flags |= FS_IMMUTABLE_FL;
-    if (flags & S_NOATIME) nova_flags |= FS_NOATIME_FL;
-    if (flags & S_DIRSYNC) nova_flags |= FS_DIRSYNC_FL;
+    finefs_flags &= ~(FS_SYNC_FL | FS_APPEND_FL | FS_IMMUTABLE_FL | FS_NOATIME_FL | FS_DIRSYNC_FL);
+    if (flags & S_SYNC) finefs_flags |= FS_SYNC_FL;
+    if (flags & S_APPEND) finefs_flags |= FS_APPEND_FL;
+    if (flags & S_IMMUTABLE) finefs_flags |= FS_IMMUTABLE_FL;
+    if (flags & S_NOATIME) finefs_flags |= FS_NOATIME_FL;
+    if (flags & S_DIRSYNC) finefs_flags |= FS_DIRSYNC_FL;
 
-    pi->i_flags = cpu_to_le32(nova_flags);
+    pi->i_flags = cpu_to_le32(finefs_flags);
 }
 
-static void nova_update_inode(struct inode *inode, struct nova_inode *pi) {
-    nova_memunlock_inode(inode->i_sb, pi);
+static void finefs_update_inode(struct inode *inode, struct finefs_inode *pi) {
+    finefs_memunlock_inode(inode->i_sb, pi);
     pi->i_mode = cpu_to_le16(inode->i_mode);
     // pi->i_uid = cpu_to_le32(i_uid_read(inode));
     // pi->i_gid = cpu_to_le32(i_gid_read(inode));
@@ -609,18 +609,18 @@ static void nova_update_inode(struct inode *inode, struct nova_inode *pi) {
     pi->i_ctime = cpu_to_le32(inode->i_ctime.tv_sec);
     pi->i_mtime = cpu_to_le32(inode->i_mtime.tv_sec);
     pi->i_generation = cpu_to_le32(inode->i_generation);
-    nova_get_inode_flags(inode, pi);
+    finefs_get_inode_flags(inode, pi);
 
     // if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode))
     // 	pi->dev.rdev = cpu_to_le32(inode->i_rdev);
 
-    nova_memlock_inode(inode->i_sb, pi);
+    finefs_memlock_inode(inode->i_sb, pi);
 }
 
-static int nova_alloc_unused_inode(struct super_block *sb, int cpuid, unsigned long *ino) {
-    struct nova_sb_info *sbi = NOVA_SB(sb);
+static int finefs_alloc_unused_inode(struct super_block *sb, int cpuid, unsigned long *ino) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
     struct inode_map *inode_map;
-    struct nova_range_node *i, *next_i;
+    struct finefs_range_node *i, *next_i;
     struct rb_node *temp, *next;
     unsigned long next_range_low;
     unsigned long new_ino;
@@ -636,7 +636,7 @@ static int nova_alloc_unused_inode(struct super_block *sb, int cpuid, unsigned l
         next_i = NULL;
         next_range_low = MAX_INODE;
     } else {
-        next_i = container_of(next, struct nova_range_node, node);
+        next_i = container_of(next, struct finefs_range_node, node);
         next_range_low = next_i->range_low;
     }
 
@@ -646,7 +646,7 @@ static int nova_alloc_unused_inode(struct super_block *sb, int cpuid, unsigned l
         /* Fill the gap completely */
         i->range_high = next_i->range_high;
         rb_erase(&next_i->node, &inode_map->inode_inuse_tree);
-        nova_free_inode_node(sb, next_i);
+        finefs_free_inode_node(sb, next_i);
         inode_map->num_range_node_inode--;
     } else if (new_ino < (next_range_low - 1)) {
         /* Aligns to left */
@@ -664,12 +664,12 @@ static int nova_alloc_unused_inode(struct super_block *sb, int cpuid, unsigned l
     return 0;
 }
 
-static int nova_free_inuse_inode(struct super_block *sb, unsigned long ino)
+static int finefs_free_inuse_inode(struct super_block *sb, unsigned long ino)
 {
-	struct nova_sb_info *sbi = NOVA_SB(sb);
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
 	struct inode_map *inode_map;
-	struct nova_range_node *i = NULL;
-	struct nova_range_node *curr_node;
+	struct finefs_range_node *i = NULL;
+	struct finefs_range_node *curr_node;
 	int found = 0;
 	int cpuid = ino % sbi->cpus;
 	unsigned long internal_ino = ino / sbi->cpus;
@@ -679,7 +679,7 @@ static int nova_free_inuse_inode(struct super_block *sb, unsigned long ino)
 	inode_map = &sbi->inode_maps[cpuid];
 
 	mutex_lock(&inode_map->inode_table_mutex);
-	found = nova_search_inodetree(sbi, ino, &i);
+	found = finefs_search_inodetree(sbi, ino, &i);
 	if (!found) {
 		r_error("%s ERROR: ino %lu not found", __func__, ino);
 		mutex_unlock(&inode_map->inode_table_mutex);
@@ -689,7 +689,7 @@ static int nova_free_inuse_inode(struct super_block *sb, unsigned long ino)
 	if ((internal_ino == i->range_low) && (internal_ino == i->range_high)) {
 		/* fits entire node */
 		rb_erase(&i->node, &inode_map->inode_inuse_tree);
-		nova_free_inode_node(sb, i);
+		finefs_free_inode_node(sb, i);
 		inode_map->num_range_node_inode--;
 		goto block_found;
 	}
@@ -705,7 +705,7 @@ static int nova_free_inuse_inode(struct super_block *sb, unsigned long ino)
 	}
 	if ((internal_ino > i->range_low) && (internal_ino < i->range_high)) {
 		/* Aligns somewhere in the middle */
-		curr_node = nova_alloc_inode_node(sb);
+		curr_node = finefs_alloc_inode_node(sb);
 		log_assert(curr_node);
 		if (curr_node == NULL) {
 			/* returning without freeing the block */
@@ -714,9 +714,9 @@ static int nova_free_inuse_inode(struct super_block *sb, unsigned long ino)
 		curr_node->range_low = internal_ino + 1;
 		curr_node->range_high = i->range_high;
 		i->range_high = internal_ino - 1;
-		ret = nova_insert_inodetree(sbi, curr_node, cpuid);
+		ret = finefs_insert_inodetree(sbi, curr_node, cpuid);
 		if (ret) {
-			nova_free_inode_node(sb, curr_node);
+			finefs_free_inode_node(sb, curr_node);
 			goto err;
 		}
 		inode_map->num_range_node_inode++;
@@ -745,17 +745,17 @@ block_found:
  * through the filesystem because the directory entry
  * has been deleted earlier.
  */
-static int nova_free_inode(struct inode *inode,
-	struct nova_inode_info_header *sih)
+static int finefs_free_inode(struct inode *inode,
+	struct finefs_inode_info_header *sih)
 {
 	struct super_block *sb = inode->i_sb;
-	struct nova_inode *pi;
+	struct finefs_inode *pi;
 	int err = 0;
 	timing_t free_time;
 
-	NOVA_START_TIMING(free_inode_t, free_time);
+	FINEFS_START_TIMING(free_inode_t, free_time);
 
-	pi = nova_get_inode(sb, inode);
+	pi = finefs_get_inode(sb, inode);
 
 	if (pi->valid) {
 		rd_info("%s: inode %lu still valid",
@@ -763,9 +763,9 @@ static int nova_free_inode(struct inode *inode,
 		pi->valid = 0;
 	}
 
-	if (pi->nova_ino != inode->i_ino) {
+	if (pi->finefs_ino != inode->i_ino) {
 		r_error("%s: inode %lu ino does not match: %lu",
-				__func__, inode->i_ino, pi->nova_ino);
+				__func__, inode->i_ino, pi->finefs_ino);
 		rd_info("inode size %lu, pi addr 0x%lx, pi head 0x%lx, "
 				"tail 0x%lx, mode %u",
 				inode->i_size, sih->pi_addr, pi->log_head,
@@ -773,10 +773,10 @@ static int nova_free_inode(struct inode *inode,
 		rd_info("sih: ino %lu, inode size %lu, mode %u, "
 				"inode mode %u", sih->ino, sih->i_size,
 				sih->i_mode, inode->i_mode);
-		// nova_print_inode_log(sb, inode);
+		// finefs_print_inode_log(sb, inode);
 	}
 
-	nova_free_inode_log(sb, pi);
+	finefs_free_inode_log(sb, pi);
 	pi->i_blocks = 0;
 
 	sih->log_pages = 0;
@@ -784,16 +784,16 @@ static int nova_free_inode(struct inode *inode,
 	sih->pi_addr = 0;
 	sih->i_size = 0;
 
-	err = nova_free_inuse_inode(sb, pi->nova_ino);
+	err = finefs_free_inuse_inode(sb, pi->finefs_ino);
 
-	NOVA_END_TIMING(free_inode_t, free_time);
+	FINEFS_END_TIMING(free_inode_t, free_time);
 	return err;
 }
 
 // 获取指定ino的内存结构，如果不存在，则分配空间返回
 // 返回的inode已经存储在sb的哈希map中
-struct inode *nova_iget(struct super_block *sb, unsigned long ino) {
-    struct nova_inode_info *si;
+struct inode *finefs_iget(struct super_block *sb, unsigned long ino) {
+    struct finefs_inode_info *si;
     struct inode *inode;
     u64 pi_addr;
     int err;
@@ -804,14 +804,14 @@ struct inode *nova_iget(struct super_block *sb, unsigned long ino) {
     if (inode->i_state) return inode;
 
     // 新分配的，需要初始化
-    si = NOVA_I(inode);
+    si = FINEFS_I(inode);
 
     rd_info("%s: init inode %lu", __func__, ino);
 
-    if (ino == NOVA_ROOT_INO) {
-        pi_addr = NOVA_ROOT_INO_START;
+    if (ino == FINEFS_ROOT_INO) {
+        pi_addr = FINEFS_ROOT_INO_START;
     } else {
-        err = nova_get_inode_address(sb, ino, &pi_addr, 0);
+        err = finefs_get_inode_address(sb, ino, &pi_addr, 0);
         if (err) {
             r_error("%s: get inode %lu address failed %d", __func__, ino, err);
             goto fail;
@@ -823,15 +823,15 @@ struct inode *nova_iget(struct super_block *sb, unsigned long ino) {
         goto fail;
     }
 
-    // 主要初始化nova_inode_info_header
-    err = nova_rebuild_inode(sb, si, pi_addr);
+    // 主要初始化finefs_inode_info_header
+    err = finefs_rebuild_inode(sb, si, pi_addr);
     if (err) {
-        r_error("%s: nova_rebuild_inode fail, inode = %lu, err = %d", __func__, ino, err);
+        r_error("%s: finefs_rebuild_inode fail, inode = %lu, err = %d", __func__, ino, err);
         goto fail;
     }
 
     // 初始化内存inode
-    err = nova_read_inode(sb, inode, pi_addr);
+    err = finefs_read_inode(sb, inode, pi_addr);
     if (unlikely(err)) goto fail;
     inode->i_ino = ino;
 
@@ -844,15 +844,15 @@ fail:
     return nullptr;
 }
 
-unsigned long nova_get_last_blocknr(struct super_block *sb, struct nova_inode_info_header *sih) {
-    struct nova_inode *pi;
+unsigned long finefs_get_last_blocknr(struct super_block *sb, struct finefs_inode_info_header *sih) {
+    struct finefs_inode *pi;
     unsigned long last_blocknr;
     unsigned int btype;
     unsigned int data_bits;
 
-    pi = (struct nova_inode *)nova_get_block(sb, sih->pi_addr);
+    pi = (struct finefs_inode *)finefs_get_block(sb, sih->pi_addr);
     btype = pi->i_blk_type;
-    data_bits = blk_type_to_shift[btype];
+    data_bits = finefs_blk_type_to_shift[btype];
 
     if (sih->i_size == 0)
         last_blocknr = 0;
@@ -862,12 +862,12 @@ unsigned long nova_get_last_blocknr(struct super_block *sb, struct nova_inode_in
     return last_blocknr;
 }
 
-void nova_evict_inode(struct inode *inode)
+void finefs_evict_inode(struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
-	struct nova_inode *pi = nova_get_inode(sb, inode);
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
+	struct finefs_inode *pi = finefs_get_inode(sb, inode);
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
 	unsigned long last_blocknr;
 	timing_t evict_time;
 	int err = 0;
@@ -881,7 +881,7 @@ void nova_evict_inode(struct inode *inode)
 		goto out;
 	}
 
-	NOVA_START_TIMING(evict_inode_t, evict_time);
+	FINEFS_START_TIMING(evict_inode_t, evict_time);
 	rdv_proc("%s: %lu", __func__, inode->i_ino);
     // FIXME: 目前保证删除时，link数为0
     log_assert(!inode->i_nlink);
@@ -893,21 +893,21 @@ void nova_evict_inode(struct inode *inode)
 		/* We need the log to free the blocks from the b-tree */
 		switch (inode->i_mode & S_IFMT) {
 		case S_IFREG:
-			last_blocknr = nova_get_last_blocknr(sb, sih);
+			last_blocknr = finefs_get_last_blocknr(sb, sih);
 			rd_info("%s: file ino %lu", __func__, inode->i_ino);
-			freed = nova_delete_file_tree(sb, sih, 0,
+			freed = finefs_delete_file_tree(sb, sih, 0,
 						last_blocknr, true, true);
 			break;
 		case S_IFDIR:
 			rd_info("%s: dir ino %lu", __func__, inode->i_ino);
-			nova_delete_dir_tree(sb, sih);
+			finefs_delete_dir_tree(sb, sih);
 			break;
 		case S_IFLNK:
             log_assert(0);
 			/* Log will be freed later */
 			rd_info("%s: symlink ino %lu",
 					__func__, inode->i_ino);
-			freed = nova_delete_file_tree(sb, sih, 0, 0,
+			freed = finefs_delete_file_tree(sb, sih, 0, 0,
 							true, true);
 			break;
 		default:
@@ -919,34 +919,34 @@ void nova_evict_inode(struct inode *inode)
 
 		rdv_proc("%s: Freed %d", __func__, freed);
 		/* Then we can free the inode */
-		err = nova_free_inode(inode, sih);
+		err = finefs_free_inode(inode, sih);
 		if (err) {
 			r_error("%s: free inode %lu failed",
 					__func__, inode->i_ino);
 			goto out;
 		}
-		pi = NULL; /* we no longer own the nova_inode */
+		pi = NULL; /* we no longer own the finefs_inode */
 
 		inode->i_mtime = inode->i_ctime = get_cur_time_spec();
 		inode->i_size = 0;
 	}
 out:
 	if (destroy == 0)
-		nova_free_dram_resource(sb, sih);
+		finefs_free_dram_resource(sb, sih);
 
 	/* TODO: Since we don't use page-cache, do we really need the following
 	 * call? */
 	// truncate_inode_pages(&inode->i_data, 0);
 
 	clear_inode(inode);
-	NOVA_END_TIMING(evict_inode_t, evict_time);
+	FINEFS_END_TIMING(evict_inode_t, evict_time);
 }
 
 /* Returns 0 on failure */
 // pi_addr: inode在NVM中的地址
 // 返回分配的inumber
-u64 nova_new_nova_inode(struct super_block *sb, u64 *pi_addr) {
-    struct nova_sb_info *sbi = NOVA_SB(sb);
+u64 finefs_new_finefs_inode(struct super_block *sb, u64 *pi_addr) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
     struct inode_map *inode_map;
     unsigned long free_ino = 0;
     int map_id;
@@ -954,7 +954,7 @@ u64 nova_new_nova_inode(struct super_block *sb, u64 *pi_addr) {
     int ret;
     timing_t new_inode_time;
 
-    NOVA_START_TIMING(new_nova_inode_t, new_inode_time);
+    FINEFS_START_TIMING(new_finefs_inode_t, new_inode_time);
     map_id = sbi->map_id;
     // TODO: 原子递增才行
     sbi->map_id = (sbi->map_id + 1) % sbi->cpus;
@@ -962,14 +962,14 @@ u64 nova_new_nova_inode(struct super_block *sb, u64 *pi_addr) {
     inode_map = &sbi->inode_maps[map_id];
 
     mutex_lock(&inode_map->inode_table_mutex);
-    ret = nova_alloc_unused_inode(sb, map_id, &free_ino);
+    ret = finefs_alloc_unused_inode(sb, map_id, &free_ino);
     if (ret) {
         rd_info("%s: alloc inode number failed %d", __func__, ret);
         mutex_unlock(&inode_map->inode_table_mutex);
         return 0;
     }
 
-    ret = nova_get_inode_address(sb, free_ino, pi_addr, 1);
+    ret = finefs_get_inode_address(sb, free_ino, pi_addr, 1);
     if (ret) {
         rd_info("%s: get inode address failed %d", __func__, ret);
         mutex_unlock(&inode_map->inode_table_mutex);
@@ -980,27 +980,27 @@ u64 nova_new_nova_inode(struct super_block *sb, u64 *pi_addr) {
 
     ino = free_ino;
 
-    NOVA_END_TIMING(new_nova_inode_t, new_inode_time);
+    FINEFS_END_TIMING(new_finefs_inode_t, new_inode_time);
     return ino;
 }
 
 // 新建一个内存inode, 并引用
-struct inode *nova_new_vfs_inode(enum nova_new_inode_type type, struct inode *dir, u64 pi_addr,
+struct inode *finefs_new_vfs_inode(enum finefs_new_inode_type type, struct inode *dir, u64 pi_addr,
                                  u64 ino, umode_t mode, size_t size, dev_t rdev,
                                  const struct qstr *qstr) {
     struct super_block *sb;
-    struct nova_sb_info *sbi;
+    struct finefs_sb_info *sbi;
     struct inode *inode;
-    struct nova_inode *diri = NULL;
-    struct nova_inode_info *si;
-    struct nova_inode_info_header *sih = NULL;
-    struct nova_inode *pi;
+    struct finefs_inode *diri = NULL;
+    struct finefs_inode_info *si;
+    struct finefs_inode_info_header *sih = NULL;
+    struct finefs_inode *pi;
     int errval;
     timing_t new_inode_time;
 
-    NOVA_START_TIMING(new_vfs_inode_t, new_inode_time);
+    FINEFS_START_TIMING(new_vfs_inode_t, new_inode_time);
     sb = dir->i_sb;
-    sbi = (struct nova_sb_info *)sb->s_fs_info;
+    sbi = (struct finefs_sb_info *)sb->s_fs_info;
     inode = alloc_inode(sb);
     if (!inode) {
         errval = -ENOMEM;
@@ -1018,36 +1018,36 @@ struct inode *nova_new_vfs_inode(enum nova_new_inode_type type, struct inode *di
     inode->i_ino = ino;
     inode_insert(sb, inode);
 
-    diri = nova_get_inode(sb, dir);
+    diri = finefs_get_inode(sb, dir);
     if (!diri) {
-        r_error("unexpected nova_get_inode fail!");
+        r_error("unexpected finefs_get_inode fail!");
         errval = -EACCES;
         goto fail1;
     }
 
-    pi = (struct nova_inode *)nova_get_block(sb, pi_addr);
+    pi = (struct finefs_inode *)finefs_get_block(sb, pi_addr);
     rdv_proc("%s: allocating inode %lu @ 0x%lx", __func__, ino, pi_addr);
 
     switch (type) {
         case TYPE_CREATE:
-            inode->i_op = &nova_file_inode_operations;
-            // inode->i_mapping->a_ops = &nova_aops_dax;
-            inode->i_fop = &nova_dax_file_operations;
+            inode->i_op = &finefs_file_inode_operations;
+            // inode->i_mapping->a_ops = &finefs_aops_dax;
+            inode->i_fop = &finefs_dax_file_operations;
             break;
         case TYPE_MKNOD:
             r_error("Un support TYPE_MKNOD");
             // init_special_inode(inode, mode, rdev);
-            // inode->i_op = &nova_special_inode_operations;
+            // inode->i_op = &finefs_special_inode_operations;
             break;
         case TYPE_SYMLINK:  // 符号链接
             r_error("Un support TYPE_SYMLINK");
-            inode->i_op = &nova_symlink_inode_operations;
-            // inode->i_mapping->a_ops = &nova_aops_dax;
+            inode->i_op = &finefs_symlink_inode_operations;
+            // inode->i_mapping->a_ops = &finefs_aops_dax;
             break;
         case TYPE_MKDIR:
-            inode->i_op = &nova_dir_inode_operations;
-            inode->i_fop = &nova_dir_operations;
-            // inode->i_mapping->a_ops = &nova_aops_dax;
+            inode->i_op = &finefs_dir_inode_operations;
+            inode->i_fop = &finefs_dir_operations;
+            // inode->i_mapping->a_ops = &finefs_aops_dax;
             set_nlink(inode, 2);
             break;
         default:
@@ -1059,33 +1059,33 @@ struct inode *nova_new_vfs_inode(enum nova_new_inode_type type, struct inode *di
      * Pi is part of the dir log so no transaction is needed,
      * but we need to flush to NVMM.
      */
-    nova_memunlock_inode(sb, pi);
-    pi->i_blk_type = NOVA_DEFAULT_BLOCK_TYPE;
-    pi->i_flags = nova_mask_flags(mode, diri->i_flags);
+    finefs_memunlock_inode(sb, pi);
+    pi->i_blk_type = FINEFS_DEFAULT_BLOCK_TYPE;
+    pi->i_flags = finefs_mask_flags(mode, diri->i_flags);
     pi->log_head = 0;
     pi->log_tail = 0;
-    pi->nova_ino = ino;
-    nova_memlock_inode(sb, pi);
+    pi->finefs_ino = ino;
+    finefs_memlock_inode(sb, pi);
 
-    si = NOVA_I(inode);
+    si = FINEFS_I(inode);
     sih = &si->header;
-    nova_init_header(sb, sih, inode->i_mode);
+    finefs_init_header(sb, sih, inode->i_mode);
     sih->pi_addr = pi_addr;
     sih->ino = ino;
 
-    nova_update_inode(inode, pi);
+    finefs_update_inode(inode, pi);
 
-    nova_set_inode_flags(inode, pi, le32_to_cpu(pi->i_flags));
+    finefs_set_inode_flags(inode, pi, le32_to_cpu(pi->i_flags));
 
     // if (insert_inode_locked(inode) < 0) {
-    // 	r_error(sb, "nova_new_inode failed ino %lx", inode->i_ino);
+    // 	r_error(sb, "finefs_new_inode failed ino %lx", inode->i_ino);
     // 	errval = -EINVAL;
     // 	goto fail1;
     // }
 
-    nova_flush_buffer(&pi, NOVA_INODE_SIZE, 0);
+    finefs_flush_buffer(&pi, FINEFS_INODE_SIZE, 0);
     inode_set_valid(inode);
-    NOVA_END_TIMING(new_vfs_inode_t, new_inode_time);
+    FINEFS_END_TIMING(new_vfs_inode_t, new_inode_time);
     return inode;
 fail1:
     // 	make_bad_inode(inode);
@@ -1093,12 +1093,12 @@ fail1:
     inode_unref(inode);
     inode_delete(sb, inode);
 fail2:
-    NOVA_END_TIMING(new_vfs_inode_t, new_inode_time);
+    FINEFS_END_TIMING(new_vfs_inode_t, new_inode_time);
     // return ERR_PTR(errval);
     return nullptr;
 }
 
-int nova_write_inode(struct inode *inode, struct writeback_control *wbc) {
+int finefs_write_inode(struct inode *inode, struct writeback_control *wbc) {
     /* write_inode should never be called because we always keep our inodes
      * clean. So let us know if write_inode ever gets called. */
     //	BUG();
@@ -1107,32 +1107,32 @@ int nova_write_inode(struct inode *inode, struct writeback_control *wbc) {
 
 /*
  * dirty_inode() is called from mark_inode_dirty_sync()
- * usually dirty_inode should not be called because NOVA always keeps its inodes
+ * usually dirty_inode should not be called because FINEFS always keeps its inodes
  * clean. Only exception is touch_atime which calls dirty_inode to update the
  * i_atime field.
  */
-void nova_dirty_inode(struct inode *inode, int flags) {
+void finefs_dirty_inode(struct inode *inode, int flags) {
     struct super_block *sb = inode->i_sb;
-    struct nova_inode *pi = nova_get_inode(sb, inode);
+    struct finefs_inode *pi = finefs_get_inode(sb, inode);
 
     /* only i_atime should have changed if at all.
      * we can do in-place atomic update */
-    nova_memunlock_inode(sb, pi);
+    finefs_memunlock_inode(sb, pi);
     pi->i_atime = cpu_to_le32(inode->i_atime.tv_sec);
-    nova_memlock_inode(sb, pi);
+    finefs_memlock_inode(sb, pi);
     /* Relax atime persistency */
-    nova_flush_buffer(&pi->i_atime, sizeof(pi->i_atime), 0);
+    finefs_flush_buffer(&pi->i_atime, sizeof(pi->i_atime), 0);
 }
 
 /*
  * Zero the tail page. Used in resize request
  * to avoid to keep data in case the file grows again.
  */
-static void nova_clear_last_page_tail(struct super_block *sb,
+static void finefs_clear_last_page_tail(struct super_block *sb,
 	struct inode *inode, loff_t newsize)
 {
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
 	unsigned long offset = newsize & (sb->s_blocksize - 1);
 	unsigned long pgoff, length;
 	u64 nvmm;
@@ -1144,13 +1144,13 @@ static void nova_clear_last_page_tail(struct super_block *sb,
 	length = sb->s_blocksize - offset;
 	pgoff = newsize >> sb->s_blocksize_bits;
 
-	nvmm = nova_find_nvmm_block(sb, si, NULL, pgoff);
+	nvmm = finefs_find_nvmm_block(sb, si, NULL, pgoff);
 	if (nvmm == 0)
 		return;
 
-	nvmm_addr = (char *)nova_get_block(sb, nvmm);
+	nvmm_addr = (char *)finefs_get_block(sb, nvmm);
 	memset(nvmm_addr + offset, 0, length);
-	nova_flush_buffer(nvmm_addr + offset, length, 0);
+	finefs_flush_buffer(nvmm_addr + offset, length, 0);
 
 	/* Clear mmap page */
 	// if (sih->mmap_pages && pgoff <= sih->high_dirty &&
@@ -1158,17 +1158,17 @@ static void nova_clear_last_page_tail(struct super_block *sb,
 	// 	nvmm = (unsigned long)radix_tree_lookup(&sih->cache_tree,
 	// 						pgoff);
 	// 	if (nvmm) {
-	// 		nvmm_addr = nova_get_block(sb, nvmm);
+	// 		nvmm_addr = finefs_get_block(sb, nvmm);
 	// 		memset(nvmm_addr + offset, 0, length);
 	// 	}
 	// }
 }
 
-static void nova_setsize(struct inode *inode, loff_t oldsize, loff_t newsize)
+static void finefs_setsize(struct inode *inode, loff_t oldsize, loff_t newsize)
 {
 	struct super_block *sb = inode->i_sb;
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
 
 	/* We only support truncate regular file */
 	if (!(S_ISREG(inode->i_mode))) {
@@ -1182,7 +1182,7 @@ static void nova_setsize(struct inode *inode, loff_t oldsize, loff_t newsize)
 		__func__, inode->i_ino, oldsize, newsize);
 
 	if (newsize != oldsize) {
-		nova_clear_last_page_tail(sb, inode, newsize);
+		finefs_clear_last_page_tail(sb, inode, newsize);
 		i_size_write(inode, newsize);
 		sih->i_size = newsize;
 	}
@@ -1193,13 +1193,13 @@ static void nova_setsize(struct inode *inode, loff_t oldsize, loff_t newsize)
 	/* synchronize_rcu(); */
 
 	/* FIXME: Do we need to clear truncated DAX pages? */
-//	dax_truncate_page(inode, newsize, nova_dax_get_block);
+//	dax_truncate_page(inode, newsize, finefs_dax_get_block);
 
 	// truncate_pagecache(inode, newsize);
-	nova_truncate_file_blocks(inode, newsize, oldsize);  // 回收移除的block
+	finefs_truncate_file_blocks(inode, newsize, oldsize);  // 回收移除的block
 }
 
-int nova_getattr(struct vfsmount *mnt, struct dentry *dentry,
+int finefs_getattr(struct vfsmount *mnt, struct dentry *dentry,
 		         struct kstat *stat)
 {
 	struct inode *inode;
@@ -1211,8 +1211,8 @@ int nova_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	return 0;
 }
 
-static void nova_update_setattr_entry(struct inode *inode,
-	struct nova_setattr_logentry *entry, struct iattr *attr)
+static void finefs_update_setattr_entry(struct inode *inode,
+	struct finefs_setattr_logentry *entry, struct iattr *attr)
 {
 	unsigned int ia_valid = attr->ia_valid, attr_mask;
 
@@ -1234,14 +1234,14 @@ static void nova_update_setattr_entry(struct inode *inode,
 	else
 		entry->size = cpu_to_le64(inode->i_size);
 
-	nova_flush_buffer(entry, sizeof(struct nova_setattr_logentry), 0);
+	finefs_flush_buffer(entry, sizeof(struct finefs_setattr_logentry), 0);
 }
 
 // 属性还包括文件大小（截断/扩展）
-void nova_apply_setattr_entry(struct super_block *sb, struct nova_inode *pi,
-                              struct nova_inode_info_header *sih,
-                              struct nova_setattr_logentry *entry) {
-    unsigned int data_bits = blk_type_to_shift[pi->i_blk_type];
+void finefs_apply_setattr_entry(struct super_block *sb, struct finefs_inode *pi,
+                              struct finefs_inode_info_header *sih,
+                              struct finefs_setattr_logentry *entry) {
+    unsigned int data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
     unsigned long first_blocknr, last_blocknr;
     loff_t start, end;
     int freed = 0;
@@ -1268,7 +1268,7 @@ void nova_apply_setattr_entry(struct super_block *sb, struct nova_inode *pi,
 
         if (first_blocknr > last_blocknr) goto out;
         // 说明大小被截断了
-        freed = nova_delete_file_tree(sb, sih, first_blocknr, last_blocknr, 0, 0);
+        freed = finefs_delete_file_tree(sb, sih, first_blocknr, last_blocknr, 0, 0);
     }
 out:
     pi->i_size = entry->size;
@@ -1277,50 +1277,50 @@ out:
 }
 
 /* Returns new tail after append */
-static u64 nova_append_setattr_entry(struct super_block *sb,
-	struct nova_inode *pi, struct inode *inode, struct iattr *attr,
+static u64 finefs_append_setattr_entry(struct super_block *sb,
+	struct finefs_inode *pi, struct inode *inode, struct iattr *attr,
 	u64 tail)
 {
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
-	struct nova_setattr_logentry *entry;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
+	struct finefs_setattr_logentry *entry;
 	u64 curr_p, new_tail = 0;
 	int extended = 0;
-	size_t size = sizeof(struct nova_setattr_logentry);
+	size_t size = sizeof(struct finefs_setattr_logentry);
 	timing_t append_time;
 
-	NOVA_START_TIMING(append_setattr_t, append_time);
+	FINEFS_START_TIMING(append_setattr_t, append_time);
 	rd_info("%s: inode %lu attr change",
 				__func__, inode->i_ino);
 
-	curr_p = nova_get_append_head(sb, pi, sih, tail, size, &extended);
+	curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended);
 	if (curr_p == 0)
 		BUG();
 
-	entry = (struct nova_setattr_logentry *)nova_get_block(sb, curr_p);
+	entry = (struct finefs_setattr_logentry *)finefs_get_block(sb, curr_p);
 	/* inode is already updated with attr */
-	nova_update_setattr_entry(inode, entry, attr);
+	finefs_update_setattr_entry(inode, entry, attr);
 	new_tail = curr_p + size;
 	sih->last_setattr = curr_p;
 
-	NOVA_END_TIMING(append_setattr_t, append_time);
+	FINEFS_END_TIMING(append_setattr_t, append_time);
 	return new_tail;
 }
 
-int nova_notify_change(struct dentry *dentry, struct iattr *attr)
+int finefs_notify_change(struct dentry *dentry, struct iattr *attr)
 {
 	struct inode *inode = dentry->d_inode;
 	struct super_block *sb = inode->i_sb;
-	struct nova_inode *pi = nova_get_inode(sb, inode);
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
+	struct finefs_inode *pi = finefs_get_inode(sb, inode);
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
 	int ret = 0;
 	unsigned int ia_valid = attr->ia_valid, attr_mask;
 	loff_t oldsize = inode->i_size;
 	u64 new_tail;
 	timing_t setattr_time;
 
-	NOVA_START_TIMING(setattr_t, setattr_time);
+	FINEFS_START_TIMING(setattr_t, setattr_time);
 	if (!pi)
 		return -EACCES;
 
@@ -1343,24 +1343,24 @@ int nova_notify_change(struct dentry *dentry, struct iattr *attr)
 		return ret;
 
 	/* We are holding i_mutex so OK to append the log */
-	new_tail = nova_append_setattr_entry(sb, pi, inode, attr, 0);
+	new_tail = finefs_append_setattr_entry(sb, pi, inode, attr, 0);
 
-	nova_update_tail(pi, new_tail);
+	finefs_update_tail(pi, new_tail);
 
 	/* Only after log entry is committed, we can truncate size */
 	if ((ia_valid & ATTR_SIZE) && (attr->ia_size != oldsize ||
-			pi->i_flags & cpu_to_le32(NOVA_EOFBLOCKS_FL))) {
-//		nova_set_blocksize_hint(sb, inode, pi, attr->ia_size);
+			pi->i_flags & cpu_to_le32(FINEFS_EOFBLOCKS_FL))) {
+//		finefs_set_blocksize_hint(sb, inode, pi, attr->ia_size);
 
 		/* now we can freely truncate the inode */
-		nova_setsize(inode, oldsize, attr->ia_size);
+		finefs_setsize(inode, oldsize, attr->ia_size);
 	}
 
-	NOVA_END_TIMING(setattr_t, setattr_time);
+	FINEFS_END_TIMING(setattr_t, setattr_time);
 	return ret;
 }
 
-void nova_set_inode_flags(struct inode *inode, struct nova_inode *pi, unsigned int flags) {
+void finefs_set_inode_flags(struct inode *inode, struct finefs_inode *pi, unsigned int flags) {
     inode->i_flags &= ~(S_SYNC | S_APPEND | S_IMMUTABLE | S_NOATIME | S_DIRSYNC);
     if (flags & FS_SYNC_FL) inode->i_flags |= S_SYNC;
     if (flags & FS_APPEND_FL) inode->i_flags |= S_APPEND;
@@ -1373,7 +1373,7 @@ void nova_set_inode_flags(struct inode *inode, struct nova_inode *pi, unsigned i
 }
 
 #if 0
-static ssize_t nova_direct_IO(struct kiocb *iocb,
+static ssize_t finefs_direct_IO(struct kiocb *iocb,
 	struct iov_iter *iter, loff_t offset)
 {
 	struct file *filp = iocb->ki_filp;
@@ -1386,17 +1386,17 @@ static ssize_t nova_direct_IO(struct kiocb *iocb,
 	const struct iovec *iv = iter->iov;
 	timing_t dio_time;
 
-	NOVA_START_TIMING(direct_IO_t, dio_time);
+	FINEFS_START_TIMING(direct_IO_t, dio_time);
 	end = offset + count;
 
-	nova_dbgv("%s: %lu segs", __func__, nr_segs);
+	finefs_dbgv("%s: %lu segs", __func__, nr_segs);
 	iv = iter->iov;
 	for (seg = 0; seg < nr_segs; seg++) {
 		if (iov_iter_rw(iter) == READ) {
-			ret = nova_dax_file_read(filp, iv->iov_base,
+			ret = finefs_dax_file_read(filp, iv->iov_base,
 					iv->iov_len, &offset);
 		} else if (iov_iter_rw(iter) == WRITE) {
-			ret = nova_cow_file_write(filp, iv->iov_base,
+			ret = finefs_cow_file_write(filp, iv->iov_base,
 					iv->iov_len, &offset, false);
 		}
 		if (ret < 0)
@@ -1412,16 +1412,16 @@ static ssize_t nova_direct_IO(struct kiocb *iocb,
 		iv++;
 	}
 	if (offset != end)
-		printk(KERN_ERR "nova: direct_IO: end = %lld"
+		printk(KERN_ERR "finefs: direct_IO: end = %lld"
 			"but offset = %lld", end, offset);
 	ret = written;
 err:
-	NOVA_END_TIMING(direct_IO_t, dio_time);
+	FINEFS_END_TIMING(direct_IO_t, dio_time);
 	return ret;
 }
 #endif
 
-// static ssize_t nova_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
+// static ssize_t finefs_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
 // 	loff_t offset)
 // {
 // 	struct file *filp = iocb->ki_filp;
@@ -1430,11 +1430,11 @@ err:
 // 	ssize_t ret;
 // 	timing_t dio_time;
 
-// 	NOVA_START_TIMING(direct_IO_t, dio_time);
+// 	FINEFS_START_TIMING(direct_IO_t, dio_time);
 
-// 	ret = dax_do_io(iocb, inode, iter, offset, nova_dax_get_block,
+// 	ret = dax_do_io(iocb, inode, iter, offset, finefs_dax_get_block,
 // 				NULL, DIO_LOCKING);
-// 	NOVA_END_TIMING(direct_IO_t, dio_time);
+// 	FINEFS_END_TIMING(direct_IO_t, dio_time);
 // 	return ret;
 // }
 
@@ -1442,33 +1442,33 @@ err:
 // prev_blocknr为0表示first_blocknr是链表的首个节点
 // num_pages 需要链接的page个数
 // 最后一个page的tail设置为0，fence落盘
-static int nova_coalesce_log_pages(struct super_block *sb, unsigned long prev_blocknr,
+static int finefs_coalesce_log_pages(struct super_block *sb, unsigned long prev_blocknr,
                                    unsigned long first_blocknr, unsigned long num_pages) {
     unsigned long next_blocknr;
     u64 curr_block, next_page;
-    struct nova_inode_log_page *curr_page;
+    struct finefs_inode_log_page *curr_page;
     int i;
 
     if (prev_blocknr) {
         /* Link prev block and newly allocated head block */
-        curr_block = nova_get_block_off(sb, prev_blocknr, NOVA_BLOCK_TYPE_4K);
-        curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr_block);
-        next_page = nova_get_block_off(sb, first_blocknr, NOVA_BLOCK_TYPE_4K);
-        nova_set_next_page_address(sb, curr_page, next_page, 0);
+        curr_block = finefs_get_block_off(sb, prev_blocknr, FINEFS_BLOCK_TYPE_4K);
+        curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr_block);
+        next_page = finefs_get_block_off(sb, first_blocknr, FINEFS_BLOCK_TYPE_4K);
+        finefs_set_next_page_address(sb, curr_page, next_page, 0);
     }
 
     next_blocknr = first_blocknr + 1;
-    curr_block = nova_get_block_off(sb, first_blocknr, NOVA_BLOCK_TYPE_4K);
-    curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr_block);
+    curr_block = finefs_get_block_off(sb, first_blocknr, FINEFS_BLOCK_TYPE_4K);
+    curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr_block);
     for (i = 0; i < num_pages - 1; i++) {
-        next_page = nova_get_block_off(sb, next_blocknr, NOVA_BLOCK_TYPE_4K);
-        nova_set_next_page_address(sb, curr_page, next_page, 0);
+        next_page = finefs_get_block_off(sb, next_blocknr, FINEFS_BLOCK_TYPE_4K);
+        finefs_set_next_page_address(sb, curr_page, next_page, 0);
         curr_page++;
         next_blocknr++;
     }
 
     /* Last page */
-    nova_set_next_page_address(sb, curr_page, 0, 1);
+    finefs_set_next_page_address(sb, curr_page, 0, 1);
     return 0;
 }
 
@@ -1476,7 +1476,7 @@ static int nova_coalesce_log_pages(struct super_block *sb, unsigned long prev_bl
 // 循环的方式逐一分配，共分配num_pages个页
 // new_block 返回分配的第一个page的nvm偏移
 // 返回值是实际分配的page个数，分配好的page已经用链表连接好
-int nova_allocate_inode_log_pages(struct super_block *sb, struct nova_inode *pi,
+int finefs_allocate_inode_log_pages(struct super_block *sb, struct finefs_inode *pi,
                                   unsigned long num_pages, u64 *new_block, int cpuid) {
     unsigned long new_inode_blocknr;
     unsigned long first_blocknr;
@@ -1484,7 +1484,7 @@ int nova_allocate_inode_log_pages(struct super_block *sb, struct nova_inode *pi,
     int allocated;
     int ret_pages = 0;
 
-    allocated = nova_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0, cpuid);
+    allocated = finefs_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0, cpuid);
 
     if (allocated <= 0) {
         r_error("ERROR: no inode log page available: %ld %d", num_pages, allocated);
@@ -1492,16 +1492,16 @@ int nova_allocate_inode_log_pages(struct super_block *sb, struct nova_inode *pi,
     }
     ret_pages += allocated;
     num_pages -= allocated;
-    rdv_proc("Pi %lu: Alloc %d log blocks @ 0x%lx", pi->nova_ino, allocated, new_inode_blocknr);
+    rdv_proc("Pi %lu: Alloc %d log blocks @ 0x%lx", pi->finefs_ino, allocated, new_inode_blocknr);
 
     /* Coalesce the pages */
-    nova_coalesce_log_pages(sb, 0, new_inode_blocknr, allocated);
+    finefs_coalesce_log_pages(sb, 0, new_inode_blocknr, allocated);
     first_blocknr = new_inode_blocknr;
     prev_blocknr = new_inode_blocknr + allocated - 1;
 
     /* Allocate remaining pages */
     while (num_pages) {
-        allocated = nova_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0, cpuid);
+        allocated = finefs_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0, cpuid);
 
         rdv_proc("Alloc %d log blocks @ 0x%lx", allocated, new_inode_blocknr);
         if (allocated <= 0) {
@@ -1514,48 +1514,48 @@ int nova_allocate_inode_log_pages(struct super_block *sb, struct nova_inode *pi,
         }
         ret_pages += allocated;
         num_pages -= allocated;
-        nova_coalesce_log_pages(sb, prev_blocknr, new_inode_blocknr, allocated);
+        finefs_coalesce_log_pages(sb, prev_blocknr, new_inode_blocknr, allocated);
         prev_blocknr = new_inode_blocknr + allocated - 1;
     }
 
-    *new_block = nova_get_block_off(sb, first_blocknr, NOVA_BLOCK_TYPE_4K);
+    *new_block = finefs_get_block_off(sb, first_blocknr, FINEFS_BLOCK_TYPE_4K);
 
     return ret_pages;
 }
 
 // curr_p位置的entry是不是无效
 // length 带回entry的长度
-static bool curr_log_entry_invalid(struct super_block *sb, struct nova_inode *pi,
-                                   struct nova_inode_info_header *sih, u64 curr_p, size_t *length) {
-    struct nova_setattr_logentry *setattr_entry;
-    struct nova_file_write_entry *entry;
-    struct nova_dentry *dentry;
+static bool curr_log_entry_invalid(struct super_block *sb, struct finefs_inode *pi,
+                                   struct finefs_inode_info_header *sih, u64 curr_p, size_t *length) {
+    struct finefs_setattr_logentry *setattr_entry;
+    struct finefs_file_write_entry *entry;
+    struct finefs_dentry *dentry;
     void *addr;
     u8 type;
     bool ret = true;
 
-    addr = (void *)nova_get_block(sb, curr_p);
-    type = nova_get_entry_type(addr);
+    addr = (void *)finefs_get_block(sb, curr_p);
+    type = finefs_get_entry_type(addr);
     switch (type) {
         case SET_ATTR:
             if (sih->last_setattr == curr_p) ret = false;
             /* Do not invalidate setsize entries */
             // TODO: 这是为什么
-            setattr_entry = (struct nova_setattr_logentry *)addr;
+            setattr_entry = (struct finefs_setattr_logentry *)addr;
             if (setattr_entry->attr & ATTR_SIZE) ret = false;
-            *length = sizeof(struct nova_setattr_logentry);
+            *length = sizeof(struct finefs_setattr_logentry);
             break;
         case LINK_CHANGE:
             if (sih->last_link_change == curr_p) ret = false;
-            *length = sizeof(struct nova_link_change_entry);
+            *length = sizeof(struct finefs_link_change_entry);
             break;
         case FILE_WRITE:
-            entry = (struct nova_file_write_entry *)addr;
+            entry = (struct finefs_file_write_entry *)addr;
             if (entry->num_pages != entry->invalid_pages) ret = false;
-            *length = sizeof(struct nova_file_write_entry);
+            *length = sizeof(struct finefs_file_write_entry);
             break;
         case DIR_LOG:
-            dentry = (struct nova_dentry *)addr;
+            dentry = (struct finefs_dentry *)addr;
             if (dentry->ino && dentry->invalid == 0) ret = false;
             *length = le16_to_cpu(dentry->de_len);
             break;
@@ -1577,14 +1577,14 @@ static bool curr_log_entry_invalid(struct super_block *sb, struct nova_inode *pi
 
 // 判断一个log page是不是全部无效
 // 同时统计当前有效的entry的总字节数
-static bool curr_page_invalid(struct super_block *sb, struct nova_inode *pi,
-                              struct nova_inode_info_header *sih, u64 page_head) {
+static bool curr_page_invalid(struct super_block *sb, struct finefs_inode *pi,
+                              struct finefs_inode_info_header *sih, u64 page_head) {
     u64 curr_p = page_head;
     bool ret = true;
     size_t length;
     timing_t check_time;
 
-    NOVA_START_TIMING(check_invalid_t, check_time);
+    FINEFS_START_TIMING(check_invalid_t, check_time);
     while (curr_p < page_head + LAST_ENTRY) {
         if (curr_p == 0) {
             r_error("File inode %lu log is NULL!", sih->ino);
@@ -1600,35 +1600,35 @@ static bool curr_page_invalid(struct super_block *sb, struct nova_inode *pi,
         curr_p += length;
     }
 
-    NOVA_END_TIMING(check_invalid_t, check_time);
+    FINEFS_END_TIMING(check_invalid_t, check_time);
     return ret;
 }
 
 // 指示当前log已经结束，最后设置一个flag（一个字节）
-static void nova_set_next_page_flag(struct super_block *sb, u64 curr_p) {
+static void finefs_set_next_page_flag(struct super_block *sb, u64 curr_p) {
     void *p;
 
     if (ENTRY_LOC(curr_p) >= LAST_ENTRY) return;
 
-    p = nova_get_block(sb, curr_p);
-    nova_set_entry_type(p, NEXT_PAGE);
-    nova_flush_buffer(p, CACHELINE_SIZE, 1);
+    p = finefs_get_block(sb, curr_p);
+    finefs_set_entry_type(p, NEXT_PAGE);
+    finefs_flush_buffer(p, CACHELINE_SIZE, 1);
 }
 
 // 释放一个log page
-static void free_curr_page(struct super_block *sb, struct nova_inode *pi,
-                           struct nova_inode_log_page *curr_page,
-                           struct nova_inode_log_page *last_page, u64 curr_head) {
+static void free_curr_page(struct super_block *sb, struct finefs_inode *pi,
+                           struct finefs_inode_log_page *curr_page,
+                           struct finefs_inode_log_page *last_page, u64 curr_head) {
     unsigned short btype = pi->i_blk_type;
 
-    nova_set_next_page_address(sb, last_page, curr_page->page_tail.next_page, 1);
-    nova_free_log_blocks(sb, pi, nova_get_blocknr(sb, curr_head, btype), 1);
+    finefs_set_next_page_address(sb, last_page, curr_page->page_tail.next_page, 1);
+    finefs_free_log_blocks(sb, pi, finefs_get_blocknr(sb, curr_head, btype), 1);
 }
 
-int nova_gc_assign_file_entry(struct super_block *sb, struct nova_inode_info_header *sih,
-                              struct nova_file_write_entry *old_entry,
-                              struct nova_file_write_entry *new_entry) {
-    struct nova_file_write_entry *temp;
+int finefs_gc_assign_file_entry(struct super_block *sb, struct finefs_inode_info_header *sih,
+                              struct finefs_file_write_entry *old_entry,
+                              struct finefs_file_write_entry *new_entry) {
+    struct finefs_file_write_entry *temp;
     void **pentry;
     unsigned long start_pgoff = old_entry->pgoff;
     unsigned int num = old_entry->num_pages;
@@ -1641,7 +1641,7 @@ int nova_gc_assign_file_entry(struct super_block *sb, struct nova_inode_info_hea
 
         pentry = radix_tree_lookup_slot(&sih->tree, curr_pgoff);
         if (pentry) {
-            temp = (struct nova_file_write_entry *)radix_tree_deref_slot(pentry);
+            temp = (struct finefs_file_write_entry *)radix_tree_deref_slot(pentry);
             if (temp == old_entry) radix_tree_replace_slot(pentry, new_entry);
         }
     }
@@ -1649,9 +1649,9 @@ int nova_gc_assign_file_entry(struct super_block *sb, struct nova_inode_info_hea
     return ret;
 }
 
-static int nova_gc_assign_dentry(struct super_block *sb, struct nova_inode_info_header *sih,
-                                 struct nova_dentry *old_dentry, struct nova_dentry *new_dentry) {
-    struct nova_dentry *temp;
+static int finefs_gc_assign_dentry(struct super_block *sb, struct finefs_inode_info_header *sih,
+                                 struct finefs_dentry *old_dentry, struct finefs_dentry *new_dentry) {
+    struct finefs_dentry *temp;
     void **pentry;
     unsigned long hash;
     int ret = 0;
@@ -1662,23 +1662,23 @@ static int nova_gc_assign_dentry(struct super_block *sb, struct nova_inode_info_
     /* FIXME: hash collision ignored here */
     pentry = radix_tree_lookup_slot(&sih->tree, hash);
     if (pentry) {
-        temp = (struct nova_dentry *)radix_tree_deref_slot(pentry);
+        temp = (struct finefs_dentry *)radix_tree_deref_slot(pentry);
         if (temp == old_dentry) radix_tree_replace_slot(pentry, new_dentry);
     }
 
     return ret;
 }
 
-static int nova_gc_assign_new_entry(struct super_block *sb, struct nova_inode *pi,
-                                    struct nova_inode_info_header *sih, u64 curr_p, u64 new_curr) {
-    struct nova_file_write_entry *old_entry, *new_entry;
-    struct nova_dentry *old_dentry, *new_dentry;
+static int finefs_gc_assign_new_entry(struct super_block *sb, struct finefs_inode *pi,
+                                    struct finefs_inode_info_header *sih, u64 curr_p, u64 new_curr) {
+    struct finefs_file_write_entry *old_entry, *new_entry;
+    struct finefs_dentry *old_dentry, *new_dentry;
     void *addr, *new_addr;
     u8 type;
     int ret = 0;
 
-    addr = (void *)nova_get_block(sb, curr_p);
-    type = nova_get_entry_type(addr);
+    addr = (void *)finefs_get_block(sb, curr_p);
+    type = finefs_get_entry_type(addr);
     switch (type) {
         case SET_ATTR:
             sih->last_setattr = new_curr;  // tail page不回收，这里不会有问题？
@@ -1687,18 +1687,18 @@ static int nova_gc_assign_new_entry(struct super_block *sb, struct nova_inode *p
             sih->last_link_change = new_curr;
             break;
         case FILE_WRITE:
-            new_addr = (void *)nova_get_block(sb, new_curr);
-            old_entry = (struct nova_file_write_entry *)addr;
-            new_entry = (struct nova_file_write_entry *)new_addr;
+            new_addr = (void *)finefs_get_block(sb, new_curr);
+            old_entry = (struct finefs_file_write_entry *)addr;
+            new_entry = (struct finefs_file_write_entry *)new_addr;
             // 修改文件数据的dram radix tree 索引
-            ret = nova_gc_assign_file_entry(sb, sih, old_entry, new_entry);
+            ret = finefs_gc_assign_file_entry(sb, sih, old_entry, new_entry);
             break;
         case DIR_LOG:
             // 修改目录的dram radix tree 索引
-            new_addr = (void *)nova_get_block(sb, new_curr);
-            old_dentry = (struct nova_dentry *)addr;
-            new_dentry = (struct nova_dentry *)new_addr;
-            ret = nova_gc_assign_dentry(sb, sih, old_dentry, new_dentry);
+            new_addr = (void *)finefs_get_block(sb, new_curr);
+            old_dentry = (struct finefs_dentry *)addr;
+            new_dentry = (struct finefs_dentry *)new_addr;
+            ret = finefs_gc_assign_dentry(sb, sih, old_dentry, new_dentry);
             break;
         default:
             rdv_proc("%s: unknown type %d, 0x%lx", __func__, type, curr_p);
@@ -1710,12 +1710,12 @@ static int nova_gc_assign_new_entry(struct super_block *sb, struct nova_inode *p
 }
 
 /* Copy alive log entries to the new log and atomically replace the old log */
-static int nova_inode_log_thorough_gc(struct super_block *sb, struct nova_inode *pi,
-                                      struct nova_inode_info_header *sih, unsigned long blocks,
+static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_inode *pi,
+                                      struct finefs_inode_info_header *sih, unsigned long blocks,
                                       unsigned long checked_pages) {
-    struct nova_inode_log_page *curr_page = NULL;
+    struct finefs_inode_log_page *curr_page = NULL;
     size_t length;
-    u64 ino = pi->nova_ino;
+    u64 ino = pi->finefs_ino;
     u64 curr_p, new_curr;
     u64 old_curr_p;
     u64 tail_block;
@@ -1727,7 +1727,7 @@ static int nova_inode_log_thorough_gc(struct super_block *sb, struct nova_inode 
     int ret;
     timing_t gc_time;
 
-    NOVA_START_TIMING(thorough_gc_t, gc_time);
+    FINEFS_START_TIMING(thorough_gc_t, gc_time);
 
     curr_p = pi->log_head;
     old_curr_p = curr_p;
@@ -1737,7 +1737,7 @@ static int nova_inode_log_thorough_gc(struct super_block *sb, struct nova_inode 
 
     if (curr_p >> PAGE_SHIFT == pi->log_tail >> PAGE_SHIFT) goto out;
 
-    allocated = nova_allocate_inode_log_pages(sb, pi, blocks, &new_head);
+    allocated = finefs_allocate_inode_log_pages(sb, pi, blocks, &new_head);
     if (allocated != blocks) {
         r_error(
             "%s: ERROR: no inode log page "
@@ -1766,17 +1766,17 @@ static int nova_inode_log_thorough_gc(struct super_block *sb, struct nova_inode 
         if (!ret) {
             // 有效，进行搬迁
             extended = 0;
-            new_curr = nova_get_append_head(sb, pi, NULL, new_curr, length, &extended);
+            new_curr = finefs_get_append_head(sb, pi, NULL, new_curr, length, &extended);
             if (extended) {
                 rd_warning("%s extent gc log! blocks: %lu", __func__, blocks);
                 blocks++;
             }
 
             /* Copy entry to the new log */
-            memcpy_to_pmem_nocache(nova_get_block(sb, new_curr), nova_get_block(sb, curr_p),
+            memcpy_to_pmem_nocache(finefs_get_block(sb, new_curr), finefs_get_block(sb, curr_p),
                                    length);
             // 搬迁log后，需要修改内存中对应的索引
-            nova_gc_assign_new_entry(sb, pi, sih, curr_p, new_curr);
+            finefs_gc_assign_new_entry(sb, pi, sih, curr_p, new_curr);
             new_curr += length;
         }
 
@@ -1785,44 +1785,44 @@ static int nova_inode_log_thorough_gc(struct super_block *sb, struct nova_inode 
 
     /* Step 1: Link new log to the tail block */
     tail_block = BLOCK_OFF(pi->log_tail);
-    curr_page = (struct nova_inode_log_page *)nova_get_block(sb, BLOCK_OFF(new_curr));
+    curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, BLOCK_OFF(new_curr));
     next = curr_page->page_tail.next_page;
     if (next)  // 多分配的空间进行释放
-        nova_free_contiguous_log_blocks(sb, pi, next);
-    nova_set_next_page_flag(sb, new_curr);
-    nova_set_next_page_address(sb, curr_page, tail_block, 0);
+        finefs_free_contiguous_log_blocks(sb, pi, next);
+    finefs_set_next_page_flag(sb, new_curr);
+    finefs_set_next_page_address(sb, curr_page, tail_block, 0);
     // TODO: 这里需要flush这么多？entry是通过ntstore的，flag也flush了，
     // 这里感觉不需要flush了
-    nova_flush_buffer(curr_page, PAGE_SIZE, 0);
+    finefs_flush_buffer(curr_page, PAGE_SIZE, 0);
 
     /* Step 2: Atomically switch to the new log */
     pi->log_head = new_head;
-    nova_flush_buffer(pi, sizeof(struct nova_inode), 1);
+    finefs_flush_buffer(pi, sizeof(struct finefs_inode), 1);
 
     /* Step 3: Unlink the old log */
     // 将旧log从链表中断开
-    curr_page = (struct nova_inode_log_page *)nova_get_block(sb, BLOCK_OFF(old_curr_p));
+    curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, BLOCK_OFF(old_curr_p));
     next = curr_page->page_tail.next_page;
     if (next != tail_block) {
         r_error("Old log error: old curr_p 0x%lx, next 0x%lx curr_p 0x%lx, tail block 0x%lx",
                 old_curr_p, next, curr_p, tail_block);
         BUG();
     }
-    nova_set_next_page_address(sb, curr_page, 0, 1);
+    finefs_set_next_page_address(sb, curr_page, 0, 1);
 
     /* Step 4: Free the old log */
-    nova_free_contiguous_log_blocks(sb, pi, old_head);
+    finefs_free_contiguous_log_blocks(sb, pi, old_head);
 
     // blocks是新分配的，checked_pages是释放的
     sih->log_pages = sih->log_pages + blocks - checked_pages;
-    NOVA_STATS_ADD(thorough_gc_pages, checked_pages - blocks);
-    NOVA_STATS_ADD(thorough_checked_pages, checked_pages);
+    FINEFS_STATS_ADD(thorough_gc_pages, checked_pages - blocks);
+    FINEFS_STATS_ADD(thorough_checked_pages, checked_pages);
 out:
-    NOVA_END_TIMING(thorough_gc_t, gc_time);
+    FINEFS_END_TIMING(thorough_gc_t, gc_time);
     return 0;
 }
 
-static int need_thorough_gc(struct super_block *sb, struct nova_inode_info_header *sih,
+static int need_thorough_gc(struct super_block *sb, struct finefs_inode_info_header *sih,
                             unsigned long blocks, unsigned long checked_pages) {
     if (blocks && blocks * 2 < checked_pages) return 1;
 
@@ -1831,13 +1831,13 @@ static int need_thorough_gc(struct super_block *sb, struct nova_inode_info_heade
 
 // new_block：新分配log page的第一个page的偏移
 // num_pages: 新分配page的个数
-static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
-                                  struct nova_inode_info_header *sih, u64 curr_tail, u64 new_block,
+static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode *pi,
+                                  struct finefs_inode_info_header *sih, u64 curr_tail, u64 new_block,
                                   int num_pages) {
     u64 curr, next, possible_head = 0;
     int found_head = 0;
-    struct nova_inode_log_page *last_page = NULL;
-    struct nova_inode_log_page *curr_page = NULL;
+    struct finefs_inode_log_page *last_page = NULL;
+    struct finefs_inode_log_page *curr_page = NULL;
     int first_need_free = 0;
     unsigned short btype = pi->i_blk_type;
     unsigned long blocks;
@@ -1845,7 +1845,7 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
     int freed_pages = 0;
     timing_t gc_time;
 
-    NOVA_START_TIMING(fast_gc_t, gc_time);
+    FINEFS_START_TIMING(fast_gc_t, gc_time);
     curr = pi->log_head;
     sih->valid_bytes = 0;
 
@@ -1857,7 +1857,7 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
             break;
         }
 
-        curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr);
+        curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
         next = curr_page->page_tail.next_page;
         rdv_proc("curr 0x%lx, next 0x%lx", curr, next);
         if (curr_page_invalid(sb, pi, sih, curr)) {
@@ -1872,7 +1872,7 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
                 rdv_proc("Free log block 0x%lx", curr >> PAGE_SHIFT);
                 free_curr_page(sb, pi, curr_page, last_page, curr);
             }
-            NOVA_STATS_ADD(fast_gc_pages, 1);
+            FINEFS_STATS_ADD(fast_gc_pages, 1);
             freed_pages++;
         } else {
             if (found_head == 0) {
@@ -1887,12 +1887,12 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
         if (curr == 0) break;
     }
 
-    NOVA_STATS_ADD(fast_checked_pages, checked_pages);
+    FINEFS_STATS_ADD(fast_checked_pages, checked_pages);
     checked_pages -= freed_pages;
 
     curr = BLOCK_OFF(curr_tail);
-    curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr);
-    nova_set_next_page_address(sb, curr_page, new_block, 1);
+    curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
+    finefs_set_next_page_address(sb, curr_page, new_block, 1);
 
     curr = pi->log_head;
 
@@ -1903,17 +1903,17 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
     pi->i_blocks += num_pages - freed_pages;
     /* Don't update log tail pointer here */
     // TODO: 这个不一定需要把，如果第一个log page 没有释放，那head没必要改
-    nova_flush_buffer(&pi->log_head, CACHELINE_SIZE, 1);
+    finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 1);
 
     if (first_need_free) {
         rdv_proc("Free log head block 0x%lx", curr >> PAGE_SHIFT);
-        nova_free_log_blocks(sb, pi, nova_get_blocknr(sb, curr, btype), 1);
+        finefs_free_log_blocks(sb, pi, finefs_get_blocknr(sb, curr, btype), 1);
     }
 
     blocks = sih->valid_bytes / LAST_ENTRY;
     if (sih->valid_bytes % LAST_ENTRY) blocks++;
 
-    NOVA_END_TIMING(fast_gc_t, gc_time);
+    FINEFS_END_TIMING(fast_gc_t, gc_time);
 
     // 有效率低于50%，开启彻底gc
     if (need_thorough_gc(sb, sih, blocks, checked_pages)) {
@@ -1921,7 +1921,7 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
             "Thorough GC for inode %lu: checked pages %lu, "
             "valid pages %lu",
             sih->ino, checked_pages, blocks);
-        nova_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
+        finefs_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
     }
 
     return 0;
@@ -1930,14 +1930,14 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
 // 分配新的log page
 // 返回新分配log page的偏移地址
 // curr_p = 0 表示为inode分配第一个log page
-static u64 nova_extend_inode_log(struct super_block *sb, struct nova_inode *pi,
-                                 struct nova_inode_info_header *sih, u64 curr_p) {
+static u64 finefs_extend_inode_log(struct super_block *sb, struct finefs_inode *pi,
+                                 struct finefs_inode_info_header *sih, u64 curr_p) {
     u64 new_block;
     int allocated;
     unsigned long num_pages;
 
     if (curr_p == 0) {  // 第一个分配1个
-        allocated = nova_allocate_inode_log_pages(sb, pi, 1, &new_block);
+        allocated = finefs_allocate_inode_log_pages(sb, pi, 1, &new_block);
         if (allocated != 1) {
             r_error(
                 "%s ERROR: no inode log page "
@@ -1946,16 +1946,16 @@ static u64 nova_extend_inode_log(struct super_block *sb, struct nova_inode *pi,
             return 0;
         }
         pi->log_tail = new_block;
-        nova_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 0);
+        finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 0);
         pi->log_head = new_block;
         sih->log_pages = 1;
         pi->i_blocks++;
-        nova_flush_buffer(&pi->log_head, CACHELINE_SIZE, 1);
+        finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 1);
     } else {  // 按倍数分配新page，直到256后，每次只256个log page
         num_pages = sih->log_pages >= EXTEND_THRESHOLD ? EXTEND_THRESHOLD : sih->log_pages;
-        //		nova_dbg("Before append log pages:");
-        //		nova_print_inode_log_page(sb, inode);
-        allocated = nova_allocate_inode_log_pages(sb, pi, num_pages, &new_block);
+        //		finefs_dbg("Before append log pages:");
+        //		finefs_print_inode_log_page(sb, inode);
+        allocated = finefs_allocate_inode_log_pages(sb, pi, num_pages, &new_block);
         rdv_proc("Link block %lu to block %lu", curr_p >> PAGE_SHIFT, new_block >> PAGE_SHIFT);
         if (allocated <= 0) {
             r_error(
@@ -1966,24 +1966,24 @@ static u64 nova_extend_inode_log(struct super_block *sb, struct nova_inode *pi,
             return 0;
         }
 
-        nova_inode_log_fast_gc(sb, pi, sih, curr_p, new_block, allocated);
+        finefs_inode_log_fast_gc(sb, pi, sih, curr_p, new_block, allocated);
 
-        //		nova_dbg("After append log pages:");
-        //		nova_print_inode_log_page(sb, inode);
+        //		finefs_dbg("After append log pages:");
+        //		finefs_print_inode_log_page(sb, inode);
         /* Atomic switch to new log */
-        //		nova_switch_to_new_log(sb, pi, new_block, num_pages);
+        //		finefs_switch_to_new_log(sb, pi, new_block, num_pages);
     }
     return new_block;
 }
 
 /* For thorough GC, simply append one more page */
-static u64 nova_append_one_log_page(struct super_block *sb, struct nova_inode *pi, u64 curr_p) {
-    struct nova_inode_log_page *curr_page;
+static u64 finefs_append_one_log_page(struct super_block *sb, struct finefs_inode *pi, u64 curr_p) {
+    struct finefs_inode_log_page *curr_page;
     u64 new_block;
     u64 curr_block;
     int allocated;
 
-    allocated = nova_allocate_inode_log_pages(sb, pi, 1, &new_block);
+    allocated = finefs_allocate_inode_log_pages(sb, pi, 1, &new_block);
     if (allocated != 1) {
         r_error("%s: ERROR: no inode log page available", __func__);
         return 0;
@@ -1994,8 +1994,8 @@ static u64 nova_append_one_log_page(struct super_block *sb, struct nova_inode *p
     } else {
         /* Link prev block and newly allocated head block */
         curr_block = BLOCK_OFF(curr_p);
-        curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr_block);
-        nova_set_next_page_address(sb, curr_page, new_block, 1);
+        curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr_block);
+        finefs_set_next_page_address(sb, curr_page, new_block, 1);
     }
 
     return curr_p;
@@ -2004,8 +2004,8 @@ static u64 nova_append_one_log_page(struct super_block *sb, struct nova_inode *p
 // 传入tail=0,表示使用inode当前的log tail，否则判断tail位置能够放入size大小的log entry
 // extended指示是否扩展了
 // size 要append的log entry大小
-u64 nova_get_append_head(struct super_block *sb, struct nova_inode *pi,
-                         struct nova_inode_info_header *sih, u64 tail, size_t size, int *extended) {
+u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
+                         struct finefs_inode_info_header *sih, u64 tail, size_t size, int *extended) {
     u64 curr_p;
 
     if (tail)
@@ -2014,15 +2014,15 @@ u64 nova_get_append_head(struct super_block *sb, struct nova_inode *pi,
         curr_p = pi->log_tail;
 
     if (curr_p == 0 || (is_last_entry(curr_p, size) && next_log_page(sb, curr_p) == 0)) {
-        if (is_last_entry(curr_p, size)) nova_set_next_page_flag(sb, curr_p);
+        if (is_last_entry(curr_p, size)) finefs_set_next_page_flag(sb, curr_p);
 
         // 当前log的空间不足，需要分配新的log page
         if (sih) {
-            curr_p = nova_extend_inode_log(sb, pi, sih, curr_p);
+            curr_p = finefs_extend_inode_log(sb, pi, sih, curr_p);
         } else {
             // 用于GC时的append log，GC应该到不了这里吧，因为一次就分配足够的page了
             // 不不不，之前分配的空间只是预判而已，可能预测少了
-            curr_p = nova_append_one_log_page(sb, pi, curr_p);
+            curr_p = finefs_append_one_log_page(sb, pi, curr_p);
             /* For thorough GC */
             *extended = 1;
         }
@@ -2031,7 +2031,7 @@ u64 nova_get_append_head(struct super_block *sb, struct nova_inode *pi,
     }
 
     if (is_last_entry(curr_p, size)) {  // 感觉这才是给gc用的
-        nova_set_next_page_flag(sb, curr_p);
+        finefs_set_next_page_flag(sb, curr_p);
         curr_p = next_log_page(sb, curr_p);
     }
 
@@ -2039,29 +2039,29 @@ u64 nova_get_append_head(struct super_block *sb, struct nova_inode *pi,
 }
 
 /*
- * Append a nova_file_write_entry to the current nova_inode_log_page.
+ * Append a finefs_file_write_entry to the current finefs_inode_log_page.
  * blocknr and start_blk are pgoff.
  * We cannot update pi->log_tail here because a transaction may contain
  * multiple entries.
  * 返回当前entry写入的地址
  */
-u64 nova_append_file_write_entry(struct super_block *sb, struct nova_inode *pi, struct inode *inode,
-                                 struct nova_file_write_entry *data, u64 tail) {
-    struct nova_inode_info *si = NOVA_I(inode);
-    struct nova_inode_info_header *sih = &si->header;
-    struct nova_file_write_entry *entry;
+u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *pi, struct inode *inode,
+                                 struct finefs_file_write_entry *data, u64 tail) {
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    struct finefs_file_write_entry *entry;
     u64 curr_p;
     int extended = 0;
-    size_t size = sizeof(struct nova_file_write_entry);
+    size_t size = sizeof(struct finefs_file_write_entry);
     timing_t append_time;
 
-    NOVA_START_TIMING(append_file_entry_t, append_time);
+    FINEFS_START_TIMING(append_file_entry_t, append_time);
 
-    curr_p = nova_get_append_head(sb, pi, sih, tail, size, &extended);
+    curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended);
     if (curr_p == 0) return curr_p;
 
-    entry = (struct nova_file_write_entry *)nova_get_block(sb, curr_p);
-    memcpy_to_pmem_nocache(entry, data, sizeof(struct nova_file_write_entry));
+    entry = (struct finefs_file_write_entry *)finefs_get_block(sb, curr_p);
+    memcpy_to_pmem_nocache(entry, data, sizeof(struct finefs_file_write_entry));
     rdv_proc(
         "file %lu entry @ 0x%lx: pgoff %lu, num %u, "
         "block %lu, size %lu",
@@ -2069,32 +2069,32 @@ u64 nova_append_file_write_entry(struct super_block *sb, struct nova_inode *pi, 
         entry->size);
     /* entry->invalid is set to 0 */
 
-    NOVA_END_TIMING(append_file_entry_t, append_time);
+    FINEFS_END_TIMING(append_file_entry_t, append_time);
     return curr_p;
 }
 
-void nova_free_inode_log(struct super_block *sb, struct nova_inode *pi) {
+void finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi) {
     u64 curr_block;
     int freed = 0;
     timing_t free_time;
 
     if (pi->log_head == 0 || pi->log_tail == 0) return;
 
-    NOVA_START_TIMING(free_inode_log_t, free_time);
+    FINEFS_START_TIMING(free_inode_log_t, free_time);
 
     curr_block = pi->log_head;
 
     /* The inode is invalid now, no need to call PCOMMIT */
     pi->log_head = pi->log_tail = 0;
-    nova_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
+    finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
 
-    freed = nova_free_contiguous_log_blocks(sb, pi, curr_block);
+    freed = finefs_free_contiguous_log_blocks(sb, pi, curr_block);
 
-    NOVA_END_TIMING(free_inode_log_t, free_time);
+    FINEFS_END_TIMING(free_inode_log_t, free_time);
 }
 
-static inline void nova_rebuild_file_time_and_size(struct super_block *sb, struct nova_inode *pi,
-                                                   struct nova_file_write_entry *entry) {
+static inline void finefs_rebuild_file_time_and_size(struct super_block *sb, struct finefs_inode *pi,
+                                                   struct finefs_file_write_entry *entry) {
     if (!entry || !pi) return;
 
     pi->i_ctime = cpu_to_le32(entry->mtime);
@@ -2102,21 +2102,21 @@ static inline void nova_rebuild_file_time_and_size(struct super_block *sb, struc
     pi->i_size = cpu_to_le64(entry->size);
 }
 
-int nova_rebuild_file_inode_tree(struct super_block *sb, struct nova_inode *pi, u64 pi_addr,
-                                 struct nova_inode_info_header *sih) {
-    struct nova_file_write_entry *entry = NULL;
-    struct nova_setattr_logentry *attr_entry = NULL;
-    struct nova_link_change_entry *link_change_entry = NULL;
-    struct nova_inode_log_page *curr_page;
-    unsigned int data_bits = blk_type_to_shift[pi->i_blk_type];
-    u64 ino = pi->nova_ino;
+int finefs_rebuild_file_inode_tree(struct super_block *sb, struct finefs_inode *pi, u64 pi_addr,
+                                 struct finefs_inode_info_header *sih) {
+    struct finefs_file_write_entry *entry = NULL;
+    struct finefs_setattr_logentry *attr_entry = NULL;
+    struct finefs_link_change_entry *link_change_entry = NULL;
+    struct finefs_inode_log_page *curr_page;
+    unsigned int data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
+    u64 ino = pi->finefs_ino;
     timing_t rebuild_time;
     void *addr;
     u64 curr_p;
     u64 next;
     u8 type;
 
-    NOVA_START_TIMING(rebuild_file_t, rebuild_time);
+    FINEFS_START_TIMING(rebuild_file_t, rebuild_time);
     rdv_proc("Rebuild file inode %lu tree", ino);
 
     sih->pi_addr = pi_addr;
@@ -2138,75 +2138,75 @@ int nova_rebuild_file_inode_tree(struct super_block *sb, struct nova_inode *pi, 
             BUG();
         }
 
-        addr = (void *)nova_get_block(sb, curr_p);
-        type = nova_get_entry_type(addr);
+        addr = (void *)finefs_get_block(sb, curr_p);
+        type = finefs_get_entry_type(addr);
         switch (type) {
             case SET_ATTR:
-                attr_entry = (struct nova_setattr_logentry *)addr;
-                nova_apply_setattr_entry(sb, pi, sih, attr_entry);
+                attr_entry = (struct finefs_setattr_logentry *)addr;
+                finefs_apply_setattr_entry(sb, pi, sih, attr_entry);
                 sih->last_setattr = curr_p;
-                curr_p += sizeof(struct nova_setattr_logentry);
+                curr_p += sizeof(struct finefs_setattr_logentry);
                 continue;
             case LINK_CHANGE:
-                link_change_entry = (struct nova_link_change_entry *)addr;
-                nova_apply_link_change_entry(pi, link_change_entry);
+                link_change_entry = (struct finefs_link_change_entry *)addr;
+                finefs_apply_link_change_entry(pi, link_change_entry);
                 sih->last_link_change = curr_p;
-                curr_p += sizeof(struct nova_link_change_entry);
+                curr_p += sizeof(struct finefs_link_change_entry);
                 continue;
             case FILE_WRITE:
                 break;
             default:
                 r_error("unknown type %d, 0x%lx", type, curr_p);
                 log_assert(0);
-                curr_p += sizeof(struct nova_file_write_entry);
+                curr_p += sizeof(struct finefs_file_write_entry);
                 continue;
         }
 
-        entry = (struct nova_file_write_entry *)addr;
+        entry = (struct finefs_file_write_entry *)addr;
         if (entry->num_pages != entry->invalid_pages) {
             /*
              * The overlaped blocks are already freed.
              * Don't double free them, just re-assign the pointers.
              */
-            nova_assign_write_entry(sb, pi, sih, entry, false);
+            finefs_assign_write_entry(sb, pi, sih, entry, false);
         }
 
-        nova_rebuild_file_time_and_size(sb, pi, entry);
+        finefs_rebuild_file_time_and_size(sb, pi, entry);
         /* Update sih->i_size for setattr apply operations */
         // sih->i_size = le64_to_cpu(pi->i_size);
-        curr_p += sizeof(struct nova_file_write_entry);
+        curr_p += sizeof(struct finefs_file_write_entry);
     }
 
     sih->i_size = le64_to_cpu(pi->i_size);
     sih->i_mode = le16_to_cpu(pi->i_mode);
-    nova_flush_buffer(pi, sizeof(struct nova_inode), 0);
+    finefs_flush_buffer(pi, sizeof(struct finefs_inode), 0);
 
     /* Keep traversing until log ends */
     curr_p &= PAGE_MASK;
-    curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr_p);
+    curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr_p);
     while ((next = curr_page->page_tail.next_page) != 0) {
         sih->log_pages++;
         curr_p = next;
-        curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr_p);
+        curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr_p);
     }
 
     pi->i_blocks = sih->log_pages + (sih->i_size >> data_bits);
 
-    //	nova_print_inode_log_page(sb, inode);
-    NOVA_END_TIMING(rebuild_file_t, rebuild_time);
+    //	finefs_print_inode_log_page(sb, inode);
+    FINEFS_END_TIMING(rebuild_file_t, rebuild_time);
     return 0;
 }
 
 // /*
 //  * find the file offset for SEEK_DATA/SEEK_HOLE
 //  */
-// unsigned long nova_find_region(struct inode *inode, loff_t *offset, int hole)
+// unsigned long finefs_find_region(struct inode *inode, loff_t *offset, int hole)
 // {
 // 	struct super_block *sb = inode->i_sb;
-// 	struct nova_inode *pi = nova_get_inode(sb, inode);
-// 	struct nova_inode_info *si = NOVA_I(inode);
-// 	struct nova_inode_info_header *sih = &si->header;
-// 	unsigned int data_bits = blk_type_to_shift[pi->i_blk_type];
+// 	struct finefs_inode *pi = finefs_get_inode(sb, inode);
+// 	struct finefs_inode_info *si = FINEFS_I(inode);
+// 	struct finefs_inode_info_header *sih = &si->header;
+// 	unsigned int data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
 // 	unsigned long first_blocknr, last_blocknr;
 // 	unsigned long blocks = 0, offset_in_block;
 // 	int data_found = 0, hole_found = 0;
@@ -2226,11 +2226,11 @@ int nova_rebuild_file_inode_tree(struct super_block *sb, struct nova_inode *pi, 
 // 	first_blocknr = *offset >> data_bits;
 // 	last_blocknr = inode->i_size >> data_bits;
 
-// 	nova_dbg_verbose("find_region offset %llx, first_blocknr %lx,"
+// 	finefs_dbg_verbose("find_region offset %llx, first_blocknr %lx,"
 // 		" last_blocknr %lx hole %d",
 // 		  *offset, first_blocknr, last_blocknr, hole);
 
-// 	blocks = nova_lookup_hole_in_range(inode->i_sb, sih,
+// 	blocks = finefs_lookup_hole_in_range(inode->i_sb, sih,
 // 		first_blocknr, last_blocknr, &data_found, &hole_found, hole);
 
 // 	/* Searching data but only hole found till the end */
@@ -2265,7 +2265,7 @@ int nova_rebuild_file_inode_tree(struct super_block *sb, struct nova_inode *pi, 
 // 	return 0;
 // }
 
-// const struct address_space_operations nova_aops_dax = {
-// 	.direct_IO		= nova_direct_IO,
-// 	/*.dax_mem_protect	= nova_dax_mem_protect,*/
+// const struct address_space_operations finefs_aops_dax = {
+// 	.direct_IO		= finefs_direct_IO,
+// 	/*.dax_mem_protect	= finefs_dax_mem_protect,*/
 // };

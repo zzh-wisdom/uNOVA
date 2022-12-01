@@ -1,5 +1,5 @@
 /*
- * NOVA File System statistics
+ * FINEFS File System statistics
  *
  * Copyright 2015-2016 Regents of the University of California,
  * UCSD Non-Volatile Systems Lab, Andiry Xu <jix024@cs.ucsd.edu>
@@ -82,7 +82,7 @@ enum timing_category {
 	delete_file_tree_t,
 	delete_dir_tree_t,
 	new_vfs_inode_t,
-	new_nova_inode_t,
+	new_finefs_inode_t,
 	free_inode_t,
 	free_inode_log_t,
 	evict_inode_t,
@@ -109,7 +109,7 @@ enum stats_category {
 	STATS_NUM,
 };
 
-// extern const char *Timingstring[TIMING_NUM];
+// extern const char *finefs_Timingstring[TIMING_NUM];
 // extern u64 Timingstats[TIMING_NUM];
 // DECLARE_PER_CPU(u64[TIMING_NUM], Timingstats_percpu);
 // extern u64 Countstats[TIMING_NUM];
@@ -120,10 +120,10 @@ enum stats_category {
 // typedef struct timespec timing_t;
 typedef int timing_t;
 
-// #define NOVA_START_TIMING(name, start) \
+// #define FINEFS_START_TIMING(name, start) \
 // 	{if (measure_timing) getrawmonotonic(&start);}
 
-// #define NOVA_END_TIMING(name, start) \
+// #define FINEFS_END_TIMING(name, start) \
 // 	{if (measure_timing) { \
 // 		timing_t end; \
 // 		getrawmonotonic(&end); \
@@ -134,9 +134,9 @@ typedef int timing_t;
 // 	__this_cpu_add(Countstats_percpu[name], 1); \
 // 	}
 
-// #define NOVA_STATS_ADD(name, value) \
+// #define FINEFS_STATS_ADD(name, value) \
 // 	{__this_cpu_add(IOstats_percpu[name], value);}
 
-#define NOVA_START_TIMING(name, start) void(0)
-#define NOVA_END_TIMING(name, start) void(0)
-#define NOVA_STATS_ADD(name, value) void(0)
+#define FINEFS_START_TIMING(name, start) void(0)
+#define FINEFS_END_TIMING(name, start) void(0)
+#define FINEFS_STATS_ADD(name, value) void(0)

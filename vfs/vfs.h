@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "nova/nova_com.h"
+#include "vfs/com.h"
 #include "util/atomic.h"
 #include "util/list.h"
 #include "util/lock.h"

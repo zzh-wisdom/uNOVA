@@ -19,18 +19,18 @@
 
 int main(int argc, char* argv[]) {
 
-    void *handle = dlopen("./libfs_hook.so", RTLD_LAZY);
+#if FS_HOOK==1
+    printf("dlopen ./libnova_hook.so\n");
+    void *handle = dlopen("./libnova_hook.so", RTLD_NOW);
 	assert(handle);
-    /**
-        /tmp/mountdir
-        ├── top_plus
-        └── top
-            ├── dir_a
-            |   └── subdir_a
-            ├── dir_b
-            └── file_a
-    */
     const std::string mntdir = "/tmp/nova";
+#else
+    printf("dlopen ./libfinefs_hook.so\n");
+    void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
+	assert(handle);
+    const std::string mntdir = "/tmp/finefs";
+#endif
+
     const std::string dir1 = mntdir + "/dir1";
     const std::string dir2 = mntdir + "/dir2";
     const std::string dir1_d1 = mntdir + "/dir1" + "/d1";

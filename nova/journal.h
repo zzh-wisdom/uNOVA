@@ -22,7 +22,7 @@
 #ifndef __NOVA_JOURNAL_H__
 #define __NOVA_JOURNAL_H__
 
-#include "nova/nova_com.h"
+#include "vfs/com.h"
 
 /* Lite journal */
 // 刚好一个cacheline

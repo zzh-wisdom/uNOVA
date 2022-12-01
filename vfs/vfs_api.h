@@ -1,7 +1,7 @@
 #ifndef UNOVA_VFS_API_H_
 #define UNOVA_VFS_API_H_
 
-#include "nova/vfs.h"
+#include "vfs/vfs.h"
 
 #include "util/aep.h"
 
@@ -19,7 +19,7 @@
  */
 int fs_mount(void** sb_, const std::string &dev_name, const std::string &root_path,
              struct vfs_cfg* cfg);
-int vfs_fs_unmount(void** sb_, const std::string &root_path);
+int fs_unmount(void** sb_, const std::string &root_path);
 
 // 0创建成功，-1创建失败
 int vfs_mkdir(const char* pathname, mode_t mode);

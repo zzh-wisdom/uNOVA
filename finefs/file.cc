@@ -15,13 +15,13 @@
  * warranty of any kind, whether express or implied.
  */
 
-#include "nova/nova.h"
+#include "finefs/finefs.h"
 
-static inline int nova_can_set_blocksize_hint(struct inode *inode,
-	struct nova_inode *pi, loff_t new_size)
+static inline int finefs_can_set_blocksize_hint(struct inode *inode,
+	struct finefs_inode *pi, loff_t new_size)
 {
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
 
 	/* Currently, we don't deallocate data blocks till the file is deleted.
 	 * So no changing blocksize hints once allocation is done. */
@@ -30,39 +30,39 @@ static inline int nova_can_set_blocksize_hint(struct inode *inode,
 	return 1;
 }
 
-// int nova_set_blocksize_hint(struct super_block *sb, struct inode *inode,
-// 	struct nova_inode *pi, loff_t new_size)
+// int finefs_set_blocksize_hint(struct super_block *sb, struct inode *inode,
+// 	struct finefs_inode *pi, loff_t new_size)
 // {
 // 	unsigned short block_type;
 
-// 	if (!nova_can_set_blocksize_hint(inode, pi, new_size))
+// 	if (!finefs_can_set_blocksize_hint(inode, pi, new_size))
 // 		return 0;
 
 // 	if (new_size >= 0x40000000) {   /* 1G */
-// 		block_type = NOVA_BLOCK_TYPE_1G;
+// 		block_type = FINEFS_BLOCK_TYPE_1G;
 // 		goto hint_set;
 // 	}
 
 // 	if (new_size >= 0x200000) {     /* 2M */
-// 		block_type = NOVA_BLOCK_TYPE_2M;
+// 		block_type = FINEFS_BLOCK_TYPE_2M;
 // 		goto hint_set;
 // 	}
 
 // 	/* defaulting to 4K */
-// 	block_type = NOVA_BLOCK_TYPE_4K;
+// 	block_type = FINEFS_BLOCK_TYPE_4K;
 
 // hint_set:
-// 	nova_dbg_verbose(
+// 	finefs_dbg_verbose(
 // 		"Hint: new_size 0x%lx, i_size 0x%lx",
 // 		new_size, pi->i_size);
-// 	nova_dbg_verbose("Setting the hint to 0x%x", block_type);
-// 	nova_memunlock_inode(sb, pi);
+// 	finefs_dbg_verbose("Setting the hint to 0x%x", block_type);
+// 	finefs_memunlock_inode(sb, pi);
 // 	pi->i_blk_type = block_type;
-// 	nova_memlock_inode(sb, pi);
+// 	finefs_memlock_inode(sb, pi);
 // 	return 0;
 // }
 
-static loff_t nova_llseek(struct file *file, loff_t offset, int origin)
+static loff_t finefs_llseek(struct file *file, loff_t offset, int origin)
 {
 	// struct inode *inode = file->f_path.dentry->d_inode;
 	struct inode *inode = file->f_inode;
@@ -75,14 +75,14 @@ static loff_t nova_llseek(struct file *file, loff_t offset, int origin)
 	// mutex_lock(&inode->i_mutex);
 	// switch (origin) {
 	// case SEEK_DATA:
-	// 	retval = nova_find_region(inode, &offset, 0);
+	// 	retval = finefs_find_region(inode, &offset, 0);
 	// 	if (retval) {
 	// 		mutex_unlock(&inode->i_mutex);
 	// 		return retval;
 	// 	}
 	// 	break;
 	// case SEEK_HOLE:
-	// 	retval = nova_find_region(inode, &offset, 1);
+	// 	retval = finefs_find_region(inode, &offset, 1);
 	// 	if (retval) {
 	// 		mutex_unlock(&inode->i_mutex);
 	// 		return retval;
@@ -106,14 +106,14 @@ static loff_t nova_llseek(struct file *file, loff_t offset, int origin)
 }
 
 #if 0
-static inline int nova_check_page_dirty(struct super_block *sb,
+static inline int finefs_check_page_dirty(struct super_block *sb,
 	unsigned long addr)
 {
 	return IS_MAP_WRITE(addr);
 }
 
-static unsigned long nova_get_dirty_range(struct super_block *sb,
-	struct nova_inode *pi, struct nova_inode_info *si, loff_t *start,
+static unsigned long finefs_get_dirty_range(struct super_block *sb,
+	struct finefs_inode *pi, struct finefs_inode_info *si, loff_t *start,
 	loff_t end)
 {
 	unsigned long flush_bytes = 0;
@@ -124,8 +124,8 @@ static unsigned long nova_get_dirty_range(struct super_block *sb,
 	loff_t dirty_start;
 	loff_t temp = *start;
 
-	nova_dbgv("%s: inode %lu, start %lu, end %lu",
-			__func__, pi->nova_ino, *start, end);
+	finefs_dbgv("%s: inode %lu, start %lu, end %lu",
+			__func__, pi->finefs_ino, *start, end);
 
 	dirty_start = temp;
 	while (temp < end) {
@@ -135,8 +135,8 @@ static unsigned long nova_get_dirty_range(struct super_block *sb,
 		if (bytes > (end - temp))
 			bytes = end - temp;
 
-		cache_addr = nova_get_cache_addr(sb, si, pgoff);
-		if (cache_addr && nova_check_page_dirty(sb, cache_addr)) {
+		cache_addr = finefs_get_cache_addr(sb, si, pgoff);
+		if (cache_addr && finefs_check_page_dirty(sb, cache_addr)) {
 			if (flush_bytes == 0)
 				dirty_start = temp;
 			flush_bytes += bytes;
@@ -155,7 +155,7 @@ static unsigned long nova_get_dirty_range(struct super_block *sb,
 	return flush_bytes;
 }
 
-static void nova_get_sync_range(struct nova_inode_info_header *sih,
+static void finefs_get_sync_range(struct finefs_inode_info_header *sih,
 	loff_t *start, loff_t *end)
 {
 	unsigned long start_blk, end_blk;
@@ -174,18 +174,18 @@ static void nova_get_sync_range(struct nova_inode_info_header *sih,
 }
 
 /* This function is called by both msync() and fsync().
- * TODO: Check if we can avoid calling nova_flush_buffer() for fsync. We use
+ * TODO: Check if we can avoid calling finefs_flush_buffer() for fsync. We use
  * movnti to write data to files, so we may want to avoid doing unnecessary
- * nova_flush_buffer() on fsync() */
-int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
+ * finefs_flush_buffer() on fsync() */
+int finefs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 {
 	/* Sync from start to end[inclusive] */
 	struct address_space *mapping = file->f_mapping;
 	struct inode *inode = mapping->host;
-	struct nova_inode_info *si = NOVA_I(inode);
-	struct nova_inode_info_header *sih = &si->header;
+	struct finefs_inode_info *si = FINEFS_I(inode);
+	struct finefs_inode_info_header *sih = &si->header;
 	struct super_block *sb = inode->i_sb;
-	struct nova_inode *pi;
+	struct finefs_inode *pi;
 	unsigned long start_blk, end_blk;
 	u64 end_tail = 0, begin_tail = 0;
 	u64 begin_temp = 0, end_temp = 0;
@@ -194,14 +194,14 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	loff_t isize;
 	timing_t fsync_time;
 
-	NOVA_START_TIMING(fsync_t, fsync_time);
+	FINEFS_START_TIMING(fsync_t, fsync_time);
 	if (!mapping_mapped(mapping))
 		goto out;
 
 	mutex_lock(&inode->i_mutex);
 
 	/* Check the dirty range */
-	pi = nova_get_inode(sb, inode);
+	pi = finefs_get_inode(sb, inode);
 
 	end += 1; /* end is inclusive. We like our indices normal please! */
 
@@ -211,18 +211,18 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 		end = isize;
 	if (!isize || (start >= end))
 	{
-		nova_dbg_verbose("[%s:%d] : (ERR) isize(%llx), start(%llx),"
+		finefs_dbg_verbose("[%s:%d] : (ERR) isize(%llx), start(%llx),"
 			" end(%llx)", __func__, __LINE__, isize, start, end);
-		NOVA_END_TIMING(fsync_t, fsync_time);
+		FINEFS_END_TIMING(fsync_t, fsync_time);
 		mutex_unlock(&inode->i_mutex);
 		return 0;
 	}
 
-	nova_get_sync_range(sih, &start, &end);
+	finefs_get_sync_range(sih, &start, &end);
 	start_blk = start >> PAGE_SHIFT;
 	end_blk = end >> PAGE_SHIFT;
 
-	nova_dbgv("%s: start %lu, end %lu, size %lu, "
+	finefs_dbgv("%s: start %lu, end %lu, size %lu, "
 			" start_blk %lu, end_blk %lu",
 			__func__, start, end, isize, start_blk,
 			end_blk);
@@ -234,12 +234,12 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	do {
 		unsigned long nr_flush_bytes = 0;
 
-		nr_flush_bytes = nova_get_dirty_range(sb, pi, si, &start, end);
+		nr_flush_bytes = finefs_get_dirty_range(sb, pi, si, &start, end);
 
-		nova_dbgv("start %lu, flush bytes %lu",
+		finefs_dbgv("start %lu, flush bytes %lu",
 				start, nr_flush_bytes);
 		if (nr_flush_bytes) {
-			nova_copy_to_nvmm(sb, inode, pi, start,
+			finefs_copy_to_nvmm(sb, inode, pi, start,
 				nr_flush_bytes, &begin_temp, &end_temp);
 			if (begin_tail == 0)
 				begin_tail = begin_temp;
@@ -250,10 +250,10 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 
 	end_tail = end_temp;
 	if (begin_tail && end_tail && end_tail != pi->log_tail) {
-		nova_update_tail(pi, end_tail);
+		finefs_update_tail(pi, end_tail);
 
 		/* Free the overlap blocks after the write is committed */
-		ret = nova_reassign_file_tree(sb, pi, sih, begin_tail);
+		ret = finefs_reassign_file_tree(sb, pi, sih, begin_tail);
 
 		inode->i_blocks = le64_to_cpu(pi->i_blocks);
 	}
@@ -261,30 +261,30 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	mutex_unlock(&inode->i_mutex);
 
 out:
-	NOVA_END_TIMING(fsync_t, fsync_time);
+	FINEFS_END_TIMING(fsync_t, fsync_time);
 
 	return ret;
 }
 #endif
 
 /* This function is called by both msync() and fsync().
- * TODO: Check if we can avoid calling nova_flush_buffer() for fsync. We use
+ * TODO: Check if we can avoid calling finefs_flush_buffer() for fsync. We use
  * movnti to write data to files, so we may want to avoid doing unnecessary
- * nova_flush_buffer() on fsync() */
-int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
+ * finefs_flush_buffer() on fsync() */
+int finefs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 {
 	/* Sync from start to end[inclusive] */
 	// struct address_space *mapping = file->f_mapping;
 	// struct inode *inode = mapping->host;
 	// struct super_block *sb = inode->i_sb;
-	// struct nova_inode_info *si = NOVA_I(inode);
-	// struct nova_inode_info_header *sih = &si->header;
-	// struct nova_file_write_entry *entry;
+	// struct finefs_inode_info *si = FINEFS_I(inode);
+	// struct finefs_inode_info_header *sih = &si->header;
+	// struct finefs_file_write_entry *entry;
 	int ret = 0;
 	// loff_t isize;
 	// timing_t fsync_time;
 
-	NOVA_START_TIMING(fsync_t, fsync_time);
+	FINEFS_START_TIMING(fsync_t, fsync_time);
 
 	/* No need to flush if the file is not mmaped */
 	// if (!mapping_mapped(mapping))
@@ -298,9 +298,9 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	// 	end = isize;
 	// if (!isize || (start >= end))
 	// {
-	// 	nova_dbgv("[%s:%d] : (ERR) isize(%llx), start(%llx),"
+	// 	finefs_dbgv("[%s:%d] : (ERR) isize(%llx), start(%llx),"
 	// 		" end(%llx)", __func__, __LINE__, isize, start, end);
-	// 	NOVA_END_TIMING(fsync_t, fsync_time);
+	// 	FINEFS_END_TIMING(fsync_t, fsync_time);
 	// 	return -ENODATA;
 	// }
 
@@ -318,13 +318,13 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	// 	pgoff = start >> PAGE_SHIFT;
 	// 	offset = start & ~PAGE_MASK;
 
-	// 	entry = nova_get_write_entry(sb, si, pgoff);
+	// 	entry = finefs_get_write_entry(sb, si, pgoff);
 	// 	if (unlikely(entry == NULL)) {
-	// 		nova_dbgv("Found hole: pgoff %lu, inode size %lld",
+	// 		finefs_dbgv("Found hole: pgoff %lu, inode size %lld",
 	// 				pgoff, isize);
 
 	// 		/* Jump the hole */
-	// 		entry = nova_find_next_entry(sb, sih, pgoff);
+	// 		entry = finefs_find_next_entry(sb, sih, pgoff);
 	// 		if (!entry)
 	// 			goto persist;
 
@@ -340,10 +340,10 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 
 	// 	if (pgoff < entry->pgoff ||
 	// 			pgoff - entry->pgoff >= entry->num_pages) {
-	// 		nova_err(sb, "%s ERROR: %lu, entry pgoff %lu, num %u, "
+	// 		finefs_err(sb, "%s ERROR: %lu, entry pgoff %lu, num %u, "
 	// 			"blocknr %lu", __func__, pgoff, entry->pgoff,
 	// 			entry->num_pages, entry->block >> PAGE_SHIFT);
-	// 		NOVA_END_TIMING(fsync_t, fsync_time);
+	// 		FINEFS_END_TIMING(fsync_t, fsync_time);
 	// 		return -EINVAL;
 	// 	}
 
@@ -358,55 +358,55 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	// 		nr_flush_bytes = avail_bytes;
 
 	// 	nvmm = get_nvmm(sb, sih, entry, pgoff);
-	// 	dax_mem = nova_get_block(sb, (nvmm << PAGE_SHIFT));
+	// 	dax_mem = finefs_get_block(sb, (nvmm << PAGE_SHIFT));
 
-	// 	nova_dbgv("start %lu, flush bytes %lu",
+	// 	finefs_dbgv("start %lu, flush bytes %lu",
 	// 			start, nr_flush_bytes);
 	// 	if (nr_flush_bytes)
-	// 		nova_flush_buffer(dax_mem + offset, nr_flush_bytes, 0);
+	// 		finefs_flush_buffer(dax_mem + offset, nr_flush_bytes, 0);
 
 	// 	start += nr_flush_bytes;
 	// } while (start < end);
 
 persist:
 	PERSISTENT_BARRIER();
-	NOVA_END_TIMING(fsync_t, fsync_time);
+	FINEFS_END_TIMING(fsync_t, fsync_time);
 
 	return ret;
 }
 
 /* This callback is called when a file is closed */
-static int nova_flush(struct file *file, fl_owner_t id)
+static int finefs_flush(struct file *file, fl_owner_t id)
 {
 	PERSISTENT_BARRIER();
 	return 0;
 }
 
-// static int nova_open(struct inode *inode, struct file *filp)
+// static int finefs_open(struct inode *inode, struct file *filp)
 // {
 // 	return generic_file_open(inode, filp);
 // }
 
-const struct file_operations nova_dax_file_operations = {
-// #ifndef NOVA_CUT_OUT
-	.llseek			= nova_llseek,
+const struct file_operations finefs_dax_file_operations = {
+// #ifndef FINEFS_CUT_OUT
+	.llseek			= finefs_llseek,
 // #endif
-	.read			= nova_dax_file_read,
-	.write			= nova_dax_file_write,
+	.read			= finefs_dax_file_read,
+	.write			= finefs_dax_file_write,
 	// .read_iter		= generic_file_read_iter,
 	// .write_iter		= generic_file_write_iter,
-	// .mmap			= nova_dax_file_mmap,
-	// .open			= nova_open,
-	.flush			= nova_flush,
-	.fsync			= nova_fsync,  // 主要对mmap有用，不过我们目前已经将mmap去掉了
-	// .unlocked_ioctl		= nova_ioctl,
+	// .mmap			= finefs_dax_file_mmap,
+	// .open			= finefs_open,
+	.flush			= finefs_flush,
+	.fsync			= finefs_fsync,  // 主要对mmap有用，不过我们目前已经将mmap去掉了
+	// .unlocked_ioctl		= finefs_ioctl,
 // #ifdef CONFIG_COMPAT
-// 	.compat_ioctl		= nova_compat_ioctl,
+// 	.compat_ioctl		= finefs_compat_ioctl,
 // #endif
 };
 
-const struct inode_operations nova_file_inode_operations = {
-	.setattr	= nova_notify_change,
-	.getattr	= nova_getattr,
+const struct inode_operations finefs_file_inode_operations = {
+	.setattr	= finefs_notify_change,
+	.getattr	= finefs_getattr,
 	// .get_acl	= NULL,
 };

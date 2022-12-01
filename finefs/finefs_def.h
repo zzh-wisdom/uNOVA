@@ -1,9 +1,9 @@
 /*
- * FILE NAME include/linux/nova_fs.h
+ * FILE NAME include/linux/finefs_fs.h
  *
  * BRIEF DESCRIPTION
  *
- * Definitions for the NOVA filesystem.
+ * Definitions for the FINEFS filesystem.
  *
  * Copyright 2015-2016 Regents of the University of California,
  * UCSD Non-Volatile Systems Lab, Andiry Xu <jix024@cs.ucsd.edu>
@@ -17,68 +17,68 @@
  * License version 2. This program is licensed "as is" without any
  * warranty of any kind, whether express or implied.
  */
-#ifndef _LINUX_NOVA_DEF_H
-#define _LINUX_NOVA_DEF_H
+#ifndef _LINUX_FINEFS_DEF_H
+#define _LINUX_FINEFS_DEF_H
 
 #include <sys/types.h>
 
-#include "nova/nova_com.h"
+#include "vfs/com.h"
 #include "util/aep.h"
 
-#define	NOVA_SUPER_MAGIC	0x4E4F5641	/* NOVA */
+#define	FINEFS_SUPER_MAGIC	0x4E4F5641	/* FINEFS */
 
 /*
- * The NOVA filesystem constants/structures
+ * The FINEFS filesystem constants/structures
  */
 
 /*
  * Mount flags
  */
-#define NOVA_MOUNT_PROTECT 0x000001            /* wprotect CR0.WP */
-#define NOVA_MOUNT_XATTR_USER 0x000002         /* Extended user attributes */
-#define NOVA_MOUNT_POSIX_ACL 0x000004          /* POSIX Access Control Lists */
-#define NOVA_MOUNT_DAX 0x000008                /* Direct Access */
-#define NOVA_MOUNT_ERRORS_CONT 0x000010        /* Continue on errors */
-#define NOVA_MOUNT_ERRORS_RO 0x000020          /* Remount fs ro on errors */
-#define NOVA_MOUNT_ERRORS_PANIC 0x000040       /* Panic on errors */
-#define NOVA_MOUNT_HUGEMMAP 0x000080           /* Huge mappings with mmap */
-#define NOVA_MOUNT_HUGEIOREMAP 0x000100        /* Huge mappings with ioremap */
-#define NOVA_MOUNT_FORMAT      0x000200        /* was FS formatted on mount? */
-#define NOVA_MOUNT_MOUNTING    0x000400        /* FS currently being mounted */
+#define FINEFS_MOUNT_PROTECT 0x000001            /* wprotect CR0.WP */
+#define FINEFS_MOUNT_XATTR_USER 0x000002         /* Extended user attributes */
+#define FINEFS_MOUNT_POSIX_ACL 0x000004          /* POSIX Access Control Lists */
+#define FINEFS_MOUNT_DAX 0x000008                /* Direct Access */
+#define FINEFS_MOUNT_ERRORS_CONT 0x000010        /* Continue on errors */
+#define FINEFS_MOUNT_ERRORS_RO 0x000020          /* Remount fs ro on errors */
+#define FINEFS_MOUNT_ERRORS_PANIC 0x000040       /* Panic on errors */
+#define FINEFS_MOUNT_HUGEMMAP 0x000080           /* Huge mappings with mmap */
+#define FINEFS_MOUNT_HUGEIOREMAP 0x000100        /* Huge mappings with ioremap */
+#define FINEFS_MOUNT_FORMAT      0x000200        /* was FS formatted on mount? */
+#define FINEFS_MOUNT_MOUNTING    0x000400        /* FS currently being mounted */
 
 /*
  * Maximal count of links to a file
  */
-#define NOVA_LINK_MAX          32000
+#define FINEFS_LINK_MAX          32000
 
-#define NOVA_DEF_BLOCK_SIZE_4K 4096
+#define FINEFS_DEF_BLOCK_SIZE_4K 4096
 
-#define NOVA_INODE_SIZE 128    /* must be power of two */
-#define NOVA_INODE_BITS   7
+#define FINEFS_INODE_SIZE 128    /* must be power of two */
+#define FINEFS_INODE_BITS   7
 
-#define NOVA_NAME_LEN 255
+#define FINEFS_NAME_LEN 255
 
-/* NOVA supported data blocks */
-#define NOVA_BLOCK_TYPE_4K     0
-#define NOVA_BLOCK_TYPE_2M     1
-#define NOVA_BLOCK_TYPE_1G     2
-#define NOVA_BLOCK_TYPE_MAX    3
+/* FINEFS supported data blocks */
+#define FINEFS_BLOCK_TYPE_4K     0
+#define FINEFS_BLOCK_TYPE_2M     1
+#define FINEFS_BLOCK_TYPE_1G     2
+#define FINEFS_BLOCK_TYPE_MAX    3
 
 #define META_BLK_SHIFT 9
 
 /*
  * Play with this knob to change the default block type.
- * By changing the NOVA_DEFAULT_BLOCK_TYPE to 2M or 1G,
+ * By changing the FINEFS_DEFAULT_BLOCK_TYPE to 2M or 1G,
  * we should get pretty good coverage in testing.
  */
-#define NOVA_DEFAULT_BLOCK_TYPE NOVA_BLOCK_TYPE_4K
+#define FINEFS_DEFAULT_BLOCK_TYPE FINEFS_BLOCK_TYPE_4K
 
 /*
- * Structure of an inode in NOVA.
+ * Structure of an inode in FINEFS.
  * Keep the inode size to within 120 bytes: We use the last eight bytes
  * as inode table tail pointer.
  */
-struct nova_inode {
+struct finefs_inode {
 	/* first 48 bytes */
 	__le16	i_rsvd;		/* reserved. used to be checksum */
 	u8	valid;		/* Is this inode valid? 新建inode时和父母tail一起journal方式写*/
@@ -105,7 +105,7 @@ struct nova_inode {
 	__le32	i_gid;		/* Group Id */
 	__le32	i_generation;	/* File version (for NFS) */
 	__le32	padding;
-	__le64	nova_ino;	/* nova inode number */
+	__le64	finefs_ino;	/* finefs inode number */
 
 	__le64	log_head;	/* Log head pointer */
 	__le64	log_tail;	/* Log tail pointer */
@@ -118,20 +118,20 @@ struct nova_inode {
 } __attribute((__packed__));
 
 
-#define NOVA_SB_SIZE 512       /* must be power of two */
+#define FINEFS_SB_SIZE 512       /* must be power of two */
 
 /*
- * Structure of the super block in NOVA
+ * Structure of the super block in FINEFS
  * The fields are partitioned into static and dynamic fields. The static fields
  * never change after file system creation. This was primarily done because
- * nova_get_block() returns NULL if the block offset is 0 (helps in catching
+ * finefs_get_block() returns NULL if the block offset is 0 (helps in catching
  * bugs). So if we modify any field using journaling (for consistency), we
  * will have to modify s_sum which is at offset 0. So journaling code fails.
  * This (static+dynamic fields) is a temporary solution and can be avoided
- * once the file system becomes stable and nova_get_block() returns correct
+ * once the file system becomes stable and finefs_get_block() returns correct
  * pointers even for offset 0.
  */
-struct nova_super_block {
+struct finefs_super_block {
 	/* static fields. they never change after file system creation.
 	 * checksum only validates up to s_start_dynamic field below */
 	__le16		s_sum;              /* checksum of this sb */
@@ -153,30 +153,30 @@ struct nova_super_block {
 	__le64		s_num_free_blocks;
 } __attribute((__packed__));  // 取消对齐
 
-#define NOVA_SB_STATIC_SIZE(ps) ((u64)&ps->s_start_dynamic - (u64)ps)
+#define FINEFS_SB_STATIC_SIZE(ps) ((u64)&ps->s_start_dynamic - (u64)ps)
 
 /* the above fast mount fields take total 32 bytes in the super block */
-#define NOVA_FAST_MOUNT_FIELD_SIZE  (36)
+#define FINEFS_FAST_MOUNT_FIELD_SIZE  (36)
 
 // 实际上为了方便空间管理，空间管理器只实现了按照inode来分配空间的接口。
 // 为了分配其他类型的空间，这里预留了几个ino
 
 /* The root inode follows immediately after the redundant super block */
-#define NOVA_ROOT_INO		(1)
+#define FINEFS_ROOT_INO		(1)
 // 用于分配innode table空间(每次2MB)的inode
-#define NOVA_INODETABLE_INO	(2)	/* Temporaty inode table */
+#define FINEFS_INODETABLE_INO	(2)	/* Temporaty inode table */
 // 用于分配 数据block ?
-#define NOVA_BLOCKNODE_INO	(3)
+#define FINEFS_BLOCKNODE_INO	(3)
 
-#define NOVA_INODELIST_INO	(4)
+#define FINEFS_INODELIST_INO	(4)
 // 用于分配journal的空间（每次4KB）
-#define NOVA_LITEJOURNAL_INO	(5)
-#define NOVA_INODELIST1_INO	(6)
+#define FINEFS_LITEJOURNAL_INO	(5)
+#define FINEFS_INODELIST1_INO	(6)
 
-#define	NOVA_ROOT_INO_START	(NOVA_SB_SIZE * 2)
+#define	FINEFS_ROOT_INO_START	(FINEFS_SB_SIZE * 2)
 
 /* Normal inode starts at 16 */
-#define NOVA_NORMAL_INODE_START      (16)
+#define FINEFS_NORMAL_INODE_START      (16)
 
 /* ======================= Write ordering ========================= */
 
@@ -221,7 +221,7 @@ static inline void PERSISTENT_BARRIER(void)
 	// }
 }
 
-static inline void nova_flush_buffer(void *buf, uint32_t len, bool fence)
+static inline void finefs_flush_buffer(void *buf, uint32_t len, bool fence)
 {
 	uint32_t i;
 	len = len + ((unsigned long)(buf) & (CACHELINE_SIZE - 1));
@@ -243,4 +243,4 @@ static inline void nova_flush_buffer(void *buf, uint32_t len, bool fence)
 		PERSISTENT_BARRIER();
 }
 
-#endif /* _LINUX_NOVA_DEF_H */
+#endif /* _LINUX_FINEFS_DEF_H */

@@ -6,6 +6,7 @@
 
 #define ATTR_CONSTRUCTOR __attribute__((constructor)) static
 #define ATTR_DESTRUCTOR __attribute__((destructor)) static
+#define ATTR_PRIORITY_ONE __attribute__((init_priority(1)))
 
 #define CACHELINE_SIZE  (64)
 #define CACHELINE_MASK (CACHELINE_SIZE - 1)
