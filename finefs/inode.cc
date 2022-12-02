@@ -1250,11 +1250,18 @@ int finefs_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	return 0;
 }
 
+// #define SETATTR_BY_CPY_NT
+
 static void finefs_update_setattr_entry(struct inode *inode,
-	struct finefs_setattr_logentry *entry, struct iattr *attr)
+	struct finefs_setattr_logentry *p_entry, struct iattr *attr)
 {
 	unsigned int ia_valid = attr->ia_valid, attr_mask;
-
+#ifdef SETATTR_BY_CPY_NT
+    struct finefs_setattr_logentry tmp;
+    struct finefs_setattr_logentry* entry = &tmp;
+#else
+    struct finefs_setattr_logentry* entry = p_entry;
+#endif
 	/* These files are in the lowest byte */
 	attr_mask = ATTR_MODE | ATTR_UID | ATTR_GID | ATTR_SIZE |
 			ATTR_ATIME | ATTR_MTIME | ATTR_CTIME;
@@ -1273,7 +1280,16 @@ static void finefs_update_setattr_entry(struct inode *inode,
 	else
 		entry->size = cpu_to_le64(inode->i_size);
 
-	finefs_flush_buffer(entry, sizeof(struct finefs_setattr_logentry), 0);
+#if LOG_ENTRY_SIZE==64
+    barrier();
+    entry->version = 0x1234;
+#endif
+
+#ifdef SETATTR_BY_CPY_NT
+    pmem_memcpy_nt_nodrain(p_entry, entry, sizeof(struct finefs_setattr_logentry));
+#else
+	finefs_flush_buffer(p_entry, sizeof(struct finefs_setattr_logentry), 0);
+#endif
 }
 
 // 属性还包括文件大小（截断/扩展）
@@ -1386,6 +1402,7 @@ int finefs_notify_change(struct dentry *dentry, struct iattr *attr)
 	new_tail = finefs_append_setattr_entry(sb, pi, inode, attr, 0);
 
     finefs_update_volatile_tail(sih, new_tail);
+    // sih->i_log_tail = new_tail;
 	// finefs_update_tail(pi, new_tail);
 
 	/* Only after log entry is committed, we can truncate size */
@@ -1894,7 +1911,14 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     FINEFS_START_TIMING(fast_gc_t, gc_time);
     curr = pi->log_head;
     sih->valid_bytes = 0;
-    r_info("%s: log head 0x%lx, tail 0x%lx", __func__, curr, curr_tail);
+
+    // r_info("%s: log head 0x%lx, tail 0x%lx, new pages: %d", __func__, curr, curr_tail, num_pages);
+    sih->log_pages += num_pages;
+    curr = FINEFS_LOG_BLOCK_OFF(curr_tail);
+    curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
+    finefs_set_next_page_address(sb, curr_page, new_block, 1);
+    return 0;
+
     while (1) {
         if (curr >> FINEFS_BLOCK_SHIFT == pi->log_tail >> FINEFS_BLOCK_SHIFT) {
             /* Don't recycle tail page 不回收最后一个page，避免即修改head又修改tail，不能原子*/
@@ -2012,7 +2036,7 @@ static u64 finefs_extend_inode_log(struct super_block *sb, struct finefs_inode *
             return 0;
         }
 
-        // finefs_inode_log_fast_gc(sb, pi, sih, curr_p, new_block, allocated);
+        finefs_inode_log_fast_gc(sb, pi, sih, curr_p, new_block, allocated);
 
         //		finefs_dbg("After append log pages:");
         //		finefs_print_inode_log_page(sb, inode);
@@ -2065,6 +2089,7 @@ u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
 
         // 当前log的空间不足，需要分配新的log page
         if (sih) {
+            // curr_p已经指向新的block
             curr_p = finefs_extend_inode_log(sb, pi, sih, curr_p);
         } else {
             // 用于GC时的append log，GC应该到不了这里吧，因为一次就分配足够的page了
@@ -2074,12 +2099,17 @@ u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
             *extended = 1;
         }
 
-        if (curr_p == 0) return 0;
+        if (curr_p == 0) {
+            log_assert(0);
+            return 0;
+        }
     }
 
-    if (is_last_entry(curr_p, size)) {  // 感觉这才是给gc用的
+    if (is_last_entry(curr_p, size)) {  // 感觉这才是给gc用的，预留多个page后，也会经过这里
+        // r_info("%s curr_p 0x%lx", __func__, curr_p);
         finefs_set_next_page_flag(sb, curr_p);
         curr_p = next_log_page(sb, curr_p);
+        // r_info("%s curr_p 0x%lx", __func__, curr_p);
     }
 
     return curr_p;

@@ -52,6 +52,10 @@ static force_inline void *pmem_memcpy_nt(void *pmem, const void *src, unsigned i
     return pmem_memcpy_func(pmem, src, size, PMEM2_F_MEM_NONTEMPORAL);
 }
 
+static force_inline void *pmem_memcpy_nt_nodrain(void *pmem, const void *src, unsigned int size) {
+    return pmem_memcpy_func(pmem, src, size, PMEM2_F_MEM_NONTEMPORAL | PMEM2_F_MEM_NODRAIN);
+}
+
 static force_inline int __copy_from_user_inatomic_nocache(void *dst, const void *src, unsigned int size) {
     pmem_memcpy_nt(dst, src, size);
     return 0;
