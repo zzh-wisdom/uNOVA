@@ -44,6 +44,10 @@ static force_inline void *pmem_memset_nt(void *pmem, int c, size_t n) {
     return pmem_memset_func(pmem, c, n, PMEM2_F_MEM_NONTEMPORAL);
 }
 
+static force_inline void *pmem_memcpy_noflush(void *pmem, const void *src, unsigned int size) {
+    return pmem_memcpy_func(pmem, src, size, PMEM2_F_MEM_NOFLUSH);
+}
+
 static force_inline void *pmem_memcpy_nt(void *pmem, const void *src, unsigned int size) {
     return pmem_memcpy_func(pmem, src, size, PMEM2_F_MEM_NONTEMPORAL);
 }

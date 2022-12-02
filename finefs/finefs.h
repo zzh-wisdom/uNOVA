@@ -162,8 +162,8 @@ struct finefs_inode_page_tail {
 // log的大小必须等于基本lock大小，否则一些掩码的操作会存在问题，
 // FIXME：或者改用伙伴算法，每次分配的大小都按照大小对齐
 #define FINEFS_LOG_BLOCK_TYPE 	FINEFS_DEFAULT_DATA_BLOCK_TYPE
-#define FINEFS_LOG_NUM_BLOCKS  	(1 << FINEFS_DEFAULT_DATA_BLOCK_BITS)
-#define FINEFS_LOG_SHIFT        (FINEFS_BLOCK_SHIFT + FINEFS_DEFAULT_DATA_BLOCK_BITS)
+#define FINEFS_LOG_NUM_BLOCKS  	(1)
+#define FINEFS_LOG_SHIFT        (FINEFS_BLOCK_SHIFT)
 #define FINEFS_LOG_SIZE         (1 << FINEFS_LOG_SHIFT)
 #define FINEFS_LOG_UMASK         (FINEFS_LOG_SIZE-1)
 #define FINEFS_LOG_MASK        (~(FINEFS_LOG_SIZE-1))
@@ -236,6 +236,8 @@ struct finefs_dentry {
 #define FINEFS_DIR_ROUND			(FINEFS_DIR_PAD - 1)
 #define FINEFS_DIR_LOG_REC_LEN(name_len)	(((name_len) + 29 + FINEFS_DIR_ROUND) & \
 				      ~FINEFS_DIR_ROUND)
+
+#define LOG_ENTRY_SIZE 64
 
 #if LOG_ENTRY_SIZE==64
 
@@ -366,8 +368,22 @@ struct finefs_inode_info_header {
 	u64 last_setattr;		/* Last setattr entry ,当前已经应用的setattr log地址*/
 	u64 last_link_change;		/* Last link change entry */
 
-	__le64	log_tail;
+	// TODO:
+	__le64	i_log_tail;
 };
+
+static inline void finefs_update_volatile_tail(struct finefs_inode_info_header *sih, u64 new_tail)
+{
+	// timing_t update_time;
+
+	// FINEFS_START_TIMING(update_tail_t, update_time);
+
+	PERSISTENT_BARRIER();
+	sih->i_log_tail = new_tail;
+
+	// finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 1);
+	// FINEFS_END_TIMING(update_tail_t, update_time);
+}
 
 struct finefs_inode_info {
 	struct finefs_inode_info_header header;

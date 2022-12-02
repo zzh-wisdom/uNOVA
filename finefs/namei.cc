@@ -513,6 +513,7 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
     /* Build the dir tree */
     si = FINEFS_I(inode);
     sih = &si->header;
+    sih->i_log_tail = pi->log_tail;
     finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, sih);
 
     pidir = finefs_get_inode(sb, dir);

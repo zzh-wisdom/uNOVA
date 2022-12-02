@@ -21,43 +21,43 @@
 #include "util/log.h"
 
 unsigned int finefs_blk_type_to_shift[FINEFS_BLOCK_TYPE_MAX] = {
-    FINEFS_BLOCK_SHIFT + FINEFS_4K_BLK_NUM_BITS   ,
-    FINEFS_BLOCK_SHIFT + FINEFS_8K_BLK_NUM_BITS   ,
-    FINEFS_BLOCK_SHIFT + FINEFS_16K_BLK_NUM_BITS  ,
-    FINEFS_BLOCK_SHIFT + FINEFS_32K_BLK_NUM_BITS  ,
-    FINEFS_BLOCK_SHIFT + FINEFS_64K_BLK_NUM_BITS  ,
-    FINEFS_BLOCK_SHIFT + FINEFS_128K_BLK_NUM_BITS ,
-    FINEFS_BLOCK_SHIFT + FINEFS_256K_BLK_NUM_BITS ,
-    FINEFS_BLOCK_SHIFT + FINEFS_512K_BLK_NUM_BITS ,
-    FINEFS_BLOCK_SHIFT + FINEFS_1M_BLK_NUM_BITS   ,
-    FINEFS_BLOCK_SHIFT + FINEFS_2M_BLK_NUM        ,
-    FINEFS_BLOCK_SHIFT + FINEFS_1G_BLK_NUM        ,
+    12 + FINEFS_4K_BLK_NUM_BITS   ,
+    12 + FINEFS_8K_BLK_NUM_BITS   ,
+    12 + FINEFS_16K_BLK_NUM_BITS  ,
+    12 + FINEFS_32K_BLK_NUM_BITS  ,
+    12 + FINEFS_64K_BLK_NUM_BITS  ,
+    12 + FINEFS_128K_BLK_NUM_BITS ,
+    12 + FINEFS_256K_BLK_NUM_BITS ,
+    12 + FINEFS_512K_BLK_NUM_BITS ,
+    12 + FINEFS_1M_BLK_NUM_BITS   ,
+    12 + FINEFS_2M_BLK_NUM        ,
+    12 + FINEFS_1G_BLK_NUM        ,
 };
 unsigned int finefs_blk_type_to_size[FINEFS_BLOCK_TYPE_MAX] = {
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_4K_BLK_NUM_BITS  ) ,
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_8K_BLK_NUM_BITS  ) ,
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_16K_BLK_NUM_BITS ) ,
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_32K_BLK_NUM_BITS ) ,
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_64K_BLK_NUM_BITS ) ,
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_128K_BLK_NUM_BITS) ,
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_256K_BLK_NUM_BITS) ,
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_512K_BLK_NUM_BITS) ,
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_1M_BLK_NUM_BITS  ) ,
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_2M_BLK_NUM       ) ,
-    1u << (FINEFS_BLOCK_SHIFT + FINEFS_1G_BLK_NUM       ) ,
+    1u << (12 + FINEFS_4K_BLK_NUM_BITS  ) ,
+    1u << (12 + FINEFS_8K_BLK_NUM_BITS  ) ,
+    1u << (12 + FINEFS_16K_BLK_NUM_BITS ) ,
+    1u << (12 + FINEFS_32K_BLK_NUM_BITS ) ,
+    1u << (12 + FINEFS_64K_BLK_NUM_BITS ) ,
+    1u << (12 + FINEFS_128K_BLK_NUM_BITS) ,
+    1u << (12 + FINEFS_256K_BLK_NUM_BITS) ,
+    1u << (12 + FINEFS_512K_BLK_NUM_BITS) ,
+    1u << (12 + FINEFS_1M_BLK_NUM_BITS  ) ,
+    1u << (12 + FINEFS_2M_BLK_NUM       ) ,
+    1u << (12 + FINEFS_1G_BLK_NUM       ) ,
 };
 unsigned int finefs_blk_type_to_blk_num[FINEFS_BLOCK_TYPE_MAX] = {
-    1u << (FINEFS_4K_BLK_NUM_BITS  ) ,
-    1u << (FINEFS_8K_BLK_NUM_BITS  ) ,
-    1u << (FINEFS_16K_BLK_NUM_BITS ) ,
-    1u << (FINEFS_32K_BLK_NUM_BITS ) ,
-    1u << (FINEFS_64K_BLK_NUM_BITS ) ,
-    1u << (FINEFS_128K_BLK_NUM_BITS) ,
-    1u << (FINEFS_256K_BLK_NUM_BITS) ,
-    1u << (FINEFS_512K_BLK_NUM_BITS) ,
-    1u << (FINEFS_1M_BLK_NUM_BITS  ) ,
-    1u << (FINEFS_2M_BLK_NUM       ) ,
-    1u << (FINEFS_1G_BLK_NUM       ) ,
+    1u << (12 + FINEFS_4K_BLK_NUM_BITS   - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_8K_BLK_NUM_BITS   - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_16K_BLK_NUM_BITS  - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_32K_BLK_NUM_BITS  - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_64K_BLK_NUM_BITS  - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_128K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_256K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_512K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_1M_BLK_NUM_BITS   - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_2M_BLK_NUM        - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_1G_BLK_NUM        - FINEFS_BLOCK_SHIFT) ?: 1,
 };
 
 int finefs_init_inode_inuse_list(struct super_block *sb) {
@@ -1110,6 +1110,7 @@ struct inode *finefs_new_vfs_inode(enum finefs_new_inode_type type, struct inode
     finefs_init_header(sb, sih, inode->i_mode);
     sih->pi_addr = pi_addr;
     sih->ino = ino;
+    sih->i_log_tail = 0;
 
     finefs_update_inode(inode, pi);
 
@@ -1335,6 +1336,7 @@ static u64 finefs_append_setattr_entry(struct super_block *sb,
 	if (curr_p == 0)
 		BUG();
 
+    rd_info("%s curr_p: 0x%lx", __func__, curr_p);
 	entry = (struct finefs_setattr_logentry *)finefs_get_block(sb, curr_p);
 	/* inode is already updated with attr */
 	finefs_update_setattr_entry(inode, entry, attr);
@@ -1383,7 +1385,8 @@ int finefs_notify_change(struct dentry *dentry, struct iattr *attr)
 	/* We are holding i_mutex so OK to append the log */
 	new_tail = finefs_append_setattr_entry(sb, pi, inode, attr, 0);
 
-	finefs_update_tail(pi, new_tail);
+    finefs_update_volatile_tail(sih, new_tail);
+	// finefs_update_tail(pi, new_tail);
 
 	/* Only after log entry is committed, we can truncate size */
 	if ((ia_valid & ATTR_SIZE) && (attr->ia_size != oldsize ||
@@ -1526,7 +1529,7 @@ int finefs_allocate_inode_log_pages(struct super_block *sb, struct finefs_inode 
     r_info("finefs_new_log_blocks ZERO=1");
     allocated = finefs_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 1, cpuid);
 #else
-    r_info("finefs_new_log_blocks ZERO=0");
+    // r_info("finefs_new_log_blocks ZERO=0");
     allocated = finefs_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0, cpuid);
 #endif
     if (allocated <= 0) {
@@ -1891,7 +1894,6 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     FINEFS_START_TIMING(fast_gc_t, gc_time);
     curr = pi->log_head;
     sih->valid_bytes = 0;
-
     r_info("%s: log head 0x%lx, tail 0x%lx", __func__, curr, curr_tail);
     while (1) {
         if (curr >> FINEFS_BLOCK_SHIFT == pi->log_tail >> FINEFS_BLOCK_SHIFT) {
@@ -1989,6 +1991,7 @@ static u64 finefs_extend_inode_log(struct super_block *sb, struct finefs_inode *
             return 0;
         }
         pi->log_tail = new_block;
+        sih->i_log_tail = new_block;
         finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 0);
         pi->log_head = new_block;
         sih->log_pages = 1;
@@ -2009,7 +2012,7 @@ static u64 finefs_extend_inode_log(struct super_block *sb, struct finefs_inode *
             return 0;
         }
 
-        finefs_inode_log_fast_gc(sb, pi, sih, curr_p, new_block, allocated);
+        // finefs_inode_log_fast_gc(sb, pi, sih, curr_p, new_block, allocated);
 
         //		finefs_dbg("After append log pages:");
         //		finefs_print_inode_log_page(sb, inode);
@@ -2054,7 +2057,8 @@ u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
     if (tail)
         curr_p = tail;
     else
-        curr_p = pi->log_tail;
+        // curr_p = pi->log_tail;
+        curr_p = sih->i_log_tail;
 
     if (curr_p == 0 || (is_last_entry(curr_p, size) && next_log_page(sb, curr_p) == 0)) {
         if (is_last_entry(curr_p, size)) finefs_set_next_page_flag(sb, curr_p);

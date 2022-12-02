@@ -834,6 +834,7 @@ setup_sb:
         retval = -1;
         goto out;
     }
+    FINEFS_I(root_i)->header.i_log_tail = root_pi->log_tail;
 
     sb->s_root = d_make_root(root_i);
     inode_unref(root_i);

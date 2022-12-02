@@ -514,7 +514,7 @@ static int finefs_new_blocks(struct super_block *sb, unsigned long *blocknr,
 	int retried = 0;
 
 	num_blocks = num * finefs_get_numblocks(btype);
-	r_info("new block size: %lu, type %s", num_blocks << FINEFS_BLOCK_SHIFT, atype == LOG ? "LOG" : "DATA");
+	// r_info("new block size: %lu, type %s", num_blocks << FINEFS_BLOCK_SHIFT, atype == LOG ? "LOG" : "DATA");
 	if (num_blocks == 0)
 		return -EINVAL;
 

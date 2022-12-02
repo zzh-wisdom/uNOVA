@@ -80,8 +80,7 @@ enum blk_type_t {
  * By changing the FINEFS_DEFAULT_DATA_BLOCK_TYPE to 2M or 1G,
  * we should get pretty good coverage in testing.
  */
-#define FINEFS_DEFAULT_DATA_BLOCK_TYPE FINEFS_BLOCK_TYPE_4K
-#define FINEFS_DEFAULT_DATA_BLOCK_BITS FINEFS_4K_BLK_NUM_BITS
+#define FINEFS_DEFAULT_DATA_BLOCK_TYPE FINEFS_BLOCK_TYPE_16K
 
 /* ======================= finefs_super_block ========================= */
 

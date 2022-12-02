@@ -2,7 +2,7 @@
 
 [global]
 ; 目录需要事先存在
-directory=/tmp/nova
+directory=/tmp/finefs
 direct=1
 buffered=0
 thread=1
@@ -25,7 +25,7 @@ numjobs=1
 # ioengine=sync
 ioengine=ftruncate
 rw=write
-bs=4K
+bs=64B
 # 这个大小会在多个文件中平均分，如果没指定filesize
 size=3G
 # filesize=1G
