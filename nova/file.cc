@@ -305,7 +305,7 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	// }
 
 	// /* Align start and end to cacheline boundaries */
-	// start = start & CACHELINE_UNMASK;
+	// start = start & CACHELINE_MASK;
 	// end = CACHELINE_ALIGN(end);
 	// do {
 	// 	unsigned long nvmm;

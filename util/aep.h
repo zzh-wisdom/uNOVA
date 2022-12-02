@@ -27,7 +27,7 @@
 
 static force_inline void clwb_extent(const char *addr, size_t len) {
     uintptr_t uptr;
-    for (uptr = (uintptr_t)addr & CACHELINE_UNMASK; uptr < (uintptr_t)addr + len;
+    for (uptr = (uintptr_t)addr & CACHELINE_MASK; uptr < (uintptr_t)addr + len;
          uptr += CACHELINE_SIZE) {
         clwb(uptr)
     }

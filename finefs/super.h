@@ -11,6 +11,6 @@
 #define FINEFS_SB_SIZE 512 /* must be power of two */
 
 int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const std::string &dir_name,
-                 struct vfs_cfg *cfg);
+                   struct vfs_cfg *cfg);
 
 #endif

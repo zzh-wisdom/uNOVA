@@ -39,9 +39,9 @@ do_dax_mapping_read(struct file *filp, char *buf,
 
 	pos = *ppos;
 	// page index
-	index = pos >> PAGE_SHIFT;
+	index = pos >> FINEFS_BLOCK_SHIFT;
 	// page内偏移
-	offset = pos & ~PAGE_MASK;
+	offset = pos & FINEFS_BLOCK_UMASK;
 
 	// if (!access_ok(VERIFY_WRITE, buf, len)) {
 	// 	err = -EFAULT;
@@ -61,7 +61,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 	if (len <= 0)
 		goto out;
 
-	end_index = (isize - 1) >> PAGE_SHIFT;
+	end_index = (isize - 1) >> FINEFS_BLOCK_SHIFT;
 	do {
 		unsigned long nr, left;
 		unsigned long nvmm;
@@ -72,7 +72,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 		if (index >= end_index) {
 			if (index > end_index)
 				goto out;
-			nr = ((isize - 1) & ~PAGE_MASK) + 1;
+			nr = ((isize - 1) & FINEFS_BLOCK_UMASK) + 1;
 			if (nr <= offset) {
 				goto out;
 			}
@@ -83,7 +83,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 			// 一个空洞的页
 			rdv_proc("Required extent not found: pgoff %lu, "
 				"inode size %lld", index, isize);
-			nr = PAGE_SIZE;
+			nr = FINEFS_BLOCK_SIZE;
 			zero = 1;
 			goto memcpy;
 		}
@@ -93,18 +93,18 @@ do_dax_mapping_read(struct file *filp, char *buf,
 			index - entry->pgoff >= entry->num_pages) { // 超出范围了
 			r_error("%s ERROR: %lu, entry pgoff %lu, num %u, "
 				"blocknr %lu", __func__, index, entry->pgoff,
-				entry->num_pages, entry->block >> PAGE_SHIFT);
+				entry->num_pages, entry->block >> FINEFS_BLOCK_SHIFT);
 			return -EINVAL;
 		}
 		if (entry->invalid_pages == 0) {
 			nr = (entry->num_pages - (index - entry->pgoff))
-				* PAGE_SIZE;
+				* FINEFS_BLOCK_SIZE;
 		} else {  // 如果有无效的page，一个一个page的拷贝。防止下一个page就是无效的
-			nr = PAGE_SIZE;
+			nr = FINEFS_BLOCK_SIZE;
 		}
 
 		nvmm = get_nvmm(sb, sih, entry, index);
-		dax_mem = finefs_get_block(sb, (nvmm << PAGE_SHIFT));
+		dax_mem = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
 
 memcpy:
 		nr = nr - offset;
@@ -130,8 +130,8 @@ memcpy:
 
 		copied += (nr - left);
 		offset += (nr - left);
-		index += offset >> PAGE_SHIFT;
-		offset &= ~PAGE_MASK;
+		index += offset >> FINEFS_BLOCK_SHIFT;
+		offset &= FINEFS_BLOCK_UMASK;
 	} while (copied < len);
 
 out:
@@ -177,7 +177,7 @@ static inline int finefs_copy_partial_block(struct super_block *sb,
 	unsigned long nvmm;
 
 	nvmm = get_nvmm(sb, sih, entry, index);
-	ptr = finefs_get_block(sb, (nvmm << PAGE_SHIFT));
+	ptr = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
 	if (ptr != NULL) {
 		if (is_end_blk)
 			memcpy(kmem + offset, ptr + offset,
@@ -325,7 +325,7 @@ static int finefs_cleanup_incomplete_write(struct super_block *sb,
 			continue;
 		}
 
-		blocknr = entry->block >> PAGE_SHIFT;
+		blocknr = entry->block >> FINEFS_BLOCK_SHIFT;
 		finefs_free_data_blocks(sb, pi, blocknr, entry->num_pages);
 		curr_p += entry_size;
 	}
@@ -436,7 +436,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 		kmem = finefs_get_block(inode->i_sb,
 			finefs_get_block_off(sb, blocknr,	pi->i_blk_type));
 
-		if (offset || ((offset + bytes) & (PAGE_SIZE - 1)) != 0)
+		if (offset || ((offset + bytes) & (FINEFS_BLOCK_SIZE - 1)) != 0)
 			finefs_handle_head_tail_blocks(sb, pi, inode, pos, bytes,
 								kmem);
 
@@ -810,7 +810,7 @@ ssize_t finefs_copy_to_nvmm(struct super_block *sb, struct inode *inode,
 		kmem = finefs_get_block(inode->i_sb,
 			finefs_get_block_off(sb, blocknr,	pi->i_blk_type));
 
-		if (offset || ((offset + bytes) & (PAGE_SIZE - 1)))
+		if (offset || ((offset + bytes) & (FINEFS_BLOCK_SIZE - 1)))
 			finefs_handle_head_tail_blocks(sb, pi, inode, pos,
 							bytes, kmem);
 
@@ -911,7 +911,7 @@ static int finefs_get_nvmm_pfn(struct super_block *sb, struct finefs_inode *pi,
 			return ret;
 		}
 
-		mmap_block = blocknr << PAGE_SHIFT;
+		mmap_block = blocknr << FINEFS_BLOCK_SHIFT;
 		mmap_addr = finefs_get_block(sb, mmap_block);
 
 		if (vm_flags & VM_WRITE)
@@ -931,9 +931,9 @@ static int finefs_get_nvmm_pfn(struct super_block *sb, struct finefs_inode *pi,
 		if (nvmm) {
 			/* Copy from NVMM to dram */
 			nvmm_addr = finefs_get_block(sb, nvmm);
-			memcpy(mmap_addr, nvmm_addr, PAGE_SIZE);
+			memcpy(mmap_addr, nvmm_addr, FINEFS_BLOCK_SIZE);
 		} else {
-			memset(mmap_addr, 0, PAGE_SIZE);
+			memset(mmap_addr, 0, FINEFS_BLOCK_SIZE);
 		}
 	}
 
@@ -986,7 +986,7 @@ static int __finefs_dax_file_fault(struct vm_area_struct *vma,
 	int ret = VM_FAULT_SIGBUS;
 
 	mutex_lock(&inode->i_mutex);
-	size = (i_size_read(inode) + PAGE_SIZE - 1) >> PAGE_SHIFT;
+	size = (i_size_read(inode) + FINEFS_BLOCK_SIZE - 1) >> FINEFS_BLOCK_SHIFT;
 	if (vmf->pgoff >= size) {
 		finefs_dbg("[%s:%d] pgoff >= size(SIGBUS). vm_start(0x%lx),"
 			" vm_end(0x%lx), pgoff(0x%lx), VA(%lx), size 0x%lx",
@@ -1013,7 +1013,7 @@ static int __finefs_dax_file_fault(struct vm_area_struct *vma,
 			"VA(0x%lx)->PA(0x%lx)",
 			inode->i_ino, vma->vm_start, vma->vm_end, vmf->pgoff,
 			vma->vm_pgoff, (unsigned long)vmf->virtual_address,
-			(unsigned long)dax_pfn << PAGE_SHIFT);
+			(unsigned long)dax_pfn << FINEFS_BLOCK_SHIFT);
 
 	if (dax_pfn == 0)
 		goto out;
@@ -1099,7 +1099,7 @@ static int finefs_dax_pfn_mkwrite(struct vm_area_struct *vma,
 	FINEFS_START_TIMING(mmap_fault_t, fault_time);
 
 	mutex_lock(&inode->i_mutex);
-	size = (i_size_read(inode) + PAGE_SIZE - 1) >> PAGE_SHIFT;
+	size = (i_size_read(inode) + FINEFS_BLOCK_SIZE - 1) >> FINEFS_BLOCK_SHIFT;
 	if (vmf->pgoff >= size)
 		ret = VM_FAULT_SIGBUS;
 	else

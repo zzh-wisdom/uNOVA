@@ -74,31 +74,31 @@
 
 // 	entry = (struct finefs_file_write_entry *)finefs_get_block(sb,
 // 							pi->log_head);
-// 	blockp = (char *)finefs_get_block(sb, BLOCK_OFF(entry->block));
+// 	blockp = (char *)finefs_get_block(sb, FINEFS_BLOCK_OFF(entry->block));
 
 // 	return readlink_copy(buffer, buflen, blockp);
 // }
 
-static char *finefs_get_link(struct dentry *dentry, struct inode *inode, void **cookie)
-{
-	struct finefs_file_write_entry *entry;
-	struct super_block *sb = inode->i_sb;
-	struct finefs_inode *pi = finefs_get_inode(sb, inode);
-	char *blockp;
+// static char *finefs_get_link(struct dentry *dentry, struct inode *inode, void **cookie)
+// {
+// 	struct finefs_file_write_entry *entry;
+// 	struct super_block *sb = inode->i_sb;
+// 	struct finefs_inode *pi = finefs_get_inode(sb, inode);
+// 	char *blockp;
 
-	entry = (struct finefs_file_write_entry *)finefs_get_block(sb,
-							pi->log_head);
-	blockp = (char *)finefs_get_block(sb, BLOCK_OFF(entry->block));
+// 	entry = (struct finefs_file_write_entry *)finefs_get_block(sb,
+// 							pi->log_head);
+// 	blockp = (char *)finefs_get_block(sb, FINEFS_BLOCK_OFF(entry->block));
 
-	return blockp;
-}
+// 	return blockp;
+// }
 
 // #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
-static void *finefs_follow_link(struct dentry *dentry, void **cookie)
-{
-	struct inode *inode = dentry->d_inode;
-	return finefs_get_link(dentry, inode, cookie);
-}
+// static void *finefs_follow_link(struct dentry *dentry, void **cookie)
+// {
+// 	struct inode *inode = dentry->d_inode;
+// 	return finefs_get_link(dentry, inode, cookie);
+// }
 // #endif
 
 const struct inode_operations finefs_symlink_inode_operations = {

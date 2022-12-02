@@ -255,7 +255,7 @@ static inline void finefs_print_file_write_entry(struct super_block *sb,
 	rd_info("file write entry @ 0x%lx: paoff %lu, pages %u, "
 			"blocknr %lu, invalid count %u, size %lu\n",
 			curr, entry->pgoff, entry->num_pages,
-			entry->block >> PAGE_SHIFT,
+			entry->block >> FINEFS_BLOCK_SHIFT,
 			entry->invalid_pages, entry->size);
 }
 
@@ -318,7 +318,7 @@ static u64 finefs_print_log_entry(struct super_block *sb, u64 curr)
 		case NEXT_PAGE:
 			rd_info("%s: next page sign @ 0x%lx\n",
 						__func__, curr);
-			curr = PAGE_TAIL(curr);
+			curr = FINEFS_LOG_TAIL(curr);
 			break;
 		default:
 			rd_info("%s: unknown type %d, 0x%lx\n",
@@ -336,8 +336,8 @@ static u64 finefs_print_log_entry(struct super_block *sb, u64 curr)
 // 	struct finefs_inode_page_tail *tail;
 // 	u64 start, end;
 
-// 	start = curr & (~INVALID_MASK);
-// 	end = PAGE_TAIL(curr);
+// 	start = curr & FINEFS_LOG_MASK;
+// 	end = FINEFS_LOG_TAIL(curr);
 
 // 	while (start < end) {
 // 		start = finefs_print_log_entry(sb, start);
@@ -360,7 +360,7 @@ void finefs_print_finefs_log(struct super_block *sb,
 	rd_info("Pi %lu: log head 0x%lx, tail 0x%lx\n",
 			sih->ino, curr, pi->log_tail);
 	while (curr != pi->log_tail) {
-		if ((curr & (PAGE_SIZE - 1)) == LAST_ENTRY) {
+		if ((curr & FINEFS_LOG_UMASK) == FINEFS_LOG_LAST_ENTRY) {
 			struct finefs_inode_page_tail *tail =
 					(struct finefs_inode_page_tail *)finefs_get_block(sb, curr);
 			rd_info("Log tail, curr 0x%lx, next page 0x%lx\n",
@@ -425,15 +425,15 @@ void finefs_print_finefs_log_pages(struct super_block *sb,
 	curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
 	while ((next = curr_page->page_tail.next_page) != 0) {
 		rd_info("Current page 0x%lx, next page 0x%lx\n",
-			curr >> PAGE_SHIFT, next >> PAGE_SHIFT);
-		if (pi->log_tail >> PAGE_SHIFT == curr >> PAGE_SHIFT)
+			curr >> FINEFS_LOG_SHIFT, next >> FINEFS_LOG_SHIFT);
+		if (pi->log_tail >> FINEFS_LOG_SHIFT == curr >> FINEFS_LOG_SHIFT)
 			used = count;
 		curr = next;
 		curr_page = (struct finefs_inode_log_page *)
 			finefs_get_block(sb, curr);
 		count++;
 	}
-	if (pi->log_tail >> PAGE_SHIFT == curr >> PAGE_SHIFT)
+	if (pi->log_tail >> FINEFS_LOG_SHIFT == curr >> FINEFS_LOG_SHIFT)
 		used = count;
 	rd_info("Pi %lu: log used %d pages, has %d pages, "
 		"si reports %lu pages\n", sih->ino, used, count,

@@ -502,7 +502,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 	finefs_flush_buffer(pi, sizeof(struct finefs_inode), 0);
 
 	/* Keep traversing until log ends */
-	curr_p &= PAGE_MASK;
+	curr_p &= FINEFS_LOG_MASK;
 	curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr_p);
 	while ((next = curr_page->page_tail.next_page) != 0) {
 		sih->log_pages++;

@@ -9,9 +9,9 @@
 #define ATTR_PRIORITY_ONE __attribute__((init_priority(1)))
 
 #define CACHELINE_SIZE  (64)
-#define CACHELINE_MASK (CACHELINE_SIZE - 1)
-#define CACHELINE_UNMASK (~CACHELINE_MASK)
-#define CACHELINE_ALIGN(addr) (((addr)+CACHELINE_SIZE-1) & CACHELINE_MASK)
+#define CACHELINE_UMASK (CACHELINE_SIZE - 1)
+#define CACHELINE_MASK (~CACHELINE_UMASK)
+#define CACHELINE_ALIGN(addr) (((addr)+CACHELINE_SIZE-1) & CACHELINE_UMASK)
 
 #define barrier() asm volatile("": : :"memory")
 

@@ -409,7 +409,7 @@ int finefs_free_log_blocks(struct super_block *sb, struct finefs_inode *pi,
 }
 
 // 从free list中分配空闲空间
-// btype 枚举 4k 2m 1G FINEFS_BLOCK_TYPE_4K
+// btype
 // 按照指定的大小，分一个连续的空间，返回实际分配的block个数
 static unsigned long finefs_alloc_blocks_in_free_list(struct super_block *sb,
 	struct free_list *free_list, unsigned short btype,
@@ -433,8 +433,7 @@ static unsigned long finefs_alloc_blocks_in_free_list(struct super_block *sb,
 
 		if (num_blocks >= curr_blocks) {
 			/* Superpage allocation must succeed */
-			// FINEFS_BLOCK_TYPE_4K = 0
-			if (btype > 0 && num_blocks > curr_blocks) {
+			if (num_blocks > curr_blocks) { // btype > 0 &&
 				temp = rb_next(temp);
 				continue;
 			}
@@ -497,7 +496,7 @@ static int finefs_get_candidate_free_list(struct super_block *sb)
 }
 
 /* Return how many blocks allocated */
-// btype 枚举 4k 2m 1G  FINEFS_BLOCK_TYPE_4K
+// btype 枚举 4k 2m 1G  FINEFS_DEFAULT_DATA_BLOCK_TYPE
 // blocknr 分配区间
 // zero 是否清零
 // 返回分配指定btype类型的block个数
@@ -515,6 +514,7 @@ static int finefs_new_blocks(struct super_block *sb, unsigned long *blocknr,
 	int retried = 0;
 
 	num_blocks = num * finefs_get_numblocks(btype);
+	r_info("new block size: %lu, type %s", num_blocks << FINEFS_BLOCK_SHIFT, atype == LOG ? "LOG" : "DATA");
 	if (num_blocks == 0)
 		return -EINVAL;
 
@@ -568,7 +568,7 @@ retry:
 	if (zero) {
 		bp = finefs_get_block(sb, finefs_get_block_off(sb,
 						new_blocknr, btype));
-		memset_nt(bp, 0, PAGE_SIZE * ret_blocks);
+		memset_nt(bp, 0, FINEFS_BLOCK_SIZE * ret_blocks);
 	}
 	*blocknr = new_blocknr;
 
@@ -584,8 +584,10 @@ int finefs_new_data_blocks(struct super_block *sb, struct finefs_inode *pi,
 	int allocated;
 	timing_t alloc_time;
 	FINEFS_START_TIMING(new_data_blocks_t, alloc_time);
+	// allocated = finefs_new_blocks(sb, blocknr, num,
+	// 				pi->i_blk_type, zero, DATA);
 	allocated = finefs_new_blocks(sb, blocknr, num,
-					pi->i_blk_type, zero, DATA);
+					FINEFS_DEFAULT_DATA_BLOCK_TYPE, zero, DATA);
 	FINEFS_END_TIMING(new_data_blocks_t, alloc_time);
 	rdv_proc("Inode %lu, start blk %lu, cow %d, "
 			"alloc %d data blocks from %lu to %lu",

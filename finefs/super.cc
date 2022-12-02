@@ -243,9 +243,10 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     struct finefs_inode *root_i, *pi;
     struct finefs_super_block *super;
     struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    int ret;
 
     r_info("creating an empty finefs of size %lu", size);
-    sbi->num_blocks = ((unsigned long)(size) >> PAGE_SHIFT);
+    sbi->num_blocks = ((unsigned long)(size) >> FINEFS_BLOCK_SHIFT);
 
     if (!sbi->virt_addr) {
         r_error("ioremap of the finefs image failed(1)");
@@ -253,7 +254,7 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     }
 
     r_info("finefs: Default block size set to 4K");
-    blocksize = sbi->blocksize = FINEFS_DEF_BLOCK_SIZE_4K;
+    blocksize = sbi->blocksize = FINEFS_BLOCK_SIZE;
 
     finefs_set_blocksize(sb, blocksize);
     blocksize = sb->s_blocksize;
@@ -291,8 +292,8 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     finefs_init_blockmap(sb, 0);
 
     // 初始化并恢复journal
-    if (finefs_lite_journal_hard_init(sb) < 0) {
-        r_error("Lite journal hard initialization failed\n");
+    if ((ret = finefs_lite_journal_hard_init(sb)) < 0) {
+        r_error("Lite journal hard initialization failed, ret %d\n", ret);
         return nullptr;
     }
 
@@ -707,10 +708,6 @@ static int finefs_fill_super(struct super_block *sb, bool format) {
 
     FINEFS_START_TIMING(mount_t, mount_time);
 
-    assert(sizeof(struct finefs_super_block) <= FINEFS_SB_SIZE);
-    assert(sizeof(struct finefs_inode) <= FINEFS_INODE_SIZE);
-    assert(sizeof(struct finefs_inode_log_page) == PAGE_SIZE);
-
     sbi = (struct finefs_sb_info *)ZALLOC(sizeof(struct finefs_sb_info));
     if (!sbi) return -ENOMEM;
     sb->s_fs_info = sbi;
@@ -915,10 +912,16 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
     r_info(
         "Data structure size: inode %lu, log_page %lu, "
         "file_write_entry %lu, dir_entry(max) %d, "
-        "setattr_entry %lu, link_change_entry %lu",
+        "setattr_entry %lu, link_change_entry %lu, "
+        "inode_page_tail %lu",
         sizeof(struct finefs_inode), sizeof(struct finefs_inode_log_page),
         sizeof(struct finefs_file_write_entry), FINEFS_DIR_LOG_REC_LEN(FINEFS_NAME_LEN),
-        sizeof(struct finefs_setattr_logentry), sizeof(struct finefs_link_change_entry));
+        sizeof(struct finefs_setattr_logentry), sizeof(struct finefs_link_change_entry),
+        sizeof(struct finefs_inode_page_tail));
+
+    assert(sizeof(struct finefs_super_block) <= FINEFS_SB_SIZE);
+    assert(sizeof(struct finefs_inode) <= FINEFS_INODE_SIZE);
+    assert(sizeof(struct finefs_inode_log_page) == FINEFS_LOG_SIZE);
 
     rc = finefs_init_rangenode_cache();
     if (rc) {

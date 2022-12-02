@@ -36,8 +36,8 @@ static u64 next_lite_journal(u64 curr_p)
 	size_t size = sizeof(struct finefs_lite_journal_entry);
 
 	/* One page holds 64 entries with cacheline size */
-	if ((curr_p & (PAGE_SIZE - 1)) + size >= PAGE_SIZE)  // 回环
-		return (curr_p & PAGE_MASK);
+	if ((curr_p & (FINEFS_BLOCK_SIZE - 1)) + size >= FINEFS_BLOCK_SIZE)  // 回环
+		return (curr_p & FINEFS_BLOCK_MASK);
 
 	return curr_p + size;
 }
@@ -231,7 +231,7 @@ int finefs_lite_journal_hard_init(struct super_block *sb)
 			return -EINVAL;
 
 		allocated = finefs_new_log_blocks(sb, &fake_pi, &blocknr, 1, 1, i);
-		rdv_proc("%s: allocate log @ 0x%lx", __func__, blocknr);
+		rdv_proc("%s: allocate log @ 0x%lx, block num: %d", __func__, blocknr, allocated);
 
 		// 检查
 		if (allocated != 1 || blocknr == 0)

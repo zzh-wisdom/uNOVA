@@ -49,7 +49,7 @@ static inline int finefs_can_set_blocksize_hint(struct inode *inode,
 // 	}
 
 // 	/* defaulting to 4K */
-// 	block_type = FINEFS_BLOCK_TYPE_4K;
+// 	block_type = FINEFS_DEFAULT_DATA_BLOCK_TYPE;
 
 // hint_set:
 // 	finefs_dbg_verbose(
@@ -305,7 +305,7 @@ int finefs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	// }
 
 	// /* Align start and end to cacheline boundaries */
-	// start = start & CACHELINE_UNMASK;
+	// start = start & CACHELINE_MASK;
 	// end = CACHELINE_ALIGN(end);
 	// do {
 	// 	unsigned long nvmm;

@@ -36,12 +36,6 @@
 #define PAGE_SHIFT_2M 21
 #define PAGE_SHIFT_1G 30
 
-// #define FINEFS_ASSERT(x)                                                 \
-// 	if (!(x)) {                                                     \
-// 		printk(KERN_WARNING "assertion failed %s:%d: %s\n",     \
-// 	               __FILE__, __LINE__, #x);                         \
-// 	}
-
 /*
  * Debug code
  */
@@ -122,17 +116,73 @@ extern unsigned int finefs_dbgmask;
 
 extern int measure_timing;
 
+/* ======================= block size ========================= */
 extern unsigned int finefs_blk_type_to_shift[FINEFS_BLOCK_TYPE_MAX];
 extern unsigned int finefs_blk_type_to_size[FINEFS_BLOCK_TYPE_MAX];
+extern unsigned int finefs_blk_type_to_blk_num[FINEFS_BLOCK_TYPE_MAX];
+
+static inline unsigned int finefs_inode_blk_shift (struct finefs_inode *pi)
+{
+	return finefs_blk_type_to_shift[pi->i_blk_type];
+}
+
+static inline uint32_t finefs_inode_blk_size(struct finefs_inode *pi)
+{
+	return finefs_blk_type_to_size[pi->i_blk_type];
+}
+
+// 获取该枚举类型，对应的block个数
+static inline unsigned long
+finefs_get_numblocks(unsigned short btype)
+{
+	return finefs_blk_type_to_blk_num[btype];
+}
+
+static inline unsigned long
+finefs_get_blocknr(struct super_block *sb, u64 block, unsigned short btype)
+{
+	return block >> FINEFS_BLOCK_SHIFT;
+}
+
+// static inline unsigned long finefs_get_pfn(struct super_block *sb, u64 block)
+// {
+// 	return (FINEFS_SB(sb)->phys_addr + block) >> PAGE_SHIFT;
+// }
 
 /* ======================= Log entry ========================= */
+
+struct finefs_inode_page_tail {
+	__le64	padding1;
+	__le64	padding2;
+	__le64	padding3;
+	__le64	next_page;
+} __attribute((__packed__));
+
+/* FINEFS_LOG_BLOCK_TYPE 和 FINEFS_LOG_NUM_BLOCKS 需要一起修改 */
+// log的大小必须等于基本lock大小，否则一些掩码的操作会存在问题，
+// FIXME：或者改用伙伴算法，每次分配的大小都按照大小对齐
+#define FINEFS_LOG_BLOCK_TYPE 	FINEFS_DEFAULT_DATA_BLOCK_TYPE
+#define FINEFS_LOG_NUM_BLOCKS  	(1 << FINEFS_DEFAULT_DATA_BLOCK_BITS)
+#define FINEFS_LOG_SHIFT        (FINEFS_BLOCK_SHIFT + FINEFS_DEFAULT_DATA_BLOCK_BITS)
+#define FINEFS_LOG_SIZE         (1 << FINEFS_LOG_SHIFT)
+#define FINEFS_LOG_UMASK         (FINEFS_LOG_SIZE-1)
+#define FINEFS_LOG_MASK        (~(FINEFS_LOG_SIZE-1))
+#define	FINEFS_LOG_LAST_ENTRY	(FINEFS_LOG_SIZE-sizeof(struct finefs_inode_page_tail))
+#define	FINEFS_LOG_TAIL(p)	   	(((p) & FINEFS_LOG_MASK) + FINEFS_LOG_LAST_ENTRY)
+
+#define	FINEFS_LOG_BLOCK_OFF(p)	    ((p) & FINEFS_LOG_MASK)
+#define	FINEFS_LOG_ENTRY_LOC(p)		((p) & FINEFS_LOG_UMASK)
+
+/* Fit in PAGE_SIZE */
+// TODO: 增大page的大小
+struct	finefs_inode_log_page {
+	char padding[FINEFS_LOG_LAST_ENTRY];
+	struct finefs_inode_page_tail page_tail;
+} __attribute((__packed__));
+
+#define	EXTEND_THRESHOLD	256
+
 /* Inode entry in the log */
-
-#define	INVALID_MASK	4095
-#define	BLOCK_OFF(p)	((p) & ~INVALID_MASK)
-
-#define	ENTRY_LOC(p)	((p) & INVALID_MASK)
-
 enum finefs_entry_type {
 	FILE_WRITE = 1,
 	DIR_LOG,  // 新建一个dir
@@ -140,16 +190,6 @@ enum finefs_entry_type {
 	LINK_CHANGE,
 	NEXT_PAGE,
 };
-
-static inline u8 finefs_get_entry_type(void *p)
-{
-	return *(u8 *)p;
-}
-
-static inline void finefs_set_entry_type(void *p, enum finefs_entry_type type)
-{
-	*(u8 *)p = type;
-}
 
 // 40B
 struct finefs_file_write_entry {
@@ -163,26 +203,17 @@ struct finefs_file_write_entry {
 	__le32	padding;
 	__le64	size;  // 文件的大小
 } __attribute((__packed__));
-
 const int file_write_entry_size = sizeof(struct finefs_file_write_entry);
 
-struct finefs_inode_page_tail {
-	__le64	padding1;
-	__le64	padding2;
-	__le64	padding3;
-	__le64	next_page;
-} __attribute((__packed__));
+static inline u8 finefs_get_entry_type(void *p)
+{
+	return *(u8 *)p;
+}
 
-#define	LAST_ENTRY	4064
-#define	PAGE_TAIL(p)	(((p) & ~INVALID_MASK) + LAST_ENTRY)
-
-/* Fit in PAGE_SIZE */
-struct	finefs_inode_log_page {
-	char padding[LAST_ENTRY];
-	struct finefs_inode_page_tail page_tail;
-} __attribute((__packed__));
-
-#define	EXTEND_THRESHOLD	256
+static inline void finefs_set_entry_type(void *p, enum finefs_entry_type type)
+{
+	*(u8 *)p = type;
+}
 
 /*
  * Structure of a directory log entry in FINEFS.
@@ -206,6 +237,22 @@ struct finefs_dentry {
 #define FINEFS_DIR_LOG_REC_LEN(name_len)	(((name_len) + 29 + FINEFS_DIR_ROUND) & \
 				      ~FINEFS_DIR_ROUND)
 
+#if LOG_ENTRY_SIZE==64
+
+struct finefs_setattr_logentry {
+	u8	entry_type;
+	u8	attr;
+	__le16	mode;
+	__le32	uid;
+	__le32	gid;
+	__le32	atime;
+	__le32	mtime;
+	__le32	ctime;
+	__le64	size;
+	u8      padding[24];
+	__le64 version;
+} __attribute((__packed__));
+#else
 /* Struct of inode attributes change log (setattr) */
 // 32B
 struct finefs_setattr_logentry {
@@ -219,6 +266,7 @@ struct finefs_setattr_logentry {
 	__le32	ctime;
 	__le64	size;
 } __attribute((__packed__));
+#endif
 
 /* Do we need this to be 32 bytes? */
 struct finefs_link_change_entry {
@@ -317,6 +365,8 @@ struct finefs_inode_info_header {
 	// 随着 GC/op 的进行而修改
 	u64 last_setattr;		/* Last setattr entry ,当前已经应用的setattr log地址*/
 	u64 last_link_change;		/* Last link change entry */
+
+	__le64	log_tail;
 };
 
 struct finefs_inode_info {
@@ -492,7 +542,7 @@ static inline u64
 finefs_get_block_off(struct super_block *sb, unsigned long blocknr,
 		    unsigned short btype)
 {
-	return (u64)blocknr << PAGE_SHIFT;
+	return (u64)blocknr << FINEFS_BLOCK_SHIFT;
 }
 
 static inline
@@ -522,7 +572,7 @@ struct ptr_pair *finefs_get_journal_pointers(struct super_block *sb, int cpu)
 		return NULL;
 
 	return (struct ptr_pair *)((char *)finefs_get_block(sb,
-		FINEFS_DEF_BLOCK_SIZE_4K)	+ cpu * CACHELINE_SIZE);
+		FINEFS_BLOCK_SIZE)	+ cpu * CACHELINE_SIZE);
 }
 
 struct inode_table {
@@ -538,7 +588,7 @@ struct inode_table *finefs_get_inode_table(struct super_block *sb, int cpu)
 		return NULL;
 
 	return (struct inode_table *)((char *)finefs_get_block(sb,
-		FINEFS_DEF_BLOCK_SIZE_4K * 2) + cpu * CACHELINE_SIZE);
+		FINEFS_BLOCK_SIZE * 2) + cpu * CACHELINE_SIZE);
 }
 
 // BKDR String Hash Function
@@ -679,7 +729,7 @@ static inline unsigned long get_nvmm(struct super_block *sb,
 		log_assert(0);
 	}
 
-	return (unsigned long)(data->block >> PAGE_SHIFT) + pgoff
+	return (unsigned long)(data->block >> FINEFS_BLOCK_SHIFT) + pgoff
 		- data->pgoff;
 }
 
@@ -696,7 +746,7 @@ static inline u64 finefs_find_nvmm_block(struct super_block *sb,
 	}
 
 	nvmm = get_nvmm(sb, &si->header, entry, blocknr);
-	return nvmm << PAGE_SHIFT;
+	return nvmm << FINEFS_BLOCK_SHIFT;
 }
 
 // static inline unsigned long finefs_get_cache_addr(struct super_block *sb,
@@ -710,16 +760,6 @@ static inline u64 finefs_find_nvmm_block(struct super_block *sb,
 // 		__func__, sih->ino, blocknr, addr);
 // 	return addr;
 // }
-
-static inline unsigned int finefs_inode_blk_shift (struct finefs_inode *pi)
-{
-	return finefs_blk_type_to_shift[pi->i_blk_type];
-}
-
-static inline uint32_t finefs_inode_blk_size (struct finefs_inode *pi)
-{
-	return finefs_blk_type_to_size[pi->i_blk_type];
-}
 
 /*
  * ROOT_INO: Start from FINEFS_SB_SIZE * 2
@@ -755,34 +795,6 @@ static inline struct finefs_inode *finefs_get_inode(struct super_block *sb,
 	return (struct finefs_inode *)finefs_get_block(sb, sih->pi_addr);
 }
 
-// 获取该枚举类型，对应的block个数
-static inline unsigned long
-finefs_get_numblocks(unsigned short btype)
-{
-	unsigned long num_blocks;
-
-	if (btype == FINEFS_BLOCK_TYPE_4K) {
-		num_blocks = 1;
-	} else if (btype == FINEFS_BLOCK_TYPE_2M) {
-		num_blocks = 512;
-	} else {
-		//btype == FINEFS_BLOCK_TYPE_1G
-		num_blocks = 0x40000;
-	}
-	return num_blocks;
-}
-
-static inline unsigned long
-finefs_get_blocknr(struct super_block *sb, u64 block, unsigned short btype)
-{
-	return block >> PAGE_SHIFT;
-}
-
-// static inline unsigned long finefs_get_pfn(struct super_block *sb, u64 block)
-// {
-// 	return (FINEFS_SB(sb)->phys_addr + block) >> PAGE_SHIFT;
-// }
-
 static inline int finefs_is_mounting(struct super_block *sb)
 {
 	struct finefs_sb_info *sbi = (struct finefs_sb_info *)sb->s_fs_info;
@@ -809,8 +821,8 @@ enum finefs_new_inode_type {
 static inline u64 next_log_page(struct super_block *sb, u64 curr_p)
 {
 	void *curr_addr = finefs_get_block(sb, curr_p);
-	unsigned long page_tail = ((unsigned long)curr_addr & ~INVALID_MASK)
-					+ LAST_ENTRY;
+	unsigned long page_tail = ((unsigned long)curr_addr & FINEFS_LOG_MASK)
+					+ FINEFS_LOG_LAST_ENTRY;
 	return ((struct finefs_inode_page_tail *)page_tail)->next_page;
 }
 
@@ -831,9 +843,9 @@ static inline bool is_last_entry(u64 curr_p, size_t size)
 {
 	unsigned int entry_end;
 
-	entry_end = ENTRY_LOC(curr_p) + size;
+	entry_end = FINEFS_LOG_ENTRY_LOC(curr_p) + size;
 
-	return entry_end > LAST_ENTRY;
+	return entry_end > FINEFS_LOG_LAST_ENTRY;
 }
 
 // 判断curr_p位置是否到达log page的尾部，需要跳转到下一个page了？
@@ -843,7 +855,7 @@ static inline bool goto_next_page(struct super_block *sb, u64 curr_p)
 	u8 type;
 
 	/* Each kind of entry takes at least 32 bytes */
-	if (ENTRY_LOC(curr_p) + 32 > LAST_ENTRY)
+	if (FINEFS_LOG_ENTRY_LOC(curr_p) + 32 > FINEFS_LOG_LAST_ENTRY)
 		return true;
 
 	addr = finefs_get_block(sb, curr_p);

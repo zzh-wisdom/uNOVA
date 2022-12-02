@@ -14,6 +14,7 @@
 #define NOVA_CUT_OUT
 #define FINEFS_CUT_OUT
 
+#define MAX_LFS_FILESIZE (128ul*1024*1024*1024)
 #define ALLOC_BLOCK_RETRY 3
 #define FS_MAX_CPU_NUM 64
 

@@ -33,6 +33,10 @@
 #include "util/log.h"
 #include "util/radix-tree.h"
 
+#define PAGE_SHIFT	12
+#define PAGE_SIZE	(1UL << PAGE_SHIFT)
+#define PAGE_MASK	(~(PAGE_SIZE-1))
+
 #define PAGE_SHIFT_2M 21
 #define PAGE_SHIFT_1G 30
 

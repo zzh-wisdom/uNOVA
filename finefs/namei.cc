@@ -20,98 +20,91 @@
 
 // 返回inode
 static ino_t finefs_inode_by_name(struct inode *dir, struct qstr *entry,
-				 struct finefs_dentry **res_entry)
-{
-	struct super_block *sb = dir->i_sb;
-	struct finefs_dentry *direntry;
+                                  struct finefs_dentry **res_entry) {
+    struct super_block *sb = dir->i_sb;
+    struct finefs_dentry *direntry;
 
-	direntry = finefs_find_dentry(sb, NULL, dir,
-					entry->name, entry->len);
-	if (direntry == NULL)
-		return 0;
+    direntry = finefs_find_dentry(sb, NULL, dir, entry->name, entry->len);
+    if (direntry == NULL) return 0;
 
-	*res_entry = direntry;
-	return direntry->ino;
+    *res_entry = direntry;
+    return direntry->ino;
 }
 
 // dentry 是新分配的dentry
-static struct dentry *finefs_lookup(struct inode *dir, struct dentry *dentry,
-				   unsigned int flags)
-{
-	struct inode *inode = NULL;
-	struct finefs_dentry *de;
-	ino_t ino;
-	timing_t lookup_time;
+static struct dentry *finefs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags) {
+    struct inode *inode = NULL;
+    struct finefs_dentry *de;
+    ino_t ino;
+    timing_t lookup_time;
 
-	FINEFS_START_TIMING(lookup_t, lookup_time);
-	if (dentry->d_name.len > FINEFS_NAME_LEN) {
-		rd_error("%s: namelen %u exceeds limit",
-			__func__, dentry->d_name.len);
-		return nullptr;
-	}
+    FINEFS_START_TIMING(lookup_t, lookup_time);
+    if (dentry->d_name.len > FINEFS_NAME_LEN) {
+        rd_error("%s: namelen %u exceeds limit", __func__, dentry->d_name.len);
+        return nullptr;
+    }
 
-	rdv_proc("%s: %s", __func__, dentry->d_name.name);
-	ino = finefs_inode_by_name(dir, &dentry->d_name, &de);
-	rdv_proc("%s: ino %lu", __func__, ino);
-	if (ino) {
-		// 从NVM重建该inode
-		inode = finefs_iget(dir->i_sb, ino);
-		DLOG_ASSERT(inode);
-		// if (inode == ERR_PTR(-ESTALE) || inode == ERR_PTR(-ENOMEM)
-		// 		|| inode == ERR_PTR(-EACCES)) {
-		// 	finefs_err(dir->i_sb,
-		// 		  "%s: get inode failed: %lu",
-		// 		  __func__, (unsigned long)ino);
-		// 	return ERR_PTR(-EIO);
-		// }
-		inode_unref(inode);
-	}
-	FINEFS_END_TIMING(lookup_t, lookup_time);
-	return d_splice_alias(inode, dentry);
+    rdv_proc("%s: %s", __func__, dentry->d_name.name);
+    ino = finefs_inode_by_name(dir, &dentry->d_name, &de);
+    rdv_proc("%s: ino %lu", __func__, ino);
+    if (ino) {
+        // 从NVM重建该inode
+        inode = finefs_iget(dir->i_sb, ino);
+        DLOG_ASSERT(inode);
+        // if (inode == ERR_PTR(-ESTALE) || inode == ERR_PTR(-ENOMEM)
+        // 		|| inode == ERR_PTR(-EACCES)) {
+        // 	finefs_err(dir->i_sb,
+        // 		  "%s: get inode failed: %lu",
+        // 		  __func__, (unsigned long)ino);
+        // 	return ERR_PTR(-EIO);
+        // }
+        inode_unref(inode);
+    }
+    FINEFS_END_TIMING(lookup_t, lookup_time);
+    return d_splice_alias(inode, dentry);
 }
 
 // 完成一个创建事务
 // pidir是父母inode
 // pidir_tail是pidir的新tail
 // 同时记录父母的tail和新inode的valid标记位
-static void finefs_lite_transaction_for_new_inode(struct super_block *sb,
-	struct finefs_inode *pi, struct finefs_inode *pidir, u64 pidir_tail)
-{
-	struct finefs_sb_info *sbi = FINEFS_SB(sb);
-	struct finefs_lite_journal_entry entry;
-	int cpu;
-	u64 journal_tail;
-	timing_t trans_time;
+static void finefs_lite_transaction_for_new_inode(struct super_block *sb, struct finefs_inode *pi,
+                                                  struct finefs_inode *pidir, u64 pidir_tail) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    struct finefs_lite_journal_entry entry;
+    int cpu;
+    u64 journal_tail;
+    timing_t trans_time;
 
-	FINEFS_START_TIMING(create_trans_t, trans_time);
+    FINEFS_START_TIMING(create_trans_t, trans_time);
 
-	/* Commit a lite transaction */
-	memset(&entry, 0, sizeof(struct finefs_lite_journal_entry));
-	entry.addrs[0] = (u64)finefs_get_addr_off(sbi, &pidir->log_tail);
-	entry.addrs[0] |= (u64)8 << 56;
-	entry.values[0] = pidir->log_tail;
+    /* Commit a lite transaction */
+    memset(&entry, 0, sizeof(struct finefs_lite_journal_entry));
+    entry.addrs[0] = (u64)finefs_get_addr_off(sbi, &pidir->log_tail);
+    entry.addrs[0] |= (u64)8 << 56;
+    entry.values[0] = pidir->log_tail;
 
-	entry.addrs[1] = (u64)finefs_get_addr_off(sbi, &pi->valid);
-	entry.addrs[1] |= (u64)1 << 56;
-	entry.values[1] = pi->valid;
+    entry.addrs[1] = (u64)finefs_get_addr_off(sbi, &pi->valid);
+    entry.addrs[1] |= (u64)1 << 56;
+    entry.values[1] = pi->valid;
 
-	cpu = get_processor_id();
-	spin_lock(&sbi->journal_locks[cpu]);
-	// 返回journal后的新tail
-	journal_tail = finefs_create_lite_transaction(sb, &entry, NULL, 1, cpu);
+    cpu = get_processor_id();
+    spin_lock(&sbi->journal_locks[cpu]);
+    // 返回journal后的新tail
+    journal_tail = finefs_create_lite_transaction(sb, &entry, NULL, 1, cpu);
 
-	// 执行具体的事务
-	// 更新tail
-	pidir->log_tail = pidir_tail;
-	finefs_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
-	pi->valid = 1;
-	finefs_flush_buffer(&pi->valid, CACHELINE_SIZE, 0);
-	PERSISTENT_BARRIER();
+    // 执行具体的事务
+    // 更新tail
+    pidir->log_tail = pidir_tail;
+    finefs_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
+    pi->valid = 1;
+    finefs_flush_buffer(&pi->valid, CACHELINE_SIZE, 0);
+    PERSISTENT_BARRIER();
 
-	// 提交事务
-	finefs_commit_lite_transaction(sb, journal_tail, cpu);
-	spin_unlock(&sbi->journal_locks[cpu]);
-	FINEFS_END_TIMING(create_trans_t, trans_time);
+    // 提交事务
+    finefs_commit_lite_transaction(sb, journal_tail, cpu);
+    spin_unlock(&sbi->journal_locks[cpu]);
+    FINEFS_END_TIMING(create_trans_t, trans_time);
 }
 
 /* Returns new tail after append */
@@ -127,56 +120,49 @@ static void finefs_lite_transaction_for_new_inode(struct super_block *sb,
  *
  * 成功返回0，否则返回-1。
  */
-static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
-			bool excl)
-{
-	struct inode *inode = NULL;
-	// int err = PTR_ERR(inode);
-	int err = 0;
-	struct super_block *sb = dir->i_sb;
-	struct finefs_inode *pidir, *pi;
-	u64 pi_addr = 0; // 新分配inode的nvm地址
-	u64 tail = 0;
-	u64 ino;
-	timing_t create_time;
+static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool excl) {
+    struct inode *inode = NULL;
+    // int err = PTR_ERR(inode);
+    int err = 0;
+    struct super_block *sb = dir->i_sb;
+    struct finefs_inode *pidir, *pi;
+    u64 pi_addr = 0;  // 新分配inode的nvm地址
+    u64 tail = 0;
+    u64 ino;
+    timing_t create_time;
 
-	FINEFS_START_TIMING(create_t, create_time);
+    FINEFS_START_TIMING(create_t, create_time);
 
-	// 获取nvm中对应的inode地址
-	pidir = finefs_get_inode(sb, dir);
-	if (!pidir)
-		goto out_err;
+    // 获取nvm中对应的inode地址
+    pidir = finefs_get_inode(sb, dir);
+    if (!pidir) goto out_err;
 
-	// 分配新的inode，pi_addr为nvm地址
-	ino = finefs_new_finefs_inode(sb, &pi_addr);
-	if (ino == 0)
-		goto out_err;
+    // 分配新的inode，pi_addr为nvm地址
+    ino = finefs_new_finefs_inode(sb, &pi_addr);
+    if (ino == 0) goto out_err;
 
-	// 想父目录添加一个dentry（写log的形式）
-	// tail带回新的tail，实际的tail没有改
-	err = finefs_add_dentry(dentry, ino, 0, 0, &tail);
-	if (err)
-		goto out_err;
+    // 想父目录添加一个dentry（写log的形式）
+    // tail带回新的tail，实际的tail没有改
+    err = finefs_add_dentry(dentry, ino, 0, 0, &tail);
+    if (err) goto out_err;
 
-	rd_info("%s: %s", __func__, dentry->d_name.name);
-	rd_info("%s: inode %lu, dir %lu", __func__, ino, dir->i_ino);
-	inode = finefs_new_vfs_inode(TYPE_CREATE, dir, pi_addr, ino, mode,
-					0, 0, &dentry->d_name);
-	if (inode == nullptr)
-		goto out_err;
+    rd_info("%s: %s", __func__, dentry->d_name.name);
+    rd_info("%s: inode %lu, dir %lu", __func__, ino, dir->i_ino);
+    inode = finefs_new_vfs_inode(TYPE_CREATE, dir, pi_addr, ino, mode, 0, 0, &dentry->d_name);
+    if (inode == nullptr) goto out_err;
 
-	d_instantiate(dentry, inode);
-	// unlock_new_inode(inode);
+    d_instantiate(dentry, inode);
+    // unlock_new_inode(inode);
 
-	pi = (struct finefs_inode *)finefs_get_block(sb, pi_addr);
-	finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
-	inode_unref(inode);
-	FINEFS_END_TIMING(create_t, create_time);
-	return err;
+    pi = (struct finefs_inode *)finefs_get_block(sb, pi_addr);
+    finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
+    inode_unref(inode);
+    FINEFS_END_TIMING(create_t, create_time);
+    return err;
 out_err:
-	r_error("%s return %d", __func__, err);
-	FINEFS_END_TIMING(create_t, create_time);
-	return err;
+    r_error("%s return %d", __func__, err);
+    FINEFS_END_TIMING(create_t, create_time);
+    return err;
 }
 
 // static int finefs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode,
@@ -302,99 +288,94 @@ out_err:
 // }
 
 static void finefs_lite_transaction_for_time_and_link(struct super_block *sb,
-	struct finefs_inode *pi, struct finefs_inode *pidir, u64 pi_tail,
-	u64 pidir_tail, int invalidate)
-{
-	struct finefs_sb_info *sbi = FINEFS_SB(sb);
-	struct finefs_lite_journal_entry entry;
-	u64 journal_tail;
-	int cpu;
-	timing_t trans_time;
+                                                      struct finefs_inode *pi,
+                                                      struct finefs_inode *pidir, u64 pi_tail,
+                                                      u64 pidir_tail, int invalidate) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    struct finefs_lite_journal_entry entry;
+    u64 journal_tail;
+    int cpu;
+    timing_t trans_time;
 
-	FINEFS_START_TIMING(link_trans_t, trans_time);
+    FINEFS_START_TIMING(link_trans_t, trans_time);
 
-	/* Commit a lite transaction */
-	memset(&entry, 0, sizeof(struct finefs_lite_journal_entry));
-	entry.addrs[0] = (u64)finefs_get_addr_off(sbi, &pi->log_tail);
-	entry.addrs[0] |= (u64)8 << 56;
-	entry.values[0] = pi->log_tail;
+    /* Commit a lite transaction */
+    memset(&entry, 0, sizeof(struct finefs_lite_journal_entry));
+    entry.addrs[0] = (u64)finefs_get_addr_off(sbi, &pi->log_tail);
+    entry.addrs[0] |= (u64)8 << 56;
+    entry.values[0] = pi->log_tail;
 
-	entry.addrs[1] = (u64)finefs_get_addr_off(sbi, &pidir->log_tail);
-	entry.addrs[1] |= (u64)8 << 56;
-	entry.values[1] = pidir->log_tail;
+    entry.addrs[1] = (u64)finefs_get_addr_off(sbi, &pidir->log_tail);
+    entry.addrs[1] |= (u64)8 << 56;
+    entry.values[1] = pidir->log_tail;
 
-	if (invalidate) {
-		entry.addrs[2] = (u64)finefs_get_addr_off(sbi, &pi->valid);
-		entry.addrs[2] |= (u64)1 << 56;
-		entry.values[2] = pi->valid;
-	}
+    if (invalidate) {
+        entry.addrs[2] = (u64)finefs_get_addr_off(sbi, &pi->valid);
+        entry.addrs[2] |= (u64)1 << 56;
+        entry.values[2] = pi->valid;
+    }
 
-	cpu = get_processor_id();
-	spin_lock(&sbi->journal_locks[cpu]);
-	journal_tail = finefs_create_lite_transaction(sb, &entry, NULL, 1, cpu);
+    cpu = get_processor_id();
+    spin_lock(&sbi->journal_locks[cpu]);
+    journal_tail = finefs_create_lite_transaction(sb, &entry, NULL, 1, cpu);
 
-	pi->log_tail = pi_tail;
-	finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 0);
-	pidir->log_tail = pidir_tail;
-	finefs_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
-	if (invalidate) {
-		pi->valid = 0;  // 可能需要等到垃圾回收时，才真正回收空间
-		finefs_flush_buffer(&pi->valid, CACHELINE_SIZE, 0);
-	}
-	PERSISTENT_BARRIER();
+    pi->log_tail = pi_tail;
+    finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 0);
+    pidir->log_tail = pidir_tail;
+    finefs_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
+    if (invalidate) {
+        pi->valid = 0;  // 可能需要等到垃圾回收时，才真正回收空间
+        finefs_flush_buffer(&pi->valid, CACHELINE_SIZE, 0);
+    }
+    PERSISTENT_BARRIER();
 
-	finefs_commit_lite_transaction(sb, journal_tail, cpu);
-	spin_unlock(&sbi->journal_locks[cpu]);
-	FINEFS_END_TIMING(link_trans_t, trans_time);
+    finefs_commit_lite_transaction(sb, journal_tail, cpu);
+    spin_unlock(&sbi->journal_locks[cpu]);
+    FINEFS_END_TIMING(link_trans_t, trans_time);
 }
 
 /* Returns new tail after append */
 // inode中的link个数已经修改好
-int finefs_append_link_change_entry(struct super_block *sb,
-	struct finefs_inode *pi, struct inode *inode, u64 tail, u64 *new_tail)
-{
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	struct finefs_link_change_entry *entry;
-	u64 curr_p;
-	int extended = 0;
-	size_t size = sizeof(struct finefs_link_change_entry);
-	timing_t append_time;
+int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode *pi,
+                                    struct inode *inode, u64 tail, u64 *new_tail) {
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    struct finefs_link_change_entry *entry;
+    u64 curr_p;
+    int extended = 0;
+    size_t size = sizeof(struct finefs_link_change_entry);
+    timing_t append_time;
 
-	FINEFS_START_TIMING(append_link_change_t, append_time);
-	rdv_proc("%s: inode %lu attr change",
-				__func__, inode->i_ino);
+    FINEFS_START_TIMING(append_link_change_t, append_time);
+    rdv_proc("%s: inode %lu attr change", __func__, inode->i_ino);
 
-	curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended);
-	if (curr_p == 0)
-		return -ENOMEM;
+    curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended);
+    if (curr_p == 0) return -ENOMEM;
 
-	entry = (struct finefs_link_change_entry *)finefs_get_block(sb, curr_p);
-	entry->entry_type = LINK_CHANGE;
-	entry->links = cpu_to_le16(inode->i_nlink);
-	entry->ctime = cpu_to_le32(inode->i_ctime.tv_sec);
-	entry->flags = cpu_to_le32(inode->i_flags);
-	entry->generation = cpu_to_le32(inode->i_generation);
-	finefs_flush_buffer(entry, size, 0);
-	*new_tail = curr_p + size;
-	sih->last_link_change = curr_p;
+    entry = (struct finefs_link_change_entry *)finefs_get_block(sb, curr_p);
+    entry->entry_type = LINK_CHANGE;
+    entry->links = cpu_to_le16(inode->i_nlink);
+    entry->ctime = cpu_to_le32(inode->i_ctime.tv_sec);
+    entry->flags = cpu_to_le32(inode->i_flags);
+    entry->generation = cpu_to_le32(inode->i_generation);
+    finefs_flush_buffer(entry, size, 0);
+    *new_tail = curr_p + size;
+    sih->last_link_change = curr_p;
 
-	FINEFS_END_TIMING(append_link_change_t, append_time);
-	return 0;
+    FINEFS_END_TIMING(append_link_change_t, append_time);
+    return 0;
 }
 
 void finefs_apply_link_change_entry(struct finefs_inode *pi,
-	struct finefs_link_change_entry *entry)
-{
-	if (entry->entry_type != LINK_CHANGE)
-		BUG();
+                                    struct finefs_link_change_entry *entry) {
+    if (entry->entry_type != LINK_CHANGE) BUG();
 
-	pi->i_links_count	= entry->links;
-	pi->i_ctime		= entry->ctime;
-	pi->i_flags		= entry->flags;
-	pi->i_generation	= entry->generation;
+    pi->i_links_count = entry->links;
+    pi->i_ctime = entry->ctime;
+    pi->i_flags = entry->flags;
+    pi->i_generation = entry->generation;
 
-	/* Do not flush now */
+    /* Do not flush now */
 }
 
 // static int finefs_link(struct dentry *dest_dentry, struct inode *dir,
@@ -451,117 +432,105 @@ void finefs_apply_link_change_entry(struct finefs_inode *pi,
 // }
 
 // 删除文件
-static int finefs_unlink(struct inode *dir, struct dentry *dentry)
-{
-	struct inode *inode = dentry->d_inode;
-	struct super_block *sb = dir->i_sb;
-	int retval = -ENOMEM;
-	struct finefs_inode *pi = finefs_get_inode(sb, inode);
-	struct finefs_inode *pidir;
-	u64 pidir_tail = 0, pi_tail = 0;
-	int invalidate = 0;
-	timing_t unlink_time;
+static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
+    struct inode *inode = dentry->d_inode;
+    struct super_block *sb = dir->i_sb;
+    int retval = -ENOMEM;
+    struct finefs_inode *pi = finefs_get_inode(sb, inode);
+    struct finefs_inode *pidir;
+    u64 pidir_tail = 0, pi_tail = 0;
+    int invalidate = 0;
+    timing_t unlink_time;
 
-	FINEFS_START_TIMING(unlink_t, unlink_time);
+    FINEFS_START_TIMING(unlink_t, unlink_time);
 
-	pidir = finefs_get_inode(sb, dir);
-	if (!pidir)
-		goto out;
+    pidir = finefs_get_inode(sb, dir);
+    if (!pidir) goto out;
 
-	rd_info("%s: %s", __func__, dentry->d_name.name);
-	rd_info("%s: inode %lu, dir %lu", __func__,
-				inode->i_ino, dir->i_ino);
-	retval = finefs_remove_dentry(dentry, 0, 0, &pidir_tail);
-	if (retval)
-		goto out;
+    rd_info("%s: %s", __func__, dentry->d_name.name);
+    rd_info("%s: inode %lu, dir %lu", __func__, inode->i_ino, dir->i_ino);
+    retval = finefs_remove_dentry(dentry, 0, 0, &pidir_tail);
+    if (retval) goto out;
 
-	inode->i_ctime = dir->i_ctime;
+    inode->i_ctime = dir->i_ctime;
 
-	if (inode->i_nlink == 1)
-		invalidate = 1;
+    if (inode->i_nlink == 1) invalidate = 1;
 
-	if (inode->i_nlink) {
-		drop_nlink(inode);
-	}
+    if (inode->i_nlink) {
+        drop_nlink(inode);
+    }
 
-	retval = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
-	if (retval)
-		goto out;
+    retval = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
+    if (retval) goto out;
 
-	finefs_lite_transaction_for_time_and_link(sb, pi, pidir,
-					pi_tail, pidir_tail, invalidate);
+    finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, invalidate);
 
-	FINEFS_END_TIMING(unlink_t, unlink_time);
-	return 0;
+    FINEFS_END_TIMING(unlink_t, unlink_time);
+    return 0;
 out:
-	r_error("%s return %d", __func__, retval);
-	FINEFS_END_TIMING(unlink_t, unlink_time);
-	return retval;
+    r_error("%s return %d", __func__, retval);
+    FINEFS_END_TIMING(unlink_t, unlink_time);
+    return retval;
 }
 
-static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
-{
-	struct super_block *sb = dir->i_sb;
-	struct inode *inode;
-	struct finefs_inode *pidir, *pi;
-	struct finefs_inode_info *si;
-	struct finefs_inode_info_header *sih = NULL;
-	u64 pi_addr = 0;
-	u64 tail = 0;
-	u64 ino;
-	int err = -EMLINK;
-	timing_t mkdir_time;
+static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
+    struct super_block *sb = dir->i_sb;
+    struct inode *inode;
+    struct finefs_inode *pidir, *pi;
+    struct finefs_inode_info *si;
+    struct finefs_inode_info_header *sih = NULL;
+    u64 pi_addr = 0;
+    u64 tail = 0;
+    u64 ino;
+    int err = -EMLINK;
+    timing_t mkdir_time;
 
-	FINEFS_START_TIMING(mkdir_t, mkdir_time);
-	if (dir->i_nlink >= FINEFS_LINK_MAX)
-		goto out;
+    FINEFS_START_TIMING(mkdir_t, mkdir_time);
+    if (dir->i_nlink >= FINEFS_LINK_MAX) goto out;
 
-	ino = finefs_new_finefs_inode(sb, &pi_addr);
-	if (ino == 0)
-		goto out_err;
+    ino = finefs_new_finefs_inode(sb, &pi_addr);
+    if (ino == 0) goto out_err;
 
-	rdv_proc("%s: name %s", __func__, dentry->d_name.name);
-	rdv_proc("%s: inode %lu, dir %lu, link %d", __func__,
-				ino, dir->i_ino, dir->i_nlink);
-	err = finefs_add_dentry(dentry, ino, 1, 0, &tail);
-	if (err) {
-		rd_warning("failed to add dir entry");
-		goto out_err;
-	}
+    rdv_proc("%s: name %s", __func__, dentry->d_name.name);
+    rdv_proc("%s: inode %lu, dir %lu, link %d", __func__, ino, dir->i_ino, dir->i_nlink);
+    err = finefs_add_dentry(dentry, ino, 1, 0, &tail);
+    if (err) {
+        rd_warning("failed to add dir entry");
+        goto out_err;
+    }
 
-	inode = finefs_new_vfs_inode(TYPE_MKDIR, dir, pi_addr, ino,
-					S_IFDIR | mode, sb->s_blocksize,
-					0, &dentry->d_name);
-	if (!inode) {
-		err = -1;
-		goto out_err;
-	}
+    inode = finefs_new_vfs_inode(TYPE_MKDIR, dir, pi_addr, ino, S_IFDIR | mode, sb->s_blocksize, 0,
+                                 &dentry->d_name);
+    if (!inode) {
+        err = -1;
+        goto out_err;
+    }
 
-	pi = finefs_get_inode(sb, inode);
-	// 为新创建的目录inode，分配log page，并附加两个entry
-	finefs_append_dir_init_entries(sb, pi, inode->i_ino, dir->i_ino);
+    pi = finefs_get_inode(sb, inode);
+    // 为新创建的目录inode，分配log page，并附加两个entry
+    finefs_append_dir_init_entries(sb, pi, inode->i_ino, dir->i_ino);
 
-	/* Build the dir tree */
-	si = FINEFS_I(inode);
-	sih = &si->header;
-	finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, sih);
+    /* Build the dir tree */
+    si = FINEFS_I(inode);
+    sih = &si->header;
+    finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, sih);
 
-	pidir = finefs_get_inode(sb, dir);
-	dir->i_blocks = pidir->i_blocks;
-	inc_nlink(dir);
-	d_instantiate(dentry, inode);
-	// unlock_new_inode(inode);
+    pidir = finefs_get_inode(sb, dir);
+    dir->i_blocks = pidir->i_blocks;
+    inc_nlink(dir);
+    d_instantiate(dentry, inode);
+    // unlock_new_inode(inode);
 
-	finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
-	inode_unref(inode);
+    finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
+    inode_unref(inode);
 out:
-	FINEFS_END_TIMING(mkdir_t, mkdir_time);
-	return err;
+    FINEFS_END_TIMING(mkdir_t, mkdir_time);
+    return err;
 
 out_err:
-//	clear_nlink(inode);
-	r_error("%s return %d", __func__, err);
-	goto out;
+    //	clear_nlink(inode);
+    r_error("%s return %d", __func__, err);
+    goto out;
 }
 
 /*
@@ -569,97 +538,83 @@ out_err:
  * 确保目录为空
  * // 空则返回1
  */
-static int finefs_empty_dir(struct inode *inode)
-{
-	struct super_block *sb;
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	struct finefs_dentry *entry;
-	unsigned long pos = 0;
-	struct finefs_dentry *entries[4];
-	int nr_entries;
-	int i;
+static int finefs_empty_dir(struct inode *inode) {
+    struct super_block *sb;
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    struct finefs_dentry *entry;
+    unsigned long pos = 0;
+    struct finefs_dentry *entries[4];
+    int nr_entries;
+    int i;
 
-	sb = inode->i_sb;
-	nr_entries = radix_tree_gang_lookup(&sih->tree,
-					(void **)entries, pos, 4);
-	if (nr_entries > 2)
-		return 0;
+    sb = inode->i_sb;
+    nr_entries = radix_tree_gang_lookup(&sih->tree, (void **)entries, pos, 4);
+    if (nr_entries > 2) return 0;
 
-	for (i = 0; i < nr_entries; i++) {
-		entry = entries[i];
-		if (!is_dir_init_entry(sb, entry))
-			return 0;
-	}
+    for (i = 0; i < nr_entries; i++) {
+        entry = entries[i];
+        if (!is_dir_init_entry(sb, entry)) return 0;
+    }
 
-	return 1;
+    return 1;
 }
 
-static int finefs_rmdir(struct inode *dir, struct dentry *dentry)
-{
-	// 删除的目录inode
-	struct inode *inode = dentry->d_inode;
-	struct finefs_dentry *de;
-	struct super_block *sb = inode->i_sb;
-	// 删除的目录finefs_inode
-	struct finefs_inode *pi = finefs_get_inode(sb, inode), *pidir;
-	u64 pidir_tail = 0, pi_tail = 0;
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	int err = -ENOTEMPTY;
-	timing_t rmdir_time;
+static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
+    // 删除的目录inode
+    struct inode *inode = dentry->d_inode;
+    struct finefs_dentry *de;
+    struct super_block *sb = inode->i_sb;
+    // 删除的目录finefs_inode
+    struct finefs_inode *pi = finefs_get_inode(sb, inode), *pidir;
+    u64 pidir_tail = 0, pi_tail = 0;
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    int err = -ENOTEMPTY;
+    timing_t rmdir_time;
 
-	FINEFS_START_TIMING(rmdir_t, rmdir_time);
-	if (!inode)
-		return -ENOENT;
+    FINEFS_START_TIMING(rmdir_t, rmdir_time);
+    if (!inode) return -ENOENT;
 
-	rdv_func("%s: name %s", __func__, dentry->d_name.name);
-	// 父母inode
-	pidir = finefs_get_inode(sb, dir);
-	if (!pidir)
-		return -EINVAL;
+    rdv_func("%s: name %s", __func__, dentry->d_name.name);
+    // 父母inode
+    pidir = finefs_get_inode(sb, dir);
+    if (!pidir) return -EINVAL;
 
-	if (finefs_inode_by_name(dir, &dentry->d_name, &de) == 0)
-		return -ENOENT;
+    if (finefs_inode_by_name(dir, &dentry->d_name, &de) == 0) return -ENOENT;
 
-	if (!finefs_empty_dir(inode))
-		return err;
+    if (!finefs_empty_dir(inode)) return err;
 
-	rd_info("%s: inode %lu, dir %lu, link %d", __func__,
-				inode->i_ino, dir->i_ino, dir->i_nlink);
+    rd_info("%s: inode %lu, dir %lu, link %d", __func__, inode->i_ino, dir->i_ino, dir->i_nlink);
 
-	if (inode->i_nlink != 2)
-		rd_info("empty directory %lu has nlink!=2 (%d), dir %lu",
-				inode->i_ino, inode->i_nlink, dir->i_ino);
+    if (inode->i_nlink != 2)
+        rd_info("empty directory %lu has nlink!=2 (%d), dir %lu", inode->i_ino, inode->i_nlink,
+                dir->i_ino);
 
-	// 先从父母inode中删除孩子，并写log
-	err = finefs_remove_dentry(dentry, -1, 0, &pidir_tail);
-	if (err)
-		goto end_rmdir;
+    // 先从父母inode中删除孩子，并写log
+    err = finefs_remove_dentry(dentry, -1, 0, &pidir_tail);
+    if (err) goto end_rmdir;
 
-	/*inode->i_version++; */
-	clear_nlink(inode);
-	inode->i_ctime = dir->i_ctime;
+    /*inode->i_version++; */
+    clear_nlink(inode);
+    inode->i_ctime = dir->i_ctime;
 
-	if (dir->i_nlink)
-		drop_nlink(dir);
-	// 删除inode内存中对应的索引
-	finefs_delete_dir_tree(sb, sih);
-	// 孩子中添加unlink的log
-	err = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
-	if (err)
-		goto end_rmdir;
+    if (dir->i_nlink) drop_nlink(dir);
+    // 删除inode内存中对应的索引
+    finefs_delete_dir_tree(sb, sih);
+    // 孩子中添加unlink的log
+    err = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
+    if (err) goto end_rmdir;
 
-	finefs_lite_transaction_for_time_and_link(sb, pi, pidir,
-						pi_tail, pidir_tail, 1);
+    finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, 1);
 
-	FINEFS_END_TIMING(rmdir_t, rmdir_time);
-	return err;
+    FINEFS_END_TIMING(rmdir_t, rmdir_time);
+    return err;
 
 end_rmdir:
-	r_error("%s return %d", __func__, err);
-	FINEFS_END_TIMING(rmdir_t, rmdir_time);
-	return err;
+    r_error("%s return %d", __func__, err);
+    FINEFS_END_TIMING(rmdir_t, rmdir_time);
+    return err;
 }
 
 // static int finefs_rename(struct inode *old_dir,
@@ -883,20 +838,20 @@ end_rmdir:
 // }
 
 const struct inode_operations finefs_dir_inode_operations = {
-	.create		= finefs_create,
-	.lookup		= finefs_lookup,
-	// .link		= finefs_link,
-	.unlink		= finefs_unlink,
-	// .symlink	= finefs_symlink,
-	.mkdir		= finefs_mkdir,
-	.rmdir		= finefs_rmdir,
-	// .mknod		= finefs_mknod,
-	// .rename		= finefs_rename,
-	.setattr	= finefs_notify_change,
-	// .get_acl	= NULL,
+    .create = finefs_create,
+    .lookup = finefs_lookup,
+    // .link		= finefs_link,
+    .unlink = finefs_unlink,
+    // .symlink	= finefs_symlink,
+    .mkdir = finefs_mkdir,
+    .rmdir = finefs_rmdir,
+    // .mknod		= finefs_mknod,
+    // .rename		= finefs_rename,
+    .setattr = finefs_notify_change,
+    // .get_acl	= NULL,
 };
 
 const struct inode_operations finefs_special_inode_operations = {
-	.get_acl	= NULL,
-	.setattr	= finefs_notify_change,
+    .get_acl = NULL,
+    .setattr = finefs_notify_change,
 };

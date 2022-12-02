@@ -25,11 +25,65 @@
 #include "vfs/com.h"
 #include "util/aep.h"
 
-#define	FINEFS_SUPER_MAGIC	0x4E4F5641	/* FINEFS */
+/* ======================= fs config ========================= */
 
 /*
- * The FINEFS filesystem constants/structures
+ * Maximal count of links to a file
  */
+#define FINEFS_LINK_MAX          32000
+
+#define FINEFS_INODE_SIZE 128    /* must be power of two */
+#define FINEFS_INODE_BITS   7
+
+#define FINEFS_NAME_LEN 255
+
+/* ======================= size config ========================= */
+
+// FINEFS中block的概念等同于page，是heap管理的基本单元
+#define FINEFS_BLOCK_SHIFT 12
+#define FINEFS_BLOCK_SIZE  	 	(1 << FINEFS_BLOCK_SHIFT)
+#define FINEFS_BLOCK_UMASK   	(FINEFS_BLOCK_SIZE-1)
+#define FINEFS_BLOCK_MASK  	(~(FINEFS_BLOCK_SIZE-1))
+// 获取block的起始偏移，相对NVM的起始位置
+#define FINEFS_BLOCK_OFF(p)  ((p) & FINEFS_BLOCK_MASK)
+
+/* FINEFS supported data blocks */
+enum blk_type_t {
+	FINEFS_BLOCK_TYPE_4K = 0,
+	FINEFS_BLOCK_TYPE_8K    ,
+	FINEFS_BLOCK_TYPE_16K   ,
+	FINEFS_BLOCK_TYPE_32K   ,
+	FINEFS_BLOCK_TYPE_64K   ,
+	FINEFS_BLOCK_TYPE_128K  ,
+	FINEFS_BLOCK_TYPE_256K  ,
+	FINEFS_BLOCK_TYPE_512K  ,
+	FINEFS_BLOCK_TYPE_1M    ,
+	FINEFS_BLOCK_TYPE_2M    ,
+	FINEFS_BLOCK_TYPE_1G    ,
+	FINEFS_BLOCK_TYPE_MAX   ,
+};
+
+#define FINEFS_4K_BLK_NUM_BITS     0
+#define FINEFS_8K_BLK_NUM_BITS     1
+#define FINEFS_16K_BLK_NUM_BITS    2
+#define FINEFS_32K_BLK_NUM_BITS    3
+#define FINEFS_64K_BLK_NUM_BITS    4
+#define FINEFS_128K_BLK_NUM_BITS   5
+#define FINEFS_256K_BLK_NUM_BITS   6
+#define FINEFS_512K_BLK_NUM_BITS   7
+#define FINEFS_1M_BLK_NUM_BITS     8
+#define FINEFS_2M_BLK_NUM          9
+#define FINEFS_1G_BLK_NUM          18 // 0x40000
+
+/*
+ * Play with this knob to change the default block type.
+ * By changing the FINEFS_DEFAULT_DATA_BLOCK_TYPE to 2M or 1G,
+ * we should get pretty good coverage in testing.
+ */
+#define FINEFS_DEFAULT_DATA_BLOCK_TYPE FINEFS_BLOCK_TYPE_4K
+#define FINEFS_DEFAULT_DATA_BLOCK_BITS FINEFS_4K_BLK_NUM_BITS
+
+/* ======================= finefs_super_block ========================= */
 
 /*
  * Mount flags
@@ -46,78 +100,7 @@
 #define FINEFS_MOUNT_FORMAT      0x000200        /* was FS formatted on mount? */
 #define FINEFS_MOUNT_MOUNTING    0x000400        /* FS currently being mounted */
 
-/*
- * Maximal count of links to a file
- */
-#define FINEFS_LINK_MAX          32000
-
-#define FINEFS_DEF_BLOCK_SIZE_4K 4096
-
-#define FINEFS_INODE_SIZE 128    /* must be power of two */
-#define FINEFS_INODE_BITS   7
-
-#define FINEFS_NAME_LEN 255
-
-/* FINEFS supported data blocks */
-#define FINEFS_BLOCK_TYPE_4K     0
-#define FINEFS_BLOCK_TYPE_2M     1
-#define FINEFS_BLOCK_TYPE_1G     2
-#define FINEFS_BLOCK_TYPE_MAX    3
-
-#define META_BLK_SHIFT 9
-
-/*
- * Play with this knob to change the default block type.
- * By changing the FINEFS_DEFAULT_BLOCK_TYPE to 2M or 1G,
- * we should get pretty good coverage in testing.
- */
-#define FINEFS_DEFAULT_BLOCK_TYPE FINEFS_BLOCK_TYPE_4K
-
-/*
- * Structure of an inode in FINEFS.
- * Keep the inode size to within 120 bytes: We use the last eight bytes
- * as inode table tail pointer.
- */
-struct finefs_inode {
-	/* first 48 bytes */
-	__le16	i_rsvd;		/* reserved. used to be checksum */
-	u8	valid;		/* Is this inode valid? 新建inode时和父母tail一起journal方式写*/
-	u8	i_blk_type;	/* data block size this inode uses ,是一个枚举值*/
-	__le32	i_flags;	/* Inode flags */
-	__le64	i_size;		/* Size of data in bytes */
-	__le32	i_ctime;	/* Inode modification time */
-	__le32	i_mtime;	/* Inode b-tree Modification time */
-	__le32	i_atime;	/* Access time */
-	__le16	i_mode;		/* File mode 文件类型*/
-	__le16	i_links_count;	/* Links count */
-
-	/*
-	 * Blocks count. This field is updated in-place;
-	 * We just make sure it is consistent upon clean umount,
-	 * and it is recovered in DFS recovery if power failure occurs.
-	 * 持有的block个数，包括log page
-	 */
-	__le64	i_blocks;
-	// __le64	i_xattr;	/* Extended attribute block */
-
-	/* second 48 bytes */
-	__le32	i_uid;		/* Owner Uid */
-	__le32	i_gid;		/* Group Id */
-	__le32	i_generation;	/* File version (for NFS) */
-	__le32	padding;
-	__le64	finefs_ino;	/* finefs inode number */
-
-	__le64	log_head;	/* Log head pointer */
-	__le64	log_tail;	/* Log tail pointer */
-
-	// struct {
-	// 	__le32 rdev;	/* major/minor # */
-	// } dev;			/* device inode */
-
-	/* Leave 8 bytes for inode table tail pointer */
-} __attribute((__packed__));
-
-
+#define	FINEFS_SUPER_MAGIC	0x4E4F5641	/* FINEFS */
 #define FINEFS_SB_SIZE 512       /* must be power of two */
 
 /*
@@ -157,6 +140,52 @@ struct finefs_super_block {
 
 /* the above fast mount fields take total 32 bytes in the super block */
 #define FINEFS_FAST_MOUNT_FIELD_SIZE  (36)
+
+/* ======================= finefs inode ========================= */
+
+/*
+ * Structure of an inode in FINEFS.
+ * Keep the inode size to within 120 bytes: We use the last eight bytes
+ * as inode table tail pointer.
+ */
+struct finefs_inode {
+	/* first 48 bytes */
+	__le16	i_rsvd;		/* reserved. used to be checksum */
+	u8	valid;		/* Is this inode valid? 新建inode时和父母tail一起journal方式写*/
+	u8	i_blk_type;	/* data block size this inode uses ,是一个枚举值。修改：data page固定4KB，这个枚举用来控制log大小*/
+	__le32	i_flags;	/* Inode flags */
+	__le64	i_size;		/* Size of data in bytes */
+	__le32	i_ctime;	/* Inode modification time */
+	__le32	i_mtime;	/* Inode b-tree Modification time */
+	__le32	i_atime;	/* Access time */
+	__le16	i_mode;		/* File mode 文件类型*/
+	__le16	i_links_count;	/* Links count */
+
+	/*
+	 * Blocks count. This field is updated in-place;
+	 * We just make sure it is consistent upon clean umount,
+	 * and it is recovered in DFS recovery if power failure occurs.
+	 * 持有的block个数，包括log page
+	 */
+	__le64	i_blocks;
+	// __le64	i_xattr;	/* Extended attribute block */
+
+	/* second 48 bytes */
+	__le32	i_uid;		/* Owner Uid */
+	__le32	i_gid;		/* Group Id */
+	__le32	i_generation;	/* File version (for NFS) */
+	__le32	padding;
+	__le64	finefs_ino;	/* finefs inode number */
+
+	__le64	log_head;	/* Log head pointer */
+	__le64	log_tail;	/* Log tail pointer */
+
+	// struct {
+	// 	__le32 rdev;	/* major/minor # */
+	// } dev;			/* device inode */
+
+	/* Leave 8 bytes for inode table tail pointer */
+} __attribute((__packed__));
 
 // 实际上为了方便空间管理，空间管理器只实现了按照inode来分配空间的接口。
 // 为了分配其他类型的空间，这里预留了几个ino
@@ -224,7 +253,7 @@ static inline void PERSISTENT_BARRIER(void)
 static inline void finefs_flush_buffer(void *buf, uint32_t len, bool fence)
 {
 	uint32_t i;
-	len = len + ((unsigned long)(buf) & (CACHELINE_SIZE - 1));
+	len = len + ((unsigned long)(buf) & CACHELINE_UMASK);
 	for (i = 0; i < len; i += CACHELINE_SIZE) {
 		clwb(buf + i);
 	}
