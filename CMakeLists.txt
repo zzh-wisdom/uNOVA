@@ -97,3 +97,12 @@ add_executable(nova_basic_test
 target_link_libraries(nova_basic_test
     glog pthread numa pmem2
 )
+
+#
+# perf test
+#
+
+add_executable(perf_ftruncate perf/ftruncate_test.cc)
+target_link_libraries(perf_ftruncate
+    pthread syscall_intercept dl
+)
