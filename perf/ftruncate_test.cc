@@ -14,11 +14,12 @@
 #include <cstring>
 #include <iostream>
 #include <unordered_map>
-// #include <dlfcn.h>
+#include <vector>
+#include <dlfcn.h>
 
 #include "util/cpu.h"
 
-const uint64_t TOTAL_OPS = 1e8;
+const uint64_t TOTAL_OPS = 5e7;
 
 int main(int argc, char* argv[]) {
     // #if FS_HOOK==1
@@ -32,7 +33,19 @@ int main(int argc, char* argv[]) {
     // 	assert(handle);
     //     const std::string mntdir = "/tmp/finefs";
     // #endif
-    assert(argc == 2);
+    assert(argc == 3);
+    // if (strcmp(argv[1], "nova") == 0) {
+    //     printf("dlopen ./libnova_hook.so\n");
+    //     void *handle = dlopen("./libnova_hook.so", RTLD_NOW);
+    // 	assert(handle);
+    // } else if (strcmp(argv[1], "finefs") == 0) {
+    //     printf("dlopen ./libfinefs_hook.so\n");
+    //     void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
+    // 	assert(handle);
+    // } else {
+    //     exit(-1);
+    // }
+
     std::string mntdir;
     if (strcmp(argv[1], "nova") == 0) {
         mntdir = "/tmp/nova";
@@ -41,25 +54,30 @@ int main(int argc, char* argv[]) {
     } else {
         exit(-1);
     }
-    printf("mnt %s\n", mntdir.c_str());
+    int files = atoi(argv[2]);
+    printf("mnt %s, files: %d\n", mntdir.c_str(), files);
 
     const std::string dir1 = mntdir + "/dir1";
-    const std::string dir1_f1 = dir1 + "/f1";
+    const std::string dir1_file = dir1 + "/ftruncate";
     int mkdir_flag = S_IRWXU | S_IRWXG | S_IRWXO;
     int ret;
-    int fd;
+    std::vector<int> fds(files);
 
     ret = mkdir(dir1.c_str(), mkdir_flag);
     assert(ret == 0);
-    fd = open(dir1_f1.c_str(), O_RDWR | O_CREAT, 666);
-    assert(fd > 0);
-    printf("open %s, fd = %d\n", dir1_f1.c_str(), fd);
+    for(int i = 0; i < files; ++i) {
+        const std::string file_name = dir1_file + "-" + std::to_string(i);
+        fds[i] = open(file_name.c_str(), O_RDWR | O_CREAT, 666);
+        assert(fds[i] > 0);
+    }
+
+    // printf("open %s, fd = %d\n", dir1_f1.c_str(), fd);
 
     uint64_t file_len = 0;
     uint64_t start_ns = GetTsUsec();
     barrier();
     for (uint64_t i = 0; i < TOTAL_OPS; ++i) {
-        ret = ftruncate(fd, file_len);
+        ret = ftruncate(fds[i%files], file_len);
         assert(ret == 0);
         file_len += 64;
     }

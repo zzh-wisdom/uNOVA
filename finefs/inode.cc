@@ -1363,6 +1363,8 @@ static u64 finefs_append_setattr_entry(struct super_block *sb,
 	return new_tail;
 }
 
+// #define LOG_HAS_TAIL
+
 int finefs_notify_change(struct dentry *dentry, struct iattr *attr)
 {
 	struct inode *inode = dentry->d_inode;
