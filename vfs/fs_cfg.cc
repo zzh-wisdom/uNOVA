@@ -17,6 +17,7 @@ static int register_thread_num = 0;
 thread_local int processor_id = -1;
 
 int measure_timing = 0;
+int pmem_nt_threshold = 256;
 
 pmem2_memset_fn pmem_memset_func;
 pmem2_memcpy_fn pmem_memcpy_func;
@@ -32,6 +33,7 @@ void fs_cfg_init(pmem2_map* pmap, struct vfs_cfg* cfg) {
     }
     register_thread_num = 0;
     measure_timing = cfg->measure_timing;
+    pmem_nt_threshold = cfg->pmem_nt_threshold;
 
     pmem_memcpy_func = pmem2_get_memcpy_fn(pmap);
     pmem_memset_func = pmem2_get_memset_fn(pmap);

@@ -656,13 +656,13 @@ static inline void finefs_memcpy_atomic(void *dst, const void *src, u8 size)
 	}
 }
 
-static inline int memcpy_to_pmem_nocache(void *dst, const void *src,
-	unsigned int size)
+static force_inline int memcpy_to_pmem_nocache(void *dst, const void *src,
+	unsigned int size, bool fence = false)
 {
 	int ret;
 
 	// 从用户空间拷贝数据
-	ret = __copy_from_user_inatomic_nocache(dst, src, size);
+	ret = __copy_from_user_inatomic_nocache(dst, src, size, fence);
 
 	return ret;
 }

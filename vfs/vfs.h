@@ -1190,6 +1190,8 @@ struct vfs_cfg {
     int measure_timing;
     int start_fd;
 	bool format;
+
+    int pmem_nt_threshold;
 };
 
 void vfs_cfg_print(struct vfs_cfg* cfg);
@@ -1206,6 +1208,7 @@ static force_inline void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->measure_timing = 0;
 	cfg->start_fd = CFG_START_FD;
 	cfg->format = true;
+    cfg->pmem_nt_threshold = 256;
 }
 
 void setattr_copy(struct inode *inode, const struct iattr *attr);

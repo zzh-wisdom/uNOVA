@@ -598,7 +598,7 @@ static inline int memcpy_to_pmem_nocache(void *dst, const void *src,
 	int ret;
 
 	// 从用户空间拷贝数据
-	ret = __copy_from_user_inatomic_nocache(dst, src, size);
+	ret = __copy_from_user_inatomic_nocache(dst, src, size, false);
 
 	return ret;
 }
