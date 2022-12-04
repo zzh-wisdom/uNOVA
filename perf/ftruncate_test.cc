@@ -18,7 +18,7 @@
 
 #include "util/cpu.h"
 
-const uint64_t TOTAL_OPS = 1e7;
+const uint64_t TOTAL_OPS = 1e8;
 
 int main(int argc, char* argv[]) {
     // #if FS_HOOK==1
@@ -56,14 +56,16 @@ int main(int argc, char* argv[]) {
     printf("open %s, fd = %d\n", dir1_f1.c_str(), fd);
 
     uint64_t file_len = 0;
-    uint64_t start_ns = GetTsNsec();
+    uint64_t start_ns = GetTsUsec();
+    barrier();
     for (uint64_t i = 0; i < TOTAL_OPS; ++i) {
         ret = ftruncate(fd, file_len);
         assert(ret == 0);
         file_len += 64;
     }
-    uint64_t end_ns = GetTsNsec();
-    double interval_s = (double)(end_ns - start_ns) / 1000 / 1000 / 1000;
+    barrier();
+    uint64_t end_ns = GetTsUsec();
+    double interval_s = (double)(end_ns - start_ns) / 1000 / 1000;
     printf("bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops\n",
            TOTAL_OPS * 64.0 / 1024 / 1024 / interval_s, TOTAL_OPS / 1000.0 / interval_s);
 

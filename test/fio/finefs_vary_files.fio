@@ -19,7 +19,7 @@ create_fsync=1
 unlink=1
 description=顺序写文件,单线程多文件,文件数变化
 time_based
-runtime=60
+runtime=30
 numjobs=1
 # overwrite=1
 # ioengine=sync
@@ -42,9 +42,9 @@ nrfiles=1
 # wait_for_previous
 # nrfiles=2
 
-# [ftruncate-4]
+# [ftruncate-5]
 # wait_for_previous
-# nrfiles=4
+# nrfiles=5
 
 # [ftruncate-8]
 # wait_for_previous
@@ -54,9 +54,45 @@ nrfiles=1
 # wait_for_previous
 # nrfiles=10
 
+# [ftruncate-20]
+# wait_for_previous
+# nrfiles=20
+
+# [ftruncate-23]
+# wait_for_previous
+# nrfiles=23
+
+# [ftruncate-25]
+# wait_for_previous
+# nrfiles=25
+
+# [ftruncate-26]
+# wait_for_previous
+# nrfiles=26
+
+# [ftruncate-30]
+# wait_for_previous
+# nrfiles=30
+
+# [ftruncate-50]
+# wait_for_previous
+# nrfiles=50
+
+# [ftruncate-70]
+# wait_for_previous
+# nrfiles=70
+
+# [ftruncate-90]
+# wait_for_previous
+# nrfiles=90
+
 # [ftruncate-100]
 # wait_for_previous
 # nrfiles=100
+
+# [ftruncate-120]
+# wait_for_previous
+# nrfiles=120
 
 # [ftruncate-1000]
 # wait_for_previous
