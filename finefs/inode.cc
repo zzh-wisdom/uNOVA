@@ -1398,6 +1398,14 @@ int finefs_notify_change(struct dentry *dentry, struct iattr *attr)
 	if (ia_valid == 0)
 		return ret;
 
+    // 单纯的pm顺序写，也只是IOPS=2384k, BW=145MiB/s
+    // static u64 offset = 1024 << FINEFS_BLOCK_SHIFT;
+    // // printf("offset=%llu\n", offset);
+    // finefs_setattr_logentry* entry = (struct finefs_setattr_logentry *)finefs_get_block(sb, offset);
+    // finefs_update_setattr_entry(inode, entry, attr);
+    // offset += 64;
+	// PERSISTENT_BARRIER();
+
 	/* We are holding i_mutex so OK to append the log */
 	new_tail = finefs_append_setattr_entry(sb, pi, inode, attr, 0);
 
@@ -1530,6 +1538,8 @@ static int finefs_coalesce_log_pages(struct super_block *sb, unsigned long prev_
     return 0;
 }
 
+// #define LOG_ZERO
+
 /* Log block resides in NVMM */
 // 循环的方式分配,尽量分配连续的空间，共分配num_pages个页
 // new_block 返回分配的第一个page的nvm偏移
@@ -1543,7 +1553,7 @@ int finefs_allocate_inode_log_pages(struct super_block *sb, struct finefs_inode 
     int ret_pages = 0;
 
 #ifdef LOG_ZERO
-    r_info("finefs_new_log_blocks ZERO=1");
+    // r_info("finefs_new_log_blocks ZERO=1");
     allocated = finefs_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 1, cpuid);
 #else
     // r_info("finefs_new_log_blocks ZERO=0");

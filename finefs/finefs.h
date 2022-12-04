@@ -871,7 +871,7 @@ static inline bool goto_next_page(struct super_block *sb, u64 curr_p)
 	u8 type;
 
 	/* Each kind of entry takes at least 32 bytes */
-	if (FINEFS_LOG_ENTRY_LOC(curr_p) + 32 > FINEFS_LOG_LAST_ENTRY)
+	if (FINEFS_LOG_ENTRY_LOC(curr_p) + CACHELINE_SIZE > FINEFS_LOG_LAST_ENTRY)
 		return true;
 
 	addr = finefs_get_block(sb, curr_p);
