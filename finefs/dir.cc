@@ -268,6 +268,8 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(2), 0);
 
 	curr_p += FINEFS_DIR_LOG_REC_LEN(2);
+
+    // TODO: delete
 	finefs_update_tail(pi, curr_p);
 
 	return 0;

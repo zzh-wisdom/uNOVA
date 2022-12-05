@@ -1416,6 +1416,8 @@ int finefs_notify_change(struct dentry *dentry, struct iattr *attr)
 	finefs_update_tail(pi, new_tail);
 #else
     finefs_update_volatile_tail(sih, new_tail);
+    // TODO: delete
+    finefs_update_tail(pi, new_tail);
 #endif
 
 	/* Only after log entry is committed, we can truncate size */
@@ -1810,7 +1812,7 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
     curr_p = pi->log_head;
     old_curr_p = curr_p;
     old_head = pi->log_head;
-    rv_proc("%s Log head 0x%lx, tail 0x%lx", __func__, curr_p, pi->log_tail);
+    r_info("%s Log head 0x%lx, tail 0x%lx", __func__, curr_p, pi->log_tail);
     if (curr_p == 0 && pi->log_tail == 0) goto out;
 
     if (curr_p >> FINEFS_BLOCK_SHIFT == pi->log_tail >> FINEFS_BLOCK_SHIFT) goto out;
@@ -1907,6 +1909,8 @@ static int need_thorough_gc(struct super_block *sb, struct finefs_inode_info_hea
     return 0;
 }
 
+// #define FINEFS_LOG_TEST
+
 // new_block：新分配log page的第一个page的偏移
 // num_pages: 新分配page的个数
 static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode *pi,
@@ -1927,13 +1931,15 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     curr = pi->log_head;
     sih->valid_bytes = 0;
 
-    // r_info("%s: log head 0x%lx, tail 0x%lx, new pages: %d", __func__, curr, curr_tail, num_pages);
+#ifdef FINEFS_LOG_TEST
     sih->log_pages += num_pages;
     curr = FINEFS_LOG_BLOCK_OFF(curr_tail);
     curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
     finefs_set_next_page_address(sb, curr_page, new_block, 1);
     return 0;
+#endif
 
+    // r_info("%s: log head 0x%lx, tail 0x%lx, new pages: %d", __func__, curr, curr_tail, num_pages);
     while (1) {
         if (curr >> FINEFS_BLOCK_SHIFT == pi->log_tail >> FINEFS_BLOCK_SHIFT) {
             /* Don't recycle tail page 不回收最后一个page，避免即修改head又修改tail，不能原子*/
@@ -2092,7 +2098,8 @@ static u64 finefs_append_one_log_page(struct super_block *sb, struct finefs_inod
 u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
                          struct finefs_inode_info_header *sih, u64 tail, size_t size, int *extended) {
     u64 curr_p;
-
+    // TODO: delete
+    log_assert(sih->i_log_tail == pi->log_tail);
     if (tail)
         curr_p = tail;
     else

@@ -156,6 +156,8 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 
     pi = (struct finefs_inode *)finefs_get_block(sb, pi_addr);
     finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
+    // FIXME
+    FINEFS_I(dir)->header.i_log_tail = pidir->log_tail;
     inode_unref(inode);
     FINEFS_END_TIMING(create_t, create_time);
     return err;
@@ -464,6 +466,8 @@ static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
     if (retval) goto out;
 
     finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, invalidate);
+    // FIXME
+    FINEFS_I(dir)->header.i_log_tail = pidir->log_tail;
 
     FINEFS_END_TIMING(unlink_t, unlink_time);
     return 0;
@@ -523,6 +527,8 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
     // unlock_new_inode(inode);
 
     finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
+    // FIXME
+    FINEFS_I(dir)->header.i_log_tail = pidir->log_tail;
     inode_unref(inode);
 out:
     FINEFS_END_TIMING(mkdir_t, mkdir_time);
@@ -608,6 +614,8 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     if (err) goto end_rmdir;
 
     finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, 1);
+    // FIXME
+    FINEFS_I(dir)->header.i_log_tail = pidir->log_tail;
 
     FINEFS_END_TIMING(rmdir_t, rmdir_time);
     return err;

@@ -1192,6 +1192,9 @@ struct vfs_cfg {
 	bool format;
 
     int pmem_nt_threshold;
+
+    // finefs
+    double log_heap_occupy;
 };
 
 void vfs_cfg_print(struct vfs_cfg* cfg);
@@ -1209,6 +1212,8 @@ static force_inline void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->start_fd = CFG_START_FD;
 	cfg->format = true;
     cfg->pmem_nt_threshold = 256;
+
+    cfg->log_heap_occupy = 1.0/64;
 }
 
 void setattr_copy(struct inode *inode, const struct iattr *attr);

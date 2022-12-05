@@ -39,14 +39,6 @@
 
 /* ======================= size config ========================= */
 
-// FINEFS中block的概念等同于page，是heap管理的基本单元
-#define FINEFS_BLOCK_SHIFT 12
-#define FINEFS_BLOCK_SIZE  	 	(1 << FINEFS_BLOCK_SHIFT)
-#define FINEFS_BLOCK_UMASK   	(FINEFS_BLOCK_SIZE-1)
-#define FINEFS_BLOCK_MASK  	(~(FINEFS_BLOCK_SIZE-1))
-// 获取block的起始偏移，相对NVM的起始位置
-#define FINEFS_BLOCK_OFF(p)  ((p) & FINEFS_BLOCK_MASK)
-
 /* FINEFS supported data blocks */
 enum blk_type_t {
 	FINEFS_BLOCK_TYPE_4K = 0,
@@ -80,7 +72,15 @@ enum blk_type_t {
  * By changing the FINEFS_DEFAULT_DATA_BLOCK_TYPE to 2M or 1G,
  * we should get pretty good coverage in testing.
  */
-#define FINEFS_DEFAULT_DATA_BLOCK_TYPE FINEFS_BLOCK_TYPE_16K
+#define FINEFS_DEFAULT_DATA_BLOCK_TYPE FINEFS_BLOCK_TYPE_4K
+
+// FINEFS中block的概念等同于page，是heap管理的基本单元
+#define FINEFS_BLOCK_SHIFT 12
+#define FINEFS_BLOCK_SIZE  	 	(1 << FINEFS_BLOCK_SHIFT)
+#define FINEFS_BLOCK_UMASK   	(FINEFS_BLOCK_SIZE-1)
+#define FINEFS_BLOCK_MASK  	(~(FINEFS_BLOCK_SIZE-1))
+// 获取block的起始偏移，相对NVM的起始位置
+#define FINEFS_BLOCK_OFF(p)  ((p) & FINEFS_BLOCK_MASK)
 
 /* ======================= finefs_super_block ========================= */
 

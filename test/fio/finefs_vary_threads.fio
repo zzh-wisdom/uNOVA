@@ -2,7 +2,7 @@
 
 [global]
 ; 目录需要事先存在
-directory=/tmp/nova
+directory=/tmp/finefs
 direct=1
 buffered=0
 thread=1
@@ -22,7 +22,7 @@ time_based
 runtime=60
 # numjobs=1
 description=顺序写文件,单个线程单独一个文件,io大小变化
-size=3G
+size=2G
 # overwrite=1
 rw=write
 bs=4K

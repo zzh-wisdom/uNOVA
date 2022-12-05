@@ -175,7 +175,7 @@ struct finefs_inode_page_tail {
 
 /* Fit in PAGE_SIZE */
 // TODO: 增大page的大小
-struct	finefs_inode_log_page {
+struct finefs_inode_log_page {
 	char padding[FINEFS_LOG_LAST_ENTRY];
 	struct finefs_inode_page_tail page_tail;
 } __attribute((__packed__));
@@ -502,12 +502,25 @@ struct finefs_sb_info {
 	unsigned long map_id;
 
 	/* Per-CPU free block list */
-	struct free_list *free_lists;
+	struct free_list *data_free_lists;
+	struct free_list *log_free_lists;
 
 	/* Shared free block list */
-	unsigned long per_list_blocks;  // 每个cpu的block个数 sbi->num_blocks / sbi->cpus;
-	struct free_list shared_free_list;  // 平均分不完全时，管理剩下多余的
+	unsigned long per_2_list_blocks;  // 每个cpu的block个数 sbi->num_blocks / sbi->cpus; log+data
+	unsigned long per_log_list_blocks;  // 每个cpu的block个数 sbi->num_blocks / sbi->cpus; 但log
+	struct free_list shared_data_free_list;  // 平均分不完全时，管理剩下多余的，TODO:啥时候用到这个
+	struct free_list shared_log_free_list;  // 平均分不完全时，管理剩下多余的，TODO: 初始化
 };
+
+static force_inline int get_cpuid(struct finefs_sb_info *sbi, unsigned long blocknr) {
+    int cpuid;
+
+    cpuid = blocknr / sbi->per_2_list_blocks;
+
+    if (cpuid >= sbi->cpus) cpuid = SHARED_CPU;
+
+    return cpuid;
+}
 
 static inline struct finefs_sb_info *FINEFS_SB(struct super_block *sb)
 {
@@ -562,15 +575,28 @@ finefs_get_block_off(struct super_block *sb, unsigned long blocknr,
 }
 
 static inline
-struct free_list *finefs_get_free_list(struct super_block *sb, int cpu)
+struct free_list *finefs_get_data_free_list(struct super_block *sb, int cpu)
 {
 	struct finefs_sb_info *sbi = FINEFS_SB(sb);
 
 	if (cpu < sbi->cpus)
-		return &sbi->free_lists[cpu];
+		return &sbi->data_free_lists[cpu];
 	else {
 		rdv_verb("%s: cpu:%d, sbi->cpus:%d", __func__, cpu, sbi->cpus);
-		return &sbi->shared_free_list;
+		return &sbi->shared_data_free_list;
+	}
+}
+
+static inline
+struct free_list *finefs_get_log_free_list(struct super_block *sb, int cpu)
+{
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
+
+	if (cpu < sbi->cpus)
+		return &sbi->log_free_lists[cpu];
+	else {
+		rdv_verb("%s: cpu:%d, sbi->cpus:%d", __func__, cpu, sbi->cpus);
+		return &sbi->shared_log_free_list;
 	}
 }
 
@@ -908,7 +934,7 @@ void finefs_free_blocknode(struct super_block *sb,
 	struct finefs_range_node *bnode);
 void finefs_free_inode_node(struct super_block *sb,
 	struct finefs_range_node *bnode);
-extern void finefs_init_blockmap(struct super_block *sb, int recovery);
+extern void finefs_init_blockmap(struct super_block *sb, double log_heap_occupy, int recovery);
 extern int finefs_free_data_blocks(struct super_block *sb, struct finefs_inode *pi,
 	unsigned long blocknr, int num);
 extern int finefs_free_log_blocks(struct super_block *sb, struct finefs_inode *pi,

@@ -51,16 +51,6 @@
 //     }
 // }
 
-static int get_cpuid(struct finefs_sb_info *sbi, unsigned long blocknr) {
-    int cpuid;
-
-    cpuid = blocknr / sbi->per_list_blocks;
-
-    if (cpuid >= sbi->cpus) cpuid = SHARED_CPU;
-
-    return cpuid;
-}
-
 // static int finefs_failure_insert_inodetree(struct super_block *sb, unsigned long ino_low,
 //                                          unsigned long ino_high) {
 //     struct finefs_sb_info *sbi = FINEFS_SB(sb);
@@ -150,7 +140,9 @@ static void finefs_destroy_range_node_tree(struct super_block *sb, struct rb_roo
 static void finefs_destroy_blocknode_tree(struct super_block *sb, int cpu) {
     struct free_list *free_list;
 
-    free_list = finefs_get_free_list(sb, cpu);
+    free_list = finefs_get_data_free_list(sb, cpu);
+    finefs_destroy_range_node_tree(sb, &free_list->block_free_tree);
+    free_list = finefs_get_log_free_list(sb, cpu);
     finefs_destroy_range_node_tree(sb, &free_list->block_free_tree);
 }
 
@@ -379,7 +371,9 @@ static u64 finefs_save_range_nodes_to_log(struct super_block *sb, struct rb_root
 static u64 finefs_save_free_list_blocknodes(struct super_block *sb, int cpu, u64 temp_tail) {
     struct free_list *free_list;
 
-    free_list = finefs_get_free_list(sb, cpu);
+    free_list = finefs_get_data_free_list(sb, cpu);
+    temp_tail = finefs_save_range_nodes_to_log(sb, &free_list->block_free_tree, temp_tail, 0);
+    free_list = finefs_get_log_free_list(sb, cpu);
     temp_tail = finefs_save_range_nodes_to_log(sb, &free_list->block_free_tree, temp_tail, 0);
     return temp_tail;
 }
@@ -427,6 +421,7 @@ void finefs_save_inode_list_to_log(struct super_block *sb) {
 }
 
 // 保存空闲block信息到NVM
+// 混合在一起保存，恢复时根据block编号和cpu个数以及每个cpu的log page个数来区分block所属的heap
 void finefs_save_blocknode_mappings_to_log(struct super_block *sb) {
     struct finefs_inode *pi = finefs_get_inode_by_ino(sb, FINEFS_BLOCKNODE_INO);
     struct finefs_sb_info *sbi = FINEFS_SB(sb);
@@ -441,14 +436,20 @@ void finefs_save_blocknode_mappings_to_log(struct super_block *sb) {
 
     /* Allocate log pages before save blocknode mappings */
     for (i = 0; i < sbi->cpus; i++) {
-        free_list = finefs_get_free_list(sb, i);
+        free_list = finefs_get_data_free_list(sb, i);
         num_blocknode += free_list->num_blocknode;
-        rd_info("%s: free list %d: %lu nodes", __func__, i, free_list->num_blocknode);
+        rd_info("%s [data]: free list %d: %lu nodes", __func__, i, free_list->num_blocknode);
+        free_list = finefs_get_log_free_list(sb, i);
+        num_blocknode += free_list->num_blocknode;
+        rd_info("%s [log]: free list %d: %lu nodes", __func__, i, free_list->num_blocknode);
     }
 
-    free_list = finefs_get_free_list(sb, SHARED_CPU);
+    free_list = finefs_get_data_free_list(sb, SHARED_CPU);
     num_blocknode += free_list->num_blocknode;
-    rd_info("%s: shared list: %lu nodes", __func__, free_list->num_blocknode);
+    rd_info("%s [data]: shared list: %lu nodes", __func__, free_list->num_blocknode);
+    free_list = finefs_get_log_free_list(sb, SHARED_CPU);
+    num_blocknode += free_list->num_blocknode;
+    rd_info("%s [log]: shared list: %lu nodes", __func__, free_list->num_blocknode);
 
     num_pages = num_blocknode / RANGENODE_PER_PAGE;
     if (num_blocknode % RANGENODE_PER_PAGE) num_pages++;

@@ -15,134 +15,125 @@
 
 #include "finefs/finefs.h"
 #include "finefs/wprotect.h"
-
 #include "util/cpu.h"
 
 // ppos带回实际拷贝到的偏移
 // 返回实际读取的字节数
-static ssize_t
-do_dax_mapping_read(struct file *filp, char *buf,
-	size_t len, loff_t *ppos)
-{
-	// struct inode *inode = filp->f_mapping->host;
-	struct inode *inode = filp->f_inode;
-	struct super_block *sb = inode->i_sb;
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	struct finefs_file_write_entry *entry;
-	pgoff_t index, end_index;
-	unsigned long offset;
-	loff_t isize, pos;
-	// 已拷贝的字节数
-	size_t copied = 0, err = 0;
-	timing_t memcpy_time;
+static ssize_t do_dax_mapping_read(struct file *filp, char *buf, size_t len, loff_t *ppos) {
+    // struct inode *inode = filp->f_mapping->host;
+    struct inode *inode = filp->f_inode;
+    struct super_block *sb = inode->i_sb;
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    struct finefs_file_write_entry *entry;
+    pgoff_t index, end_index;
+    unsigned long offset;
+    loff_t isize, pos;
+    // 已拷贝的字节数
+    size_t copied = 0, err = 0;
+    timing_t memcpy_time;
 
-	pos = *ppos;
-	// page index
-	index = pos >> FINEFS_BLOCK_SHIFT;
-	// page内偏移
-	offset = pos & FINEFS_BLOCK_UMASK;
+    pos = *ppos;
+    // page index
+    index = pos >> FINEFS_BLOCK_SHIFT;
+    // page内偏移
+    offset = pos & FINEFS_BLOCK_UMASK;
 
-	// if (!access_ok(VERIFY_WRITE, buf, len)) {
-	// 	err = -EFAULT;
-	// 	goto out;
-	// }
+    // if (!access_ok(VERIFY_WRITE, buf, len)) {
+    // 	err = -EFAULT;
+    // 	goto out;
+    // }
 
-	isize = i_size_read(inode);
-	if (!isize)
-		goto out;
+    isize = i_size_read(inode);
+    if (!isize) goto out;
 
-	rdv_proc("%s: inode %lu, offset %lld, count %lu, size %lld",
-		__func__, inode->i_ino,	pos, len, isize);
+    rdv_proc("%s: inode %lu, offset %lld, count %lu, size %lld", __func__, inode->i_ino, pos, len,
+             isize);
 
-	if (len > isize - pos)
-		len = isize - pos;
+    if (len > isize - pos) len = isize - pos;
 
-	if (len <= 0)
-		goto out;
+    if (len <= 0) goto out;
 
-	end_index = (isize - 1) >> FINEFS_BLOCK_SHIFT;
-	do {
-		unsigned long nr, left;
-		unsigned long nvmm;
-		void *dax_mem = NULL;
-		int zero = 0;
+    end_index = (isize - 1) >> FINEFS_BLOCK_SHIFT;
+    do {
+        unsigned long nr, left;
+        unsigned long nvmm;
+        void *dax_mem = NULL;
+        int zero = 0;
 
-		/* nr is the maximum number of bytes to copy from this page */
-		if (index >= end_index) {
-			if (index > end_index)
-				goto out;
-			nr = ((isize - 1) & FINEFS_BLOCK_UMASK) + 1;
-			if (nr <= offset) {
-				goto out;
-			}
-		}
+        /* nr is the maximum number of bytes to copy from this page */
+        if (index >= end_index) {
+            if (index > end_index) goto out;
+            nr = ((isize - 1) & FINEFS_BLOCK_UMASK) + 1;
+            if (nr <= offset) {
+                goto out;
+            }
+        }
 
-		entry = finefs_get_write_entry(sb, si, index);
-		if (unlikely(entry == NULL)) {
-			// 一个空洞的页
-			rdv_proc("Required extent not found: pgoff %lu, "
-				"inode size %lld", index, isize);
-			nr = FINEFS_BLOCK_SIZE;
-			zero = 1;
-			goto memcpy;
-		}
+        entry = finefs_get_write_entry(sb, si, index);
+        if (unlikely(entry == NULL)) {
+            // 一个空洞的页
+            rdv_proc(
+                "Required extent not found: pgoff %lu, "
+                "inode size %lld",
+                index, isize);
+            nr = FINEFS_BLOCK_SIZE;
+            zero = 1;
+            goto memcpy;
+        }
 
-		/* Find contiguous blocks */
-		if (index < entry->pgoff ||
-			index - entry->pgoff >= entry->num_pages) { // 超出范围了
-			r_error("%s ERROR: %lu, entry pgoff %lu, num %u, "
-				"blocknr %lu", __func__, index, entry->pgoff,
-				entry->num_pages, entry->block >> FINEFS_BLOCK_SHIFT);
-			return -EINVAL;
-		}
-		if (entry->invalid_pages == 0) {
-			nr = (entry->num_pages - (index - entry->pgoff))
-				* FINEFS_BLOCK_SIZE;
-		} else {  // 如果有无效的page，一个一个page的拷贝。防止下一个page就是无效的
-			nr = FINEFS_BLOCK_SIZE;
-		}
+        /* Find contiguous blocks */
+        if (index < entry->pgoff || index - entry->pgoff >= entry->num_pages) {  // 超出范围了
+            r_error(
+                "%s ERROR: %lu, entry pgoff %lu, num %u, "
+                "blocknr %lu",
+                __func__, index, entry->pgoff, entry->num_pages,
+                entry->block >> FINEFS_BLOCK_SHIFT);
+            return -EINVAL;
+        }
+        if (entry->invalid_pages == 0) {
+            nr = (entry->num_pages - (index - entry->pgoff)) * FINEFS_BLOCK_SIZE;
+        } else {  // 如果有无效的page，一个一个page的拷贝。防止下一个page就是无效的
+            nr = FINEFS_BLOCK_SIZE;
+        }
 
-		nvmm = get_nvmm(sb, sih, entry, index);
-		dax_mem = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
+        nvmm = get_nvmm(sb, sih, entry, index);
+        dax_mem = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
 
-memcpy:
-		nr = nr - offset;
-		if (nr > len - copied)
-			nr = len - copied;
+    memcpy:
+        nr = nr - offset;
+        if (nr > len - copied) nr = len - copied;
 
-		FINEFS_START_TIMING(memcpy_r_nvmm_t, memcpy_time);
+        FINEFS_START_TIMING(memcpy_r_nvmm_t, memcpy_time);
 
-		if (!zero)
-			left = __copy_to_user(buf + copied,
-						dax_mem + offset, nr);
-		else
-			left = __clear_user(buf + copied, nr);
+        if (!zero)
+            left = __copy_to_user(buf + copied, dax_mem + offset, nr);
+        else
+            left = __clear_user(buf + copied, nr);
 
-		FINEFS_END_TIMING(memcpy_r_nvmm_t, memcpy_time);
+        FINEFS_END_TIMING(memcpy_r_nvmm_t, memcpy_time);
 
-		if (left) {
-			r_error("%s ERROR!: bytes %lu, left %lu",
-				__func__, nr, left);
-			err = -EFAULT;
-			goto out;
-		}
+        if (left) {
+            r_error("%s ERROR!: bytes %lu, left %lu", __func__, nr, left);
+            err = -EFAULT;
+            goto out;
+        }
 
-		copied += (nr - left);
-		offset += (nr - left);
-		index += offset >> FINEFS_BLOCK_SHIFT;
-		offset &= FINEFS_BLOCK_UMASK;
-	} while (copied < len);
+        copied += (nr - left);
+        offset += (nr - left);
+        index += offset >> FINEFS_BLOCK_SHIFT;
+        offset &= FINEFS_BLOCK_UMASK;
+    } while (copied < len);
 
 out:
-	*ppos = pos + copied;
-	// if (filp)
-	// 	file_accessed(filp);
+    *ppos = pos + copied;
+    // if (filp)
+    // 	file_accessed(filp);
 
-	FINEFS_STATS_ADD(read_bytes, copied);
+    FINEFS_STATS_ADD(read_bytes, copied);
 
-	rd_info("%s returned %zu", __func__, copied);
-	return (copied ? copied : err);
+    rd_info("%s returned %zu", __func__, copied);
+    return (copied ? copied : err);
 }
 
 /*
@@ -150,18 +141,16 @@ out:
  * concurrent truncate operation. No problem for write because we held
  * i_mutex.
  */
-ssize_t finefs_dax_file_read(struct file *filp, char *buf,
-			    size_t len, loff_t *ppos)
-{
-	ssize_t res;
-	timing_t dax_read_time;
+ssize_t finefs_dax_file_read(struct file *filp, char *buf, size_t len, loff_t *ppos) {
+    ssize_t res;
+    timing_t dax_read_time;
 
-	FINEFS_START_TIMING(dax_read_t, dax_read_time);
-//	rcu_read_lock();
-	res = do_dax_mapping_read(filp, buf, len, ppos);
-//	rcu_read_unlock();
-	FINEFS_END_TIMING(dax_read_t, dax_read_time);
-	return res;
+    FINEFS_START_TIMING(dax_read_t, dax_read_time);
+    //	rcu_read_lock();
+    res = do_dax_mapping_read(filp, buf, len, ppos);
+    //	rcu_read_unlock();
+    FINEFS_END_TIMING(dax_read_t, dax_read_time);
+    return res;
 }
 
 // block index
@@ -169,24 +158,23 @@ ssize_t finefs_dax_file_read(struct file *filp, char *buf,
 // 拷贝未覆盖的block内容
 // is_end_blk为true，表示覆盖的是尾部，则就要拷贝头部数据
 static inline int finefs_copy_partial_block(struct super_block *sb,
-	struct finefs_inode_info_header *sih,
-	struct finefs_file_write_entry *entry, unsigned long index,
-	size_t offset, void* kmem, bool is_end_blk)
-{
-	void *ptr;
-	unsigned long nvmm;
+                                            struct finefs_inode_info_header *sih,
+                                            struct finefs_file_write_entry *entry,
+                                            unsigned long index, size_t offset, void *kmem,
+                                            bool is_end_blk) {
+    void *ptr;
+    unsigned long nvmm;
 
-	nvmm = get_nvmm(sb, sih, entry, index);
-	ptr = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
-	if (ptr != NULL) {
-		if (is_end_blk)
-			memcpy(kmem + offset, ptr + offset,
-				sb->s_blocksize - offset);
-		else
-			memcpy(kmem, ptr, offset);
-	}
+    nvmm = get_nvmm(sb, sih, entry, index);
+    ptr = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
+    if (ptr != NULL) {
+        if (is_end_blk)
+            memcpy(kmem + offset, ptr + offset, sb->s_blocksize - offset);
+        else
+            memcpy(kmem, ptr, offset);
+    }
 
-	return 0;
+    return 0;
 }
 
 /*
@@ -194,351 +182,316 @@ static inline int finefs_copy_partial_block(struct super_block *sb,
  * Do nothing if fully covered; copy if original blocks present;
  * Fill zero otherwise.
  */
-static void finefs_handle_head_tail_blocks(struct super_block *sb,
-	struct finefs_inode *pi, struct inode *inode, loff_t pos, size_t count,
-	void *kmem)
-{
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	size_t offset, eblk_offset;
-	unsigned long start_blk, end_blk, num_blocks;
-	struct finefs_file_write_entry *entry;
-	timing_t partial_time;
+static void finefs_handle_head_tail_blocks(struct super_block *sb, struct finefs_inode *pi,
+                                           struct inode *inode, loff_t pos, size_t count,
+                                           void *kmem) {
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    size_t offset, eblk_offset;
+    unsigned long start_blk, end_blk, num_blocks;
+    struct finefs_file_write_entry *entry;
+    timing_t partial_time;
 
-	FINEFS_START_TIMING(partial_block_t, partial_time);
-	offset = pos & (sb->s_blocksize - 1);
-	num_blocks = ((count + offset - 1) >> sb->s_blocksize_bits) + 1;
-	/* offset in the actual block size block */
-	offset = pos & (finefs_inode_blk_size(pi) - 1);
-	start_blk = pos >> sb->s_blocksize_bits;
-	end_blk = start_blk + num_blocks - 1;
+    FINEFS_START_TIMING(partial_block_t, partial_time);
+    offset = pos & (sb->s_blocksize - 1);
+    num_blocks = ((count + offset - 1) >> sb->s_blocksize_bits) + 1;
+    /* offset in the actual block size block */
+    offset = pos & (finefs_inode_blk_size(pi) - 1);
+    start_blk = pos >> sb->s_blocksize_bits;
+    end_blk = start_blk + num_blocks - 1;
 
-	rdv_proc("%s: %lu blocks", __func__, num_blocks);
-	/* We avoid zeroing the alloc'd range, which is going to be overwritten
-	 * by this system call anyway */
-	rdv_proc("%s: start offset %lu start blk %lu %p", __func__,
-				offset, start_blk, kmem);
-	if (offset != 0) {
-		entry = finefs_get_write_entry(sb, si, start_blk);
-		if (entry == NULL) {
-			/* Fill zero */
-		    	memset(kmem, 0, offset);
-		} else {
-			/* Copy from original block */
-			// 处理第一个非对齐的块
-			finefs_copy_partial_block(sb, sih, entry, start_blk,
-					offset, kmem, false);
-		}
-		finefs_flush_buffer(kmem, offset, 0);
-	}
+    rdv_proc("%s: %lu blocks", __func__, num_blocks);
+    /* We avoid zeroing the alloc'd range, which is going to be overwritten
+     * by this system call anyway */
+    rdv_proc("%s: start offset %lu start blk %lu %p", __func__, offset, start_blk, kmem);
+    if (offset != 0) {
+        entry = finefs_get_write_entry(sb, si, start_blk);
+        if (entry == NULL) {
+            /* Fill zero */
+            memset(kmem, 0, offset);
+        } else {
+            /* Copy from original block */
+            // 处理第一个非对齐的块
+            finefs_copy_partial_block(sb, sih, entry, start_blk, offset, kmem, false);
+        }
+        finefs_flush_buffer(kmem, offset, 0);
+    }
 
-	kmem = (void *)((char *)kmem +
-			((num_blocks - 1) << sb->s_blocksize_bits));
-	// 处理尾部部分块
-	eblk_offset = (pos + count) & (finefs_inode_blk_size(pi) - 1);
-	rdv_proc("%s: end offset %lu, end blk %lu %p", __func__,
-				eblk_offset, end_blk, kmem);
-	if (eblk_offset != 0) {
-		entry = finefs_get_write_entry(sb, si, end_blk);
-		if (entry == NULL) {
-			/* Fill zero */
-		    	memset(kmem + eblk_offset, 0,
-					sb->s_blocksize - eblk_offset);
-		} else {
-			/* Copy from original block */
-			finefs_copy_partial_block(sb, sih, entry, end_blk,
-					eblk_offset, kmem, true);
-		}
-		finefs_flush_buffer(kmem + eblk_offset,
-					sb->s_blocksize - eblk_offset, 0);
-	}
+    kmem = (void *)((char *)kmem + ((num_blocks - 1) << sb->s_blocksize_bits));
+    // 处理尾部部分块
+    eblk_offset = (pos + count) & (finefs_inode_blk_size(pi) - 1);
+    rdv_proc("%s: end offset %lu, end blk %lu %p", __func__, eblk_offset, end_blk, kmem);
+    if (eblk_offset != 0) {
+        entry = finefs_get_write_entry(sb, si, end_blk);
+        if (entry == NULL) {
+            /* Fill zero */
+            memset(kmem + eblk_offset, 0, sb->s_blocksize - eblk_offset);
+        } else {
+            /* Copy from original block */
+            finefs_copy_partial_block(sb, sih, entry, end_blk, eblk_offset, kmem, true);
+        }
+        finefs_flush_buffer(kmem + eblk_offset, sb->s_blocksize - eblk_offset, 0);
+    }
 
-	FINEFS_END_TIMING(partial_block_t, partial_time);
+    FINEFS_END_TIMING(partial_block_t, partial_time);
 }
 
-int finefs_reassign_file_tree(struct super_block *sb,
-	struct finefs_inode *pi, struct finefs_inode_info_header *sih,
-	u64 begin_tail)
-{
-	struct finefs_file_write_entry *entry_data;
-	u64 curr_p = begin_tail;
-	size_t entry_size = sizeof(struct finefs_file_write_entry);
+int finefs_reassign_file_tree(struct super_block *sb, struct finefs_inode *pi,
+                              struct finefs_inode_info_header *sih, u64 begin_tail) {
+    struct finefs_file_write_entry *entry_data;
+    u64 curr_p = begin_tail;
+    size_t entry_size = sizeof(struct finefs_file_write_entry);
 
-	while (curr_p != pi->log_tail) {
-		if (is_last_entry(curr_p, entry_size))
-			curr_p = next_log_page(sb, curr_p);
+    rd_info("%s curr_p=%lu, pi->log_tail=%lu, sih->i_log_tail=%lu\n", __func__, curr_p, pi->log_tail,
+           sih->i_log_tail);
+    log_assert(sih->i_log_tail == pi->log_tail);
+    // exit(-1);
+    while (curr_p != pi->log_tail) {
+        if (is_last_entry(curr_p, entry_size)) curr_p = next_log_page(sb, curr_p);
 
-		if (curr_p == 0) {
-			r_error("%s: File inode %lu log is NULL!",
-				__func__, pi->finefs_ino);
-			return -EINVAL;
-		}
+        if (curr_p == 0) {
+            r_error("%s: File inode %lu log is NULL!", __func__, pi->finefs_ino);
+            return -EINVAL;
+        }
 
-		entry_data = (struct finefs_file_write_entry *)
-					finefs_get_block(sb, curr_p);
+        entry_data = (struct finefs_file_write_entry *)finefs_get_block(sb, curr_p);
 
-		if (finefs_get_entry_type(entry_data) != FILE_WRITE) {
-			r_error("%s: entry type is not write? %d",
-				__func__, finefs_get_entry_type(entry_data));
-			curr_p += entry_size;
-			continue;
-		}
+        if (finefs_get_entry_type(entry_data) != FILE_WRITE) {
+            r_error("%s: entry type is not write? %d", __func__, finefs_get_entry_type(entry_data));
+            curr_p += entry_size;
+            continue;
+        }
 
-		finefs_assign_write_entry(sb, pi, sih, entry_data, true);
-		curr_p += entry_size;
-	}
+        finefs_assign_write_entry(sb, pi, sih, entry_data, true);
+        curr_p += entry_size;
+    }
 
-	return 0;
+    return 0;
 }
 
-static int finefs_cleanup_incomplete_write(struct super_block *sb,
-	struct finefs_inode *pi, struct finefs_inode_info_header *sih,
-	unsigned long blocknr, int allocated, u64 begin_tail, u64 end_tail)
-{
-	struct finefs_file_write_entry *entry;
-	u64 curr_p = begin_tail;
-	size_t entry_size = sizeof(struct finefs_file_write_entry);
+static int finefs_cleanup_incomplete_write(struct super_block *sb, struct finefs_inode *pi,
+                                           struct finefs_inode_info_header *sih,
+                                           unsigned long blocknr, int allocated, u64 begin_tail,
+                                           u64 end_tail) {
+    struct finefs_file_write_entry *entry;
+    u64 curr_p = begin_tail;
+    size_t entry_size = sizeof(struct finefs_file_write_entry);
 
-	if (blocknr > 0 && allocated > 0)
-		finefs_free_data_blocks(sb, pi, blocknr, allocated);
+    if (blocknr > 0 && allocated > 0) finefs_free_data_blocks(sb, pi, blocknr, allocated);
 
-	if (begin_tail == 0 || end_tail == 0)
-		return 0;
+    if (begin_tail == 0 || end_tail == 0) return 0;
 
-	while (curr_p != end_tail) {
-		if (is_last_entry(curr_p, entry_size))
-			curr_p = next_log_page(sb, curr_p);
+    while (curr_p != end_tail) {
+        if (is_last_entry(curr_p, entry_size)) curr_p = next_log_page(sb, curr_p);
 
-		if (curr_p == 0) {
-			r_error("%s: File inode %lu log is NULL!",
-				__func__, pi->finefs_ino);
-			return -EINVAL;
-		}
+        if (curr_p == 0) {
+            r_error("%s: File inode %lu log is NULL!", __func__, pi->finefs_ino);
+            return -EINVAL;
+        }
 
-		entry = (struct finefs_file_write_entry *)
-					finefs_get_block(sb, curr_p);
+        entry = (struct finefs_file_write_entry *)finefs_get_block(sb, curr_p);
 
-		if (finefs_get_entry_type(entry) != FILE_WRITE) {
-			r_error("%s: entry type is not write? %d",
-				__func__, finefs_get_entry_type(entry));
-			curr_p += entry_size;
-			continue;
-		}
+        if (finefs_get_entry_type(entry) != FILE_WRITE) {
+            r_error("%s: entry type is not write? %d", __func__, finefs_get_entry_type(entry));
+            curr_p += entry_size;
+            continue;
+        }
 
-		blocknr = entry->block >> FINEFS_BLOCK_SHIFT;
-		finefs_free_data_blocks(sb, pi, blocknr, entry->num_pages);
-		curr_p += entry_size;
-	}
+        blocknr = entry->block >> FINEFS_BLOCK_SHIFT;
+        finefs_free_data_blocks(sb, pi, blocknr, entry->num_pages);
+        curr_p += entry_size;
+    }
 
-	return 0;
+    return 0;
 }
 
-ssize_t finefs_cow_file_write(struct file *filp,
-	const char *buf, size_t len, loff_t *ppos, bool need_mutex)
-{
-	// struct address_space *mapping = filp->f_mapping;
-	// struct inode    *inode = mapping->host;
-	struct inode    *inode = filp->f_inode;
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	struct super_block *sb = inode->i_sb;
-	struct finefs_inode *pi;
-	struct finefs_file_write_entry entry_data;
-	ssize_t     written = 0;  // 已经拷贝的用户数据
-	loff_t pos;
-	size_t count, offset, copied, ret;
-	unsigned long start_blk, num_blocks;
-	unsigned long total_blocks;
-	unsigned long blocknr = 0;
-	unsigned int data_bits;
-	int allocated = 0;
-	void* kmem;
-	u64 curr_entry;
-	size_t bytes;
-	long status = 0;
-	timing_t cow_write_time, memcpy_time;
-	unsigned long step = 0;
-	// begin_tail第一个write entry的起始地址
-	u64 temp_tail = 0, begin_tail = 0;
-	u32 time;
+ssize_t finefs_cow_file_write(struct file *filp, const char *buf, size_t len, loff_t *ppos,
+                              bool need_mutex) {
+    // struct address_space *mapping = filp->f_mapping;
+    // struct inode    *inode = mapping->host;
+    struct inode *inode = filp->f_inode;
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    struct super_block *sb = inode->i_sb;
+    struct finefs_inode *pi;
+    struct finefs_file_write_entry entry_data;
+    ssize_t written = 0;  // 已经拷贝的用户数据
+    loff_t pos;
+    size_t count, offset, copied, ret;
+    unsigned long start_blk, num_blocks;
+    unsigned long total_blocks;
+    unsigned long blocknr = 0;
+    unsigned int data_bits;
+    int allocated = 0;
+    void *kmem;
+    u64 curr_entry;
+    size_t bytes;
+    long status = 0;
+    timing_t cow_write_time, memcpy_time;
+    unsigned long step = 0;
+    // begin_tail第一个write entry的起始地址
+    u64 temp_tail = 0, begin_tail = 0;
+    u32 time;
 
-	if (len == 0)
-		return 0;
+    if (len == 0) return 0;
 
-	/*
-	 * We disallow writing to a mmaped file,
-	 * since write is copy-on-write while mmap is DAX (in-place).
-	 */
-	// if (mapping_mapped(mapping))
-	// 	return -EACCES;
+    /*
+     * We disallow writing to a mmaped file,
+     * since write is copy-on-write while mmap is DAX (in-place).
+     */
+    // if (mapping_mapped(mapping))
+    // 	return -EACCES;
 
-	FINEFS_START_TIMING(cow_write_t, cow_write_time);
+    FINEFS_START_TIMING(cow_write_t, cow_write_time);
 
-	// 一些加锁同步的操作
-	// sb_start_write(inode->i_sb);
-	if (need_mutex)
-		mutex_lock(&inode->i_mutex);
+    // 一些加锁同步的操作
+    // sb_start_write(inode->i_sb);
+    if (need_mutex) mutex_lock(&inode->i_mutex);
 
-	// if (!access_ok(VERIFY_READ, buf, len)) {
-	// 	ret = -EFAULT;
-	// 	goto out;
-	// }
-	pos = *ppos;
+    // if (!access_ok(VERIFY_READ, buf, len)) {
+    // 	ret = -EFAULT;
+    // 	goto out;
+    // }
+    pos = *ppos;
 
-	if (filp->f_flags & O_APPEND)
-		pos = i_size_read(inode);
+    if (filp->f_flags & O_APPEND) pos = i_size_read(inode);
 
-	count = len;
+    count = len;
 
-	pi = finefs_get_inode(sb, inode);
+    pi = finefs_get_inode(sb, inode);
 
-	// 块内偏移
-	offset = pos & (sb->s_blocksize - 1);
-	num_blocks = ((count + offset - 1) >> sb->s_blocksize_bits) + 1;
-	total_blocks = num_blocks;
-	/* offset in the actual block size block */
+    // 块内偏移
+    offset = pos & (sb->s_blocksize - 1);
+    num_blocks = ((count + offset - 1) >> sb->s_blocksize_bits) + 1;
+    total_blocks = num_blocks;
+    /* offset in the actual block size block */
 
-	// ret = file_remove_privs(filp);
-	// if (ret) {
-	// 	goto out;
-	// }
-	struct timespec cur_time = get_cur_time_spec();
-	inode->i_ctime = inode->i_mtime = cur_time;
-	time = cur_time.tv_sec;
+    // ret = file_remove_privs(filp);
+    // if (ret) {
+    // 	goto out;
+    // }
+    struct timespec cur_time = get_cur_time_spec();
+    inode->i_ctime = inode->i_mtime = cur_time;
+    time = cur_time.tv_sec;
 
-	rd_info("%s: inode %lu, offset %lld, count %lu",
-			__func__, inode->i_ino,	pos, count);
+    rd_info("%s: inode %lu, offset %lld, count %lu", __func__, inode->i_ino, pos, count);
 
-	temp_tail = pi->log_tail;
-	while (num_blocks > 0) {
-		offset = pos & (finefs_inode_blk_size(pi) - 1);
-		start_blk = pos >> sb->s_blocksize_bits;
+    temp_tail = pi->log_tail;
+    while (num_blocks > 0) {
+        offset = pos & (finefs_inode_blk_size(pi) - 1);
+		// r_info("pos %lld, offset %lu, blk_size %lu", pos, offset, finefs_inode_blk_size(pi));
+        start_blk = pos >> sb->s_blocksize_bits;
 
-		/* don't zero-out the allocated blocks */
-		allocated = finefs_new_data_blocks(sb, pi, &blocknr, num_blocks,
-						start_blk, 0, 1);
-		rdv_proc("%s: alloc %d blocks @ %lu", __func__,
-						allocated, blocknr);
+        /* don't zero-out the allocated blocks */
+        allocated = finefs_new_data_blocks(sb, pi, &blocknr, num_blocks, start_blk, 0, 1);
+        rdv_proc("%s: alloc %d blocks @ %lu", __func__, allocated, blocknr);
 
-		if (allocated <= 0) {
-			r_warning("%s alloc blocks failed %d", __func__,
-								allocated);
-			ret = allocated;
-			goto out;
-		}
+        if (allocated <= 0) {
+            r_warning("%s alloc blocks failed %d", __func__, allocated);
+            ret = allocated;
+            goto out;
+        }
 
-		step++;
-		bytes = sb->s_blocksize * allocated - offset;
-		if (bytes > count)
-			bytes = count;
+        step++;
+        bytes = sb->s_blocksize * allocated - offset;
+		// r_info("bytes=%lu, sb->s_blocksize=%lu, allocated=%d, offset=%lu\n", bytes, sb->s_blocksize, allocated, offset);
+        log_assert(bytes);
+		if (bytes > count) bytes = count;
 
-		// 新配备区域的nvm虚拟地址
-		kmem = finefs_get_block(inode->i_sb,
-			finefs_get_block_off(sb, blocknr,	pi->i_blk_type));
+        // 新配备区域的nvm虚拟地址
+        kmem = finefs_get_block(inode->i_sb, finefs_get_block_off(sb, blocknr, pi->i_blk_type));
 
-		if (offset || ((offset + bytes) & (FINEFS_BLOCK_SIZE - 1)) != 0)
-			finefs_handle_head_tail_blocks(sb, pi, inode, pos, bytes,
-								kmem);
+        if (offset || ((offset + bytes) & (FINEFS_BLOCK_SIZE - 1)) != 0)
+            finefs_handle_head_tail_blocks(sb, pi, inode, pos, bytes, kmem);
 
-		/* Now copy from user buf */
-//		finefs_dbg("Write: %p", kmem);
-		FINEFS_START_TIMING(memcpy_w_nvmm_t, memcpy_time);
-		copied = bytes - memcpy_to_pmem_nocache(kmem + offset,
-						buf, bytes);
-		FINEFS_END_TIMING(memcpy_w_nvmm_t, memcpy_time);
+        /* Now copy from user buf */
+        //		finefs_dbg("Write: %p", kmem);
+        FINEFS_START_TIMING(memcpy_w_nvmm_t, memcpy_time);
+        copied = bytes - memcpy_to_pmem_nocache(kmem + offset, buf, bytes);
+        FINEFS_END_TIMING(memcpy_w_nvmm_t, memcpy_time);
 
-		entry_data.pgoff = cpu_to_le64(start_blk);
-		entry_data.num_pages = cpu_to_le32(allocated);
-		entry_data.invalid_pages = 0;
-		entry_data.block = cpu_to_le64(finefs_get_block_off(sb, blocknr,
-							pi->i_blk_type));
-		entry_data.mtime = cpu_to_le32(time);
-		/* Set entry type after set block */
-		finefs_set_entry_type((void *)&entry_data, FILE_WRITE);
+        entry_data.pgoff = cpu_to_le64(start_blk);
+        entry_data.num_pages = cpu_to_le32(allocated);
+        entry_data.invalid_pages = 0;
+        entry_data.block = cpu_to_le64(finefs_get_block_off(sb, blocknr, pi->i_blk_type));
+        entry_data.mtime = cpu_to_le32(time);
+        /* Set entry type after set block */
+        finefs_set_entry_type((void *)&entry_data, FILE_WRITE);
 
-		if (pos + copied > inode->i_size)
-			entry_data.size = cpu_to_le64(pos + copied);
-		else
-			entry_data.size = cpu_to_le64(inode->i_size);
+        if (pos + copied > inode->i_size)
+            entry_data.size = cpu_to_le64(pos + copied);
+        else
+            entry_data.size = cpu_to_le64(inode->i_size);
 
-		curr_entry = finefs_append_file_write_entry(sb, pi, inode,
-							&entry_data, temp_tail);
-		if (curr_entry == 0) {
-			rd_warning("%s: append inode entry failed", __func__);
-			ret = -ENOSPC;
-			goto out;
-		}
+        curr_entry = finefs_append_file_write_entry(sb, pi, inode, &entry_data, temp_tail);
+        if (curr_entry == 0) {
+            rd_warning("%s: append inode entry failed", __func__);
+            ret = -ENOSPC;
+            goto out;
+        }
 
-		rd_info("Write: %p, %lu", kmem, copied);
-		if (copied > 0) {
-			status = copied;
-			written += copied;
-			pos += copied;
-			buf += copied;
-			count -= copied;
-			num_blocks -= allocated;
-		}
-		if (unlikely(copied != bytes)) {
-			r_error("%s ERROR!: %p, bytes %lu, copied %lu",
-				__func__, kmem, bytes, copied);
-			if (status >= 0)
-				status = -EFAULT;
-		}
-		if (status < 0)
-			break;
+        // r_info("Write: %p, %lu", kmem, copied);
+        if (copied > 0) {
+            status = copied;
+            written += copied;
+            pos += copied;
+            buf += copied;
+            count -= copied;
+            num_blocks -= allocated;
+        }
+        if (unlikely(copied != bytes)) {
+            r_error("%s ERROR!: %p, bytes %lu, copied %lu", __func__, kmem, bytes, copied);
+            if (status >= 0) status = -EFAULT;
+        }
+        if (status < 0) break;
 
-		if (begin_tail == 0)
-			begin_tail = curr_entry;
-		temp_tail = curr_entry + sizeof(struct finefs_file_write_entry);
-	}
+        if (begin_tail == 0) begin_tail = curr_entry;
+        temp_tail = curr_entry + sizeof(struct finefs_file_write_entry);
+    }
+	// r_info("%s over", __func__);
 
-	finefs_memunlock_inode(sb, pi);
-	data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
-	le64_add_cpu(&pi->i_blocks,
-			(total_blocks << (data_bits - sb->s_blocksize_bits)));
-	finefs_memlock_inode(sb, pi);
+    finefs_memunlock_inode(sb, pi);
+    data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
+    le64_add_cpu(&pi->i_blocks, (total_blocks << (data_bits - sb->s_blocksize_bits)));
+    finefs_memlock_inode(sb, pi);
 
-	// 提交写操作
-	finefs_update_tail(pi, temp_tail);
+    // 提交写操作
+	finefs_update_volatile_tail(sih, temp_tail);
+	// TODO: delete
+    finefs_update_tail(pi, temp_tail);
 
-	/* Free the overlap blocks after the write is committed */
-	// 更改内存中的索引
-	ret = finefs_reassign_file_tree(sb, pi, sih, begin_tail);
-	if (ret)
-		goto out;
+    /* Free the overlap blocks after the write is committed */
+    // 更改内存中的索引
+    ret = finefs_reassign_file_tree(sb, pi, sih, begin_tail);
+    if (ret) goto out;
 
-	inode->i_blocks = le64_to_cpu(pi->i_blocks);
+    inode->i_blocks = le64_to_cpu(pi->i_blocks);
 
-	ret = written;
-	FINEFS_STATS_ADD(write_breaks, step);
-	rd_info("blocks: %lu, %lu", inode->i_blocks, pi->i_blocks);
+    ret = written;
+    FINEFS_STATS_ADD(write_breaks, step);
+    rd_info("blocks: %lu, %lu", inode->i_blocks, pi->i_blocks);
 
-	*ppos = pos;
-	if (pos > inode->i_size) {
-		i_size_write(inode, pos);
-		sih->i_size = pos;
-	}
+    *ppos = pos;
+    if (pos > inode->i_size) {
+        i_size_write(inode, pos);
+        sih->i_size = pos;
+    }
 
 out:
-	if (ret < 0) {
-		r_error("Unexpected!!");
-		finefs_cleanup_incomplete_write(sb, pi, sih, blocknr, allocated,
-						begin_tail, temp_tail);
-	}
+    if (ret < 0) {
+        r_error("Unexpected!!");
+        finefs_cleanup_incomplete_write(sb, pi, sih, blocknr, allocated, begin_tail, temp_tail);
+    }
 
-
-	if (need_mutex)
-		mutex_unlock(&inode->i_mutex);
-	// sb_end_write(inode->i_sb);
-	FINEFS_END_TIMING(cow_write_t, cow_write_time);
-	FINEFS_STATS_ADD(cow_write_bytes, written);
-	return ret;
+    if (need_mutex) mutex_unlock(&inode->i_mutex);
+    // sb_end_write(inode->i_sb);
+    FINEFS_END_TIMING(cow_write_t, cow_write_time);
+    FINEFS_STATS_ADD(cow_write_bytes, written);
+    return ret;
 }
 
-ssize_t finefs_dax_file_write(struct file *filp, const char *buf,
-	size_t len, loff_t *ppos)
-{
-	return finefs_cow_file_write(filp, buf, len, ppos, true);
+ssize_t finefs_dax_file_write(struct file *filp, const char *buf, size_t len, loff_t *ppos) {
+    return finefs_cow_file_write(filp, buf, len, ppos, true);
 }
 
 #if 0

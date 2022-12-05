@@ -33,6 +33,23 @@ static force_inline int init_file_cache(void) {
 
 static force_inline void destroy_file_cache(void) { kmem_cache_destroy(file_cache); }
 
+void vfs_cfg_print(struct vfs_cfg* cfg) {
+    r_info("numa_socket=%d", cfg->numa_socket);
+    r_info("cpu_num=%d", cfg->cpu_num);
+    std::string cpu_ids_str = std::to_string(cfg->cpu_ids[0]);
+    for (int i = 1; i < cfg->cpu_num; ++i) {
+        cpu_ids_str += ",";
+        cpu_ids_str += std::to_string(cfg->cpu_ids[i]);
+    }
+    r_info("cpu_ids=%s", cpu_ids_str.c_str());
+    r_info("bg_thread_cpu_id=%d", cfg->bg_thread_cpu_id);
+    r_info("measure_timing=%d", cfg->measure_timing);
+    r_info("start_fd=%d", cfg->start_fd);
+    r_info("format=%d", cfg->format);
+    r_info("pmem_nt_threshold=%dB", cfg->pmem_nt_threshold);
+    r_info("log_heap_occupy=1/%d", (int)(1/cfg->log_heap_occupy));;
+}
+
 static force_inline file *file_alloc(int fd, int flags, dentry *dentry) {
     file *f = (struct file *)kmem_cache_alloc(file_cache);
     f->f_fd = fd;

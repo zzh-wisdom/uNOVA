@@ -237,7 +237,7 @@ static bool finefs_check_size(struct super_block *sb, unsigned long size) {
 
 // 初始化文件系统
 // 返回root inode
-static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long size) {
+static struct finefs_inode *finefs_init(struct super_block *sb, double log_heap_occupy, unsigned long size) {
     unsigned long blocksize;
     unsigned long reserved_space, reserved_blocks;
     struct finefs_inode *root_i, *pi;
@@ -259,7 +259,10 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     finefs_set_blocksize(sb, blocksize);
     blocksize = sb->s_blocksize;
 
-    if (sbi->blocksize && sbi->blocksize != blocksize) sbi->blocksize = blocksize;
+    if (sbi->blocksize && sbi->blocksize != blocksize) {
+        log_assert(0);
+        sbi->blocksize = blocksize;
+    }
 
     if (!finefs_check_size(sb, size)) {
         r_warning("Specified FINEFS size too small 0x%lx.\n", size);
@@ -289,7 +292,7 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     super->s_blocksize = cpu_to_le32(blocksize);
     super->s_magic = cpu_to_le32(FINEFS_SUPER_MAGIC);
 
-    finefs_init_blockmap(sb, 0);
+    finefs_init_blockmap(sb, log_heap_occupy, 0);
 
     // 初始化并恢复journal
     if ((ret = finefs_lite_journal_hard_init(sb)) < 0) {
@@ -654,11 +657,9 @@ static void finefs_put_super(struct super_block *sb) {
         sbi->virt_addr = NULL;
     }
 
-    finefs_delete_free_lists(sb);
-
     // FREE(sbi->zeroed_page);
     finefs_dbgmask = 0;
-    FREE(sbi->free_lists);
+    finefs_delete_free_lists(sb);
     FREE(sbi->journal_locks);
 
     for (i = 0; i < sbi->cpus; i++) {
@@ -694,7 +695,7 @@ static struct super_operations finefs_sops = {
                                   // .show_options	= finefs_show_options,
 };
 
-static int finefs_fill_super(struct super_block *sb, bool format) {
+static int finefs_fill_super(struct super_block *sb, finefs_cfg* f_cfg) {
     struct finefs_super_block *super;
     struct finefs_inode *root_pi;
     struct finefs_sb_info *sbi = NULL;
@@ -729,8 +730,11 @@ static int finefs_fill_super(struct super_block *sb, bool format) {
     atomic_set(&sbi->next_generation, random);
 
     /* Init with default values */
-    sbi->shared_free_list.block_free_tree = RB_ROOT;
-    spin_lock_init(&sbi->shared_free_list.s_lock);
+    sbi->shared_data_free_list.block_free_tree = RB_ROOT;
+    spin_lock_init(&sbi->shared_data_free_list.s_lock);
+    sbi->shared_log_free_list.block_free_tree = RB_ROOT;
+    spin_lock_init(&sbi->shared_log_free_list.s_lock);
+
     sbi->mode = 0;
     // sbi->uid = 0;
     // sbi->gid = 0;
@@ -763,7 +767,7 @@ static int finefs_fill_super(struct super_block *sb, bool format) {
     // 	goto out;
 
     // 设置选项
-    if (format) {
+    if (f_cfg->format) {
         set_opt(sbi->s_mount_opt, FORMAT);
     }
 
@@ -777,7 +781,7 @@ static int finefs_fill_super(struct super_block *sb, bool format) {
 
     /* Init a new finefs instance */
     if (sbi->s_mount_opt & FINEFS_MOUNT_FORMAT) {  // 重新初始化挂载
-        root_pi = finefs_init(sb, sbi->initsize);
+        root_pi = finefs_init(sb, f_cfg->log_heap_occupy, sbi->initsize);
         if (!root_pi) goto out;
         super = finefs_get_super(sb);
         goto setup_sb;
@@ -834,7 +838,8 @@ setup_sb:
         retval = -1;
         goto out;
     }
-    FINEFS_I(root_i)->header.i_log_tail = root_pi->log_tail;
+    // FIXME
+    finefs_update_volatile_tail(&FINEFS_I(root_i)->header, root_pi->log_tail);
 
     sb->s_root = d_make_root(root_i);
     inode_unref(root_i);
@@ -872,9 +877,14 @@ out:
     // 	sbi->zeroed_page = NULL;
     // }
 
-    if (sbi->free_lists) {
-        FREE(sbi->free_lists);
-        sbi->free_lists = NULL;
+    if (sbi->data_free_lists) {
+        FREE(sbi->data_free_lists);
+        sbi->data_free_lists = NULL;
+    }
+
+    if (sbi->log_free_lists) {
+        FREE(sbi->log_free_lists);
+        sbi->log_free_lists = NULL;
     }
 
     if (sbi->journal_locks) {
@@ -891,12 +901,19 @@ out:
     return retval;
 }
 
+void finefs_cfg_init(finefs_cfg* f_cfg, vfs_cfg *cfg) {
+    f_cfg->log_heap_occupy = cfg->log_heap_occupy;
+    f_cfg->format = cfg->format;
+}
+
 // 1. 初始化一些finefs特有的配置+内存空间结构
 // 2. 在nvm上创建finefs fs
 int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const std::string &dir_name,
                  struct vfs_cfg *cfg) {
     int rc = 0;
     timing_t init_time;
+    finefs_cfg f_cfg;
+
     FINEFS_START_TIMING(init_t, init_time);
 
     fs_cfg_init(sb->pmap, cfg);
@@ -923,6 +940,7 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
     assert(sizeof(struct finefs_super_block) <= FINEFS_SB_SIZE);
     assert(sizeof(struct finefs_inode) <= FINEFS_INODE_SIZE);
     assert(sizeof(struct finefs_inode_log_page) == FINEFS_LOG_SIZE);
+    assert(sizeof(struct finefs_inode_log_page) == FINEFS_BLOCK_SIZE);
 
     rc = finefs_init_rangenode_cache();
     if (rc) {
@@ -937,7 +955,8 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
     // if (rc)
     // 	goto out2;
 
-    rc = finefs_fill_super(sb, cfg->format);
+    finefs_cfg_init(&f_cfg, cfg);
+    rc = finefs_fill_super(sb, &f_cfg);
     if (rc) {
         r_error("%s fail.\n", "finefs_fill_super");
         goto out2;
