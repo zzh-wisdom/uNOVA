@@ -48,6 +48,7 @@ static struct dentry *finefs_lookup(struct inode *dir, struct dentry *dentry, un
     ino = finefs_inode_by_name(dir, &dentry->d_name, &de);
     rdv_proc("%s: ino %lu", __func__, ino);
     if (ino) {
+        log_assert(0);
         // 从NVM重建该inode
         inode = finefs_iget(dir->i_sb, ino);
         DLOG_ASSERT(inode);
@@ -508,12 +509,11 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
 
     pi = finefs_get_inode(sb, inode);
     // 为新创建的目录inode，分配log page，并附加两个entry
-    finefs_append_dir_init_entries(sb, pi, inode->i_ino, dir->i_ino);
+    finefs_append_dir_init_entries(sb, pi, inode, dir->i_ino);
 
     /* Build the dir tree */
     si = FINEFS_I(inode);
     sih = &si->header;
-    sih->i_log_tail = pi->log_tail;
     finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, sih);
 
     pidir = finefs_get_inode(sb, dir);

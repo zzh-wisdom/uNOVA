@@ -292,6 +292,7 @@ enum alloc_type {
 
 static inline void finefs_update_tail(struct finefs_inode *pi, u64 new_tail)
 {
+	log_assert(0);
 	timing_t update_time;
 
 	FINEFS_START_TIMING(update_tail_t, update_time);
@@ -959,8 +960,10 @@ int finefs_dax_file_mmap(struct file *file, struct vm_area_struct *vma);
 
 /* dir.c */
 extern const struct file_operations finefs_dir_operations;
+int finefs_append_root_init_entries(struct super_block *sb,
+	struct finefs_inode *pi, u64 self_ino, u64 parent_ino, u64 *log_tail, int cpuid = -1);
 int finefs_append_dir_init_entries(struct super_block *sb,
-	struct finefs_inode *pi, u64 self_ino, u64 parent_ino, int cpuid = -1);
+	struct finefs_inode *pi, struct inode* inode, u64 parent_ino, int cpuid = -1);
 extern int finefs_add_dentry(struct dentry *dentry, u64 ino,
 	int inc_link, u64 tail, u64 *new_tail);
 extern int finefs_remove_dentry(struct dentry *dentry, int dec_link, u64 tail,

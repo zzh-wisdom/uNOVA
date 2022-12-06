@@ -420,7 +420,7 @@ void finefs_save_inode_list_to_log(struct super_block *sb) {
         temp_tail = finefs_save_range_nodes_to_log(sb, &inode_map->inode_inuse_tree, temp_tail, i);
     }
 
-    finefs_update_tail(pi, temp_tail);
+	finefs_update_tail(pi, temp_tail);
 
     rd_info("%s: %lu inode nodes, pi head 0x%lx, tail 0x%lx", __func__, num_nodes,
              pi->log_head, pi->log_tail);
@@ -484,7 +484,8 @@ void finefs_save_blocknode_mappings_to_log(struct super_block *sb) {
     }
 
     temp_tail = finefs_save_free_list_blocknodes(sb, SHARED_CPU, temp_tail);
-    finefs_update_tail(pi, temp_tail);
+
+	finefs_update_tail(pi, temp_tail);
 
     rd_info(
         "%s: %lu blocknodes, %lu log pages, pi head 0x%lx, "
@@ -758,6 +759,7 @@ int finefs_rebuild_inode(struct super_block *sb, struct finefs_inode_info *si, u
             finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, sih);
             break;
         default:
+            log_assert(0);
             /* In case of special inode, walk the log */
             if (pi->log_head) finefs_rebuild_file_inode_tree(sb, pi, pi_addr, sih);
             break;

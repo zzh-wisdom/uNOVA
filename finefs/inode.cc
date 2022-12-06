@@ -1411,12 +1411,9 @@ int finefs_notify_change(struct dentry *dentry, struct iattr *attr)
 	/* We are holding i_mutex so OK to append the log */
 	new_tail = finefs_append_setattr_entry(sb, pi, inode, attr, 0);
 
-#ifdef LOG_HAS_TAIL
-    sih->i_log_tail = new_tail;
-	finefs_update_tail(pi, new_tail);
-#else
+    // sih->i_log_tail = new_tail;
+	// finefs_update_tail(pi, new_tail);
     finefs_update_volatile_tail(sih, new_tail);
-#endif
 
 	/* Only after log entry is committed, we can truncate size */
 	if ((ia_valid & ATTR_SIZE) && (attr->ia_size != oldsize ||
@@ -2219,6 +2216,7 @@ int finefs_rebuild_file_inode_tree(struct super_block *sb, struct finefs_inode *
 
     sih->log_pages = 1;
 
+    // TODO: log_tail
     while (curr_p != pi->log_tail) {
         if (goto_next_page(sb, curr_p)) {
             sih->log_pages++;

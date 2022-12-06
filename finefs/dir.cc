@@ -213,12 +213,9 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 	return curr_p;
 }
 
-/* Append . and .. entries */
-// 为新创建的目录分配1个log page
-// 并写入两个log entry（. 和 ..）
-// 更新tail 并fence
-int finefs_append_dir_init_entries(struct super_block *sb,
-	struct finefs_inode *pi, u64 self_ino, u64 parent_ino, int cpuid)
+// 只用与root dir
+int finefs_append_root_init_entries(struct super_block *sb,
+	struct finefs_inode *pi, u64 self_ino, u64 parent_ino, u64 *log_tail, int cpuid)
 {
 	int allocated;
 	u64 new_block;
@@ -236,7 +233,8 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 		r_error("ERROR: no inode log page available");
 		return -ENOMEM;
 	}
-	pi->log_tail = pi->log_head = new_block;
+	// pi->log_tail = new_block;
+	pi->log_head = new_block;
 	pi->i_blocks = 1;
 	finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
 
@@ -268,7 +266,73 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(2), 0);
 
 	curr_p += FINEFS_DIR_LOG_REC_LEN(2);
-	finefs_update_tail(pi, curr_p);
+	// finefs_update_tail(pi, curr_p);
+	// finefs_update_volatile_tail(sih, curr_p);
+	*log_tail = curr_p;
+
+	return 0;
+}
+
+/* Append . and .. entries */
+// 为新创建的目录分配1个log page
+// 并写入两个log entry（. 和 ..）
+// 更新tail 并fence
+int finefs_append_dir_init_entries(struct super_block *sb,
+	struct finefs_inode *pi, struct inode* inode, u64 parent_ino, int cpuid)
+{
+	int allocated;
+	u64 new_block;
+	u64 curr_p;
+	struct finefs_dentry *de_entry;
+	struct finefs_inode_info_header *sih = &FINEFS_I(inode)->header;
+	u64 self_ino = inode->i_ino;
+
+	if (pi->log_head) {
+		r_error("%s: log head exists @ 0x%lx!",
+				__func__, pi->log_head);
+		return -EINVAL;
+	}
+
+	allocated = finefs_allocate_inode_log_pages(sb, pi, 1, &new_block, cpuid);
+	if (allocated != 1) {
+		r_error("ERROR: no inode log page available");
+		return -ENOMEM;
+	}
+	// pi->log_tail = new_block;
+	pi->log_head = new_block;
+	pi->i_blocks = 1;
+	finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
+
+	de_entry = (struct finefs_dentry *)finefs_get_block(sb, new_block);
+	de_entry->entry_type = DIR_LOG;
+	de_entry->name_len = 1;
+	de_entry->invalid = 0;
+	de_entry->de_len = cpu_to_le16(FINEFS_DIR_LOG_REC_LEN(1));
+	de_entry->links_count = 1;
+	de_entry->mtime = GetTsSec();
+	de_entry->ino = cpu_to_le64(self_ino);
+	de_entry->size = sb->s_blocksize;
+	strncpy(de_entry->name, ".\0", 2);
+	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(1), 0);
+
+	curr_p = new_block + FINEFS_DIR_LOG_REC_LEN(1);
+
+	de_entry = (struct finefs_dentry *)((char *)de_entry +
+					le16_to_cpu(de_entry->de_len));
+	de_entry->entry_type = DIR_LOG;
+	de_entry->name_len = 2;
+	de_entry->invalid = 0;
+	de_entry->de_len = cpu_to_le16(FINEFS_DIR_LOG_REC_LEN(2));
+	de_entry->links_count = 2;
+	de_entry->mtime = GetTsSec();
+	de_entry->ino = cpu_to_le64(parent_ino);
+	de_entry->size = sb->s_blocksize;
+	strncpy(de_entry->name, "..\0", 3);
+	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(2), 0);
+
+	curr_p += FINEFS_DIR_LOG_REC_LEN(2);
+	// finefs_update_tail(pi, curr_p);
+	finefs_update_volatile_tail(sih, curr_p);
 
 	return 0;
 }
@@ -431,7 +495,12 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 				curr_p, pi->log_tail);
 
 	sih->log_pages = 1;
+	// TODO: log_tail
+	// 临时解决方法，未考虑恢复
+	int times = 0;
 	while (curr_p != pi->log_tail) {
+		++times;
+		if(times == 3) break;
 		if (goto_next_page(sb, curr_p)) {
 			sih->log_pages++;
 			curr_p = next_log_page(sb, curr_p);

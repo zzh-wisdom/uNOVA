@@ -264,7 +264,7 @@ int finefs_reassign_file_tree(struct super_block *sb,
 	u64 curr_p = begin_tail;
 	size_t entry_size = sizeof(struct finefs_file_write_entry);
 
-	while (curr_p != pi->log_tail) {
+	while (curr_p != sih->i_log_tail) {
 		if (is_last_entry(curr_p, entry_size))
 			curr_p = next_log_page(sb, curr_p);
 
@@ -408,8 +408,8 @@ ssize_t finefs_cow_file_write(struct file *filp,
 
 	rd_info("%s: inode %lu, offset %lld, count %lu",
 			__func__, inode->i_ino,	pos, count);
-
-	temp_tail = pi->log_tail;
+	// temp_tail = pi->log_tail;
+	temp_tail = sih->i_log_tail;
 	while (num_blocks > 0) {
 		offset = pos & (finefs_inode_blk_size(pi) - 1);
 		start_blk = pos >> sb->s_blocksize_bits;
@@ -499,7 +499,8 @@ ssize_t finefs_cow_file_write(struct file *filp,
 	finefs_memlock_inode(sb, pi);
 
 	// 提交写操作
-	finefs_update_tail(pi, temp_tail);
+	// finefs_update_tail(pi, temp_tail);
+	finefs_update_volatile_tail(sih, temp_tail);
 
 	/* Free the overlap blocks after the write is committed */
 	// 更改内存中的索引

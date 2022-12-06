@@ -237,7 +237,7 @@ static bool finefs_check_size(struct super_block *sb, unsigned long size) {
 
 // 初始化文件系统
 // 返回root inode
-static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long size) {
+static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long size, u64 *log_tail) {
     unsigned long blocksize;
     unsigned long reserved_space, reserved_blocks;
     struct finefs_inode *root_i, *pi;
@@ -337,7 +337,7 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     finefs_memlock_inode(sb, root_i);
     finefs_flush_buffer(root_i, sizeof(*root_i), false);
 
-    finefs_append_dir_init_entries(sb, root_i, FINEFS_ROOT_INO, FINEFS_ROOT_INO, 0);
+    finefs_append_root_init_entries(sb, root_i, FINEFS_ROOT_INO, FINEFS_ROOT_INO, log_tail, 0);
 
     PERSISTENT_MARK();
     PERSISTENT_BARRIER();
@@ -699,6 +699,7 @@ static int finefs_fill_super(struct super_block *sb, bool format) {
     struct finefs_inode *root_pi;
     struct finefs_sb_info *sbi = NULL;
     struct inode *root_i = NULL;
+    struct finefs_inode_info_header *sih = nullptr;
     struct inode_map *inode_map;
     unsigned long blocksize;
     u32 random = 0;
@@ -776,8 +777,9 @@ static int finefs_fill_super(struct super_block *sb, bool format) {
     }
 
     /* Init a new finefs instance */
+    u64 log_tail;
     if (sbi->s_mount_opt & FINEFS_MOUNT_FORMAT) {  // 重新初始化挂载
-        root_pi = finefs_init(sb, sbi->initsize);
+        root_pi = finefs_init(sb, sbi->initsize, &log_tail);
         if (!root_pi) goto out;
         super = finefs_get_super(sb);
         goto setup_sb;
@@ -834,7 +836,8 @@ setup_sb:
         retval = -1;
         goto out;
     }
-    FINEFS_I(root_i)->header.i_log_tail = root_pi->log_tail;
+    sih = &FINEFS_I(root_i)->header;
+    finefs_update_volatile_tail(sih, log_tail);
 
     sb->s_root = d_make_root(root_i);
     inode_unref(root_i);
