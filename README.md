@@ -67,6 +67,18 @@ NOVA [54， 55] 是一个日志结构的 NVMM 文档系统，它为每个文档�
 
 大于等于256B用ntstore。小于256B时尽量顺序，且用普通的store
 
+## 支持的操作
+
+- mkdir
+- rmdir
+- open
+- unlink
+
+- write
+- read
+- ftruncate
+
+
 ## TODO
 
 1. 测试不对齐写，参考这里的参数 <file:///C:/Users/Mrzho/Desktop/github/%E7%A1%95%E5%A3%AB%E6%AF%95%E8%AE%BE/practice-ssd/fio/html-doc/fio_man.html#i-o-type>

@@ -247,9 +247,9 @@ struct finefs_dentry {
 	u8	entry_type;
 	u8	name_len;               /* length of the dentry name */
 	u8	file_type;              /* file type 没有作用，entry_type已经足够*/
-	u8	invalid;		/* Invalid now? */
+	u8	invalid;		/* Invalid now? 恢复时，不应该依赖于该标志*/
 	__le16	de_len;                 /* length of this dentry 即log entry大小*/
-	__le16	links_count;
+	__le16	links_count;		// 自身的link count
 	__le32	mtime;			/* For both mtime and ctime */
 	__le64	ino;                    /* inode no pointed to by this entry */
 	__le64	size;             // 这个是什么大小？文件吗
@@ -296,7 +296,7 @@ struct finefs_setattr_logentry {
 struct finefs_link_change_entry {
 	u8	entry_type;
 	u8	padding;
-	__le16	links;
+	__le16	links;  // 等于0表示删除
 	__le32	ctime;
 	__le32	flags;
 	__le32	generation;

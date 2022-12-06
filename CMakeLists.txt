@@ -106,3 +106,8 @@ add_executable(perf_ftruncate perf/ftruncate_test.cc)
 target_link_libraries(perf_ftruncate
     pthread syscall_intercept dl
 )
+
+add_executable(perf_mkdir perf/mkdir_test.cc)
+target_link_libraries(perf_mkdir
+    pthread syscall_intercept dl
+)

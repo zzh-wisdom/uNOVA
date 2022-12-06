@@ -51,8 +51,10 @@ static int finefs_insert_dir_radix_tree(struct super_block *sb,
 
 	/* FIXME: hash collision ignored here */
 	ret = radix_tree_insert(&sih->tree, hash, direntry);
-	if (ret)
+	if (ret) {
 		r_error("%s ERROR %d: %s", __func__, ret, name);
+		log_assert(0);
+	}
 
 	return ret;
 }
@@ -81,17 +83,18 @@ static int finefs_remove_dir_radix_tree(struct super_block *sb,
 
 	if (replay == 0) {  // 不是replay，则必然会替换成功
 		if (!entry) {
-			rd_error("%s ERROR: %s, length %d, hash %lu",
+			r_error("%s ERROR: %s, length %d, hash %lu",
 					__func__, name, namelen, hash);
 			return -EINVAL;
 		}
+		rd_info("%s: %s", __func__, entry->name);
 
 		if (entry->ino == 0 || entry->invalid ||
 		    finefs_check_dentry_match(sb, entry, name, namelen)) {
-			rd_info("%s dentry not match: %s, length %d, "
+			r_error("%s dentry not match: %s, length %d, "
 					"hash %lu", __func__, name,
 					namelen, hash);
-			rd_info("dentry: type %d, inode %lu, name %s, "
+			r_error("dentry: type %d, inode %lu, name %s, "
 					"namelen %u, rec len %u",
 					entry->entry_type,
 					le64_to_cpu(entry->ino),
@@ -101,12 +104,14 @@ static int finefs_remove_dir_radix_tree(struct super_block *sb,
 		}
 
 		/* No need to flush */
-		entry->invalid = 1;  // TODO: 为啥呢
+		entry->invalid = 1;  // 把旧的entry标记为无效，只是为了方便垃圾回收，不作用与原子性
+		// 不flush是因为恢复时可以根据后面的log得知该entry是否有效
 	}
 
 	return 0;
 }
 
+// 删除内存radix tree
 void finefs_delete_dir_tree(struct super_block *sb,
 	struct finefs_inode_info_header *sih)
 {
@@ -341,6 +346,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
  * already been logged for consistency
  */
 // new_tail 返回修改后的tail
+// 父母写log
 int finefs_add_dentry(struct dentry *dentry, u64 ino, int inc_link,
 	u64 tail, u64 *new_tail)
 {
@@ -420,6 +426,7 @@ int finefs_remove_dentry(struct dentry *dentry, int dec_link, u64 tail,
 
 	loglen = FINEFS_DIR_LOG_REC_LEN(entry->len);
 	// 在父母inode中写删除entry的log
+	// ino为0，表示删除
 	curr_entry = finefs_append_dir_inode_entry(sb, pidir, dir, 0,
 				dentry, loglen, tail, dec_link, &curr_tail);
 	*new_tail = curr_tail;

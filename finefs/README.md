@@ -11,6 +11,32 @@
 
 由于堆中不总是满足连续若干page的空间分配要求，因此在某些极端情况下，分配出的log大小可能小于预期，为了处理这种特殊情况，我们需要在log中添加大小字段，以区分log的大小。（希望在实际测试中，这种情况几乎没有发生）。这也好理解，一般只会在写入大小不断变化的负载下，才可能出现。
 
+## 事务流程
+
+### rmdir
+
+1. 父母pidir，写删除子inode的log entry，并记录自身的link变化。并将就entry标记为无效
+2. 被删除的dir inode中写LINK_CHANGE log，将links置为0，表示删除
+3. 进行事务
+   1. 记录父母旧的log tail、孩子旧的log tail、 孩子inode记录有效位
+   2. 更新父母log tail, 孩子inode的log tail，孩子有效位
+   3. 提交事务，journal head  = tail
+4. 最后上层调用evict_inode真正删除inode，并回收
+
+> 涉及三个实体，父母、孩子和inode有效位。其实父母由inode和dentry组成，这个保证一致即可
+
+更改后：
+
+1. dir log中，写rmdir entry。记录父母删除的inode、iversion和link。表示孩子dentry删除。flush fennce
+2. 执行事务实际删除 inode（即把inode置为无效） flush fence。将旧的entry标记为无效，方便回收
+3. 提交事务写commit entry flush fence
+
+恢复时，仅看到rmdir entry，说明事务未完成，将inode标记为有效，完成回滚。否则保留
+
+问题是，崩溃恢复时，删除inode的数据的有效性收到删除log的影响。因此可以通过inode的版本号来直接丢弃
+
+### rename 留给以后实现
+
 ## 注意
 
 目前：

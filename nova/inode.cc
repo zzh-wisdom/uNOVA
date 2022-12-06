@@ -1849,7 +1849,7 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
     curr = pi->log_head;
     sih->valid_bytes = 0;
 
-    r_info("%s: log head 0x%lx, tail 0x%lx", __func__, curr, curr_tail);
+    rd_info("%s: log head 0x%lx, tail 0x%lx", __func__, curr, curr_tail);
     while (1) {
         if (curr >> PAGE_SHIFT == pi->log_tail >> PAGE_SHIFT) {
             /* Don't recycle tail page 不回收最后一个page，避免即修改head又修改tail，不能原子*/

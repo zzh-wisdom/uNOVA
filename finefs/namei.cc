@@ -96,8 +96,8 @@ static void finefs_lite_transaction_for_new_inode(struct super_block *sb, struct
 
     // 执行具体的事务
     // 更新tail
-    pidir->log_tail = pidir_tail;
-    finefs_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
+    // pidir->log_tail = pidir_tail;
+    // finefs_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
     pi->valid = 1;
     finefs_flush_buffer(&pi->valid, CACHELINE_SIZE, 0);
     PERSISTENT_BARRIER();
@@ -320,10 +320,10 @@ static void finefs_lite_transaction_for_time_and_link(struct super_block *sb,
     spin_lock(&sbi->journal_locks[cpu]);
     journal_tail = finefs_create_lite_transaction(sb, &entry, NULL, 1, cpu);
 
-    pi->log_tail = pi_tail;
-    finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 0);
-    pidir->log_tail = pidir_tail;
-    finefs_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
+    // pi->log_tail = pi_tail;
+    // finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 0);
+    // pidir->log_tail = pidir_tail;
+    // finefs_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
     if (invalidate) {
         pi->valid = 0;  // 可能需要等到垃圾回收时，才真正回收空间
         finefs_flush_buffer(&pi->valid, CACHELINE_SIZE, 0);
@@ -465,6 +465,8 @@ static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
     if (retval) goto out;
 
     finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, invalidate);
+    FINEFS_I(dir)->header.i_log_tail = pidir_tail;
+    FINEFS_I(inode)->header.i_log_tail = pi_tail;
 
     FINEFS_END_TIMING(unlink_t, unlink_time);
     return 0;
@@ -487,16 +489,22 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
     timing_t mkdir_time;
 
     FINEFS_START_TIMING(mkdir_t, mkdir_time);
-    if (dir->i_nlink >= FINEFS_LINK_MAX) goto out;
+    if (dir->i_nlink >= FINEFS_LINK_MAX) {
+        r_error("i_nlink(%lu) > FINEFS_LINK_MAX(%lu)", dir->i_nlink, FINEFS_LINK_MAX);
+        goto out;
+    }
 
     ino = finefs_new_finefs_inode(sb, &pi_addr);
-    if (ino == 0) goto out_err;
+    if (ino == 0) {
+        r_error("finefs_new_finefs_inode");
+        goto out_err;
+    }
 
     rdv_proc("%s: name %s", __func__, dentry->d_name.name);
     rdv_proc("%s: inode %lu, dir %lu, link %d", __func__, ino, dir->i_ino, dir->i_nlink);
     err = finefs_add_dentry(dentry, ino, 1, 0, &tail);
     if (err) {
-        rd_warning("failed to add dir entry");
+        r_error("failed to add dir entry");
         goto out_err;
     }
 
@@ -504,6 +512,7 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
                                  &dentry->d_name);
     if (!inode) {
         err = -1;
+        r_error("finefs_new_vfs_inode fail");
         goto out_err;
     }
 
@@ -523,9 +532,11 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
     // unlock_new_inode(inode);
 
     finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
+    FINEFS_I(dir)->header.i_log_tail = tail;
     inode_unref(inode);
 out:
     FINEFS_END_TIMING(mkdir_t, mkdir_time);
+    log_assert(err == 0);
     return err;
 
 out_err:
@@ -582,14 +593,20 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     pidir = finefs_get_inode(sb, dir);
     if (!pidir) return -EINVAL;
 
-    if (finefs_inode_by_name(dir, &dentry->d_name, &de) == 0) return -ENOENT;
+    if (finefs_inode_by_name(dir, &dentry->d_name, &de) == 0) {
+        r_error("%s: %s not found.", __func__, dentry->d_name.name);
+        return -ENOENT;
+    }
 
-    if (!finefs_empty_dir(inode)) return err;
+    if (!finefs_empty_dir(inode)) {
+        r_error("%s: dir %s is not empty.", __func__, dentry->d_name.name);
+        return err;
+    }
 
     rd_info("%s: inode %lu, dir %lu, link %d", __func__, inode->i_ino, dir->i_ino, dir->i_nlink);
 
     if (inode->i_nlink != 2)
-        rd_info("empty directory %lu has nlink!=2 (%d), dir %lu", inode->i_ino, inode->i_nlink,
+        r_error("empty directory %lu has nlink!=2 (%d), dir %lu", inode->i_ino, inode->i_nlink,
                 dir->i_ino);
 
     // 先从父母inode中删除孩子，并写log
@@ -608,6 +625,8 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     if (err) goto end_rmdir;
 
     finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, 1);
+    FINEFS_I(dir)->header.i_log_tail = pidir_tail;
+    FINEFS_I(inode)->header.i_log_tail = pi_tail;
 
     FINEFS_END_TIMING(rmdir_t, rmdir_time);
     return err;

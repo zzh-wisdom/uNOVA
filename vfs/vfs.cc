@@ -510,7 +510,7 @@ void d_put(struct dentry *parent) {
     log_assert(parent->d_inode == nullptr);
     log_assert(list_empty(&parent->d_child));
     log_assert(parent->d_subdirs.empty());
-    r_info("%s: %s", __func__, parent->d_name.name);
+    rd_info("%s: %s", __func__, parent->d_name.name);
     if (dname_external(parent)) {
         FREE(external_name(parent));
     }
