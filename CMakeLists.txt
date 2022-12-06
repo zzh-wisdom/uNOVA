@@ -111,3 +111,9 @@ add_executable(perf_mkdir perf/mkdir_test.cc)
 target_link_libraries(perf_mkdir
     pthread syscall_intercept dl
 )
+
+add_executable(perf_open perf/open_test.cc)
+target_link_libraries(perf_open
+    pthread syscall_intercept dl
+)
+

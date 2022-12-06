@@ -1032,7 +1032,7 @@ extern unsigned long finefs_find_region(struct inode *inode, loff_t *offset,
 void finefs_apply_setattr_entry(struct super_block *sb, struct finefs_inode *pi,
 	struct finefs_inode_info_header *sih,
 	struct finefs_setattr_logentry *entry);
-void finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi);
+int finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi);
 int finefs_allocate_inode_log_pages(struct super_block *sb,
 	struct finefs_inode *pi, unsigned long num_pages,
 	u64 *new_block, int cpuid=-1);

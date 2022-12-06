@@ -19,7 +19,7 @@
 
 #include "util/cpu.h"
 
-const uint64_t TOTAL_OPS = 5e7;
+uint64_t TOTAL_OPS = 1e6;
 
 int main(int argc, char* argv[]) {
     // #if FS_HOOK==1
@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
     // 	assert(handle);
     //     const std::string mntdir = "/tmp/finefs";
     // #endif
-    assert(argc == 3);
+    assert(argc == 4);
     if (strcmp(argv[1], "nova") == 0) {
         printf("dlopen ./libnova_hook.so\n");
         void *handle = dlopen("./libnova_hook.so", RTLD_NOW);
@@ -54,8 +54,12 @@ int main(int argc, char* argv[]) {
     } else {
         exit(-1);
     }
-    int files = atoi(argv[2]);
-    printf("mnt %s, files: %d\n", mntdir.c_str(), files);
+    int tmp = atoi(argv[2]);
+    if(tmp) {
+        TOTAL_OPS = tmp;
+    }
+    int files = atoi(argv[3]);
+    printf("mnt %s, files: %d op: %lu\n", mntdir.c_str(), files, TOTAL_OPS);
 
     const std::string dir1 = mntdir + "/dir1";
     const std::string dir1_file = dir1 + "/ftruncate";

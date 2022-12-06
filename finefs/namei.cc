@@ -157,6 +157,7 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 
     pi = (struct finefs_inode *)finefs_get_block(sb, pi_addr);
     finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
+    FINEFS_I(dir)->header.i_log_tail = tail;
     inode_unref(inode);
     FINEFS_END_TIMING(create_t, create_time);
     return err;
@@ -351,6 +352,7 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
     rdv_proc("%s: inode %lu attr change", __func__, inode->i_ino);
 
     curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended);
+    inode->i_blocks = pi->i_blocks;
     if (curr_p == 0) return -ENOMEM;
 
     entry = (struct finefs_link_change_entry *)finefs_get_block(sb, curr_p);

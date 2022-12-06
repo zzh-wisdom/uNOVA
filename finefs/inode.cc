@@ -21,43 +21,31 @@
 #include "util/log.h"
 
 unsigned int finefs_blk_type_to_shift[FINEFS_BLOCK_TYPE_MAX] = {
-    12 + FINEFS_4K_BLK_NUM_BITS   ,
-    12 + FINEFS_8K_BLK_NUM_BITS   ,
-    12 + FINEFS_16K_BLK_NUM_BITS  ,
-    12 + FINEFS_32K_BLK_NUM_BITS  ,
-    12 + FINEFS_64K_BLK_NUM_BITS  ,
-    12 + FINEFS_128K_BLK_NUM_BITS ,
-    12 + FINEFS_256K_BLK_NUM_BITS ,
-    12 + FINEFS_512K_BLK_NUM_BITS ,
-    12 + FINEFS_1M_BLK_NUM_BITS   ,
-    12 + FINEFS_2M_BLK_NUM        ,
-    12 + FINEFS_1G_BLK_NUM        ,
+    12 + FINEFS_4K_BLK_NUM_BITS,   12 + FINEFS_8K_BLK_NUM_BITS,   12 + FINEFS_16K_BLK_NUM_BITS,
+    12 + FINEFS_32K_BLK_NUM_BITS,  12 + FINEFS_64K_BLK_NUM_BITS,  12 + FINEFS_128K_BLK_NUM_BITS,
+    12 + FINEFS_256K_BLK_NUM_BITS, 12 + FINEFS_512K_BLK_NUM_BITS, 12 + FINEFS_1M_BLK_NUM_BITS,
+    12 + FINEFS_2M_BLK_NUM,        12 + FINEFS_1G_BLK_NUM,
 };
 unsigned int finefs_blk_type_to_size[FINEFS_BLOCK_TYPE_MAX] = {
-    1u << (12 + FINEFS_4K_BLK_NUM_BITS  ) ,
-    1u << (12 + FINEFS_8K_BLK_NUM_BITS  ) ,
-    1u << (12 + FINEFS_16K_BLK_NUM_BITS ) ,
-    1u << (12 + FINEFS_32K_BLK_NUM_BITS ) ,
-    1u << (12 + FINEFS_64K_BLK_NUM_BITS ) ,
-    1u << (12 + FINEFS_128K_BLK_NUM_BITS) ,
-    1u << (12 + FINEFS_256K_BLK_NUM_BITS) ,
-    1u << (12 + FINEFS_512K_BLK_NUM_BITS) ,
-    1u << (12 + FINEFS_1M_BLK_NUM_BITS  ) ,
-    1u << (12 + FINEFS_2M_BLK_NUM       ) ,
-    1u << (12 + FINEFS_1G_BLK_NUM       ) ,
+    1u << (12 + FINEFS_4K_BLK_NUM_BITS),   1u << (12 + FINEFS_8K_BLK_NUM_BITS),
+    1u << (12 + FINEFS_16K_BLK_NUM_BITS),  1u << (12 + FINEFS_32K_BLK_NUM_BITS),
+    1u << (12 + FINEFS_64K_BLK_NUM_BITS),  1u << (12 + FINEFS_128K_BLK_NUM_BITS),
+    1u << (12 + FINEFS_256K_BLK_NUM_BITS), 1u << (12 + FINEFS_512K_BLK_NUM_BITS),
+    1u << (12 + FINEFS_1M_BLK_NUM_BITS),   1u << (12 + FINEFS_2M_BLK_NUM),
+    1u << (12 + FINEFS_1G_BLK_NUM),
 };
 unsigned int finefs_blk_type_to_blk_num[FINEFS_BLOCK_TYPE_MAX] = {
-    1u << (12 + FINEFS_4K_BLK_NUM_BITS   - FINEFS_BLOCK_SHIFT) ?: 1,
-    1u << (12 + FINEFS_8K_BLK_NUM_BITS   - FINEFS_BLOCK_SHIFT) ?: 1,
-    1u << (12 + FINEFS_16K_BLK_NUM_BITS  - FINEFS_BLOCK_SHIFT) ?: 1,
-    1u << (12 + FINEFS_32K_BLK_NUM_BITS  - FINEFS_BLOCK_SHIFT) ?: 1,
-    1u << (12 + FINEFS_64K_BLK_NUM_BITS  - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_4K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_8K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_16K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_32K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_64K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
     1u << (12 + FINEFS_128K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
     1u << (12 + FINEFS_256K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
     1u << (12 + FINEFS_512K_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
-    1u << (12 + FINEFS_1M_BLK_NUM_BITS   - FINEFS_BLOCK_SHIFT) ?: 1,
-    1u << (12 + FINEFS_2M_BLK_NUM        - FINEFS_BLOCK_SHIFT) ?: 1,
-    1u << (12 + FINEFS_1G_BLK_NUM        - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_1M_BLK_NUM_BITS - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_2M_BLK_NUM - FINEFS_BLOCK_SHIFT) ?: 1,
+    1u << (12 + FINEFS_1G_BLK_NUM - FINEFS_BLOCK_SHIFT) ?: 1,
 };
 
 int finefs_init_inode_inuse_list(struct super_block *sb) {
@@ -225,7 +213,7 @@ static inline int finefs_free_contiguous_data_blocks(
         } else {
             /* A new start */
             finefs_free_data_blocks(sb, pi, *start_blocknr,
-                                  *num_free);  // 把之前的合并一起释放
+                                    *num_free);  // 把之前的合并一起释放
             freed = *num_free;
             *start_blocknr = nvmm;
             *num_free = num_pages;
@@ -238,7 +226,7 @@ static inline int finefs_free_contiguous_data_blocks(
 // 释放一个用链表连接起来的log page
 // 返回实质释放的page个数
 static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct finefs_inode *pi,
-                                           u64 head) {
+                                             u64 head) {
     struct finefs_inode_log_page *curr_page;
     unsigned long blocknr, start_blocknr = 0;
     u64 curr_block = head;
@@ -339,8 +327,8 @@ static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct fine
 
 // 删除[start_blocknr, last_blocknr]的数据块
 int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_header *sih,
-                          unsigned long start_blocknr, unsigned long last_blocknr, bool delete_nvmm,
-                          bool delete_mmap) {
+                            unsigned long start_blocknr, unsigned long last_blocknr,
+                            bool delete_nvmm, bool delete_mmap) {
     struct finefs_file_write_entry *entry;
     struct finefs_inode *pi;
     unsigned long free_blocknr = 0, num_free = 0;
@@ -370,7 +358,7 @@ int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_hea
             BUG_ON(!ret || ret != entry);
             if (delete_nvmm)
                 freed += finefs_free_contiguous_data_blocks(sb, sih, pi, entry, pgoff, 1,
-                                                          &free_blocknr, &num_free);
+                                                            &free_blocknr, &num_free);
             pgoff++;
         } else {
             /* We are finding a hole. Jump to the next entry. */
@@ -415,47 +403,41 @@ static int finefs_free_dram_resource(struct super_block *sb, struct finefs_inode
 /*
  * Free data blocks from inode in the range start <=> end
  */
-static void finefs_truncate_file_blocks(struct inode *inode, loff_t start,
-				    loff_t end)
-{
-	struct super_block *sb = inode->i_sb;
-	struct finefs_inode *pi = finefs_get_inode(sb, inode);
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	unsigned int data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
-	unsigned long first_blocknr, last_blocknr;
-	int freed = 0;
+static void finefs_truncate_file_blocks(struct inode *inode, loff_t start, loff_t end) {
+    struct super_block *sb = inode->i_sb;
+    struct finefs_inode *pi = finefs_get_inode(sb, inode);
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    unsigned int data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
+    unsigned long first_blocknr, last_blocknr;
+    int freed = 0;
 
-	inode->i_mtime = inode->i_ctime = get_cur_time_spec();
+    inode->i_mtime = inode->i_ctime = get_cur_time_spec();
 
-	rd_info("truncate: pi %p iblocks %llx %llx %llx %llx", pi,
-			 pi->i_blocks, start, end, pi->i_size);
+    rd_info("truncate: pi %p iblocks %llx %llx %llx %llx", pi, pi->i_blocks, start, end,
+            pi->i_size);
 
-	first_blocknr = (start + (1UL << data_bits) - 1) >> data_bits;
+    first_blocknr = (start + (1UL << data_bits) - 1) >> data_bits;
 
-	if (end == 0)
-		return;
-	last_blocknr = (end - 1) >> data_bits;
+    if (end == 0) return;
+    last_blocknr = (end - 1) >> data_bits;
 
-	if (first_blocknr > last_blocknr)
-		return;
+    if (first_blocknr > last_blocknr) return;
 
-	freed = finefs_delete_file_tree(sb, sih, first_blocknr,
-						last_blocknr, 1, 0);
+    freed = finefs_delete_file_tree(sb, sih, first_blocknr, last_blocknr, 1, 0);
 
-	inode->i_blocks -= (freed * (1 << (data_bits -
-				sb->s_blocksize_bits)));
+    inode->i_blocks -= (freed * (1 << (data_bits - sb->s_blocksize_bits)));
 
-	pi->i_blocks = cpu_to_le64(inode->i_blocks);
-	/* Check for the flag EOFBLOCKS is still valid after the set size */
-	check_eof_blocks(sb, pi, inode->i_size);
+    pi->i_blocks = cpu_to_le64(inode->i_blocks);
+    /* Check for the flag EOFBLOCKS is still valid after the set size */
+    check_eof_blocks(sb, pi, inode->i_size);
 
-	return;
+    return;
 }
 
 struct finefs_file_write_entry *finefs_find_next_entry(struct super_block *sb,
-                                                   struct finefs_inode_info_header *sih,
-                                                   pgoff_t pgoff) {
+                                                       struct finefs_inode_info_header *sih,
+                                                       pgoff_t pgoff) {
     struct finefs_file_write_entry *entry = NULL;
     struct finefs_file_write_entry *entries[1];
     int nr_entries;
@@ -514,8 +496,8 @@ struct finefs_file_write_entry *finefs_find_next_entry(struct super_block *sb,
 
 // file 写操作时，更新radix tree
 int finefs_assign_write_entry(struct super_block *sb, struct finefs_inode *pi,
-                            struct finefs_inode_info_header *sih, struct finefs_file_write_entry *entry,
-                            bool free) {
+                              struct finefs_inode_info_header *sih,
+                              struct finefs_file_write_entry *entry, bool free) {
     struct finefs_file_write_entry *old_entry;
     void **pentry;
     unsigned long old_nvmm;
@@ -701,77 +683,75 @@ static int finefs_alloc_unused_inode(struct super_block *sb, int cpuid, unsigned
     return 0;
 }
 
-static int finefs_free_inuse_inode(struct super_block *sb, unsigned long ino)
-{
-	struct finefs_sb_info *sbi = FINEFS_SB(sb);
-	struct inode_map *inode_map;
-	struct finefs_range_node *i = NULL;
-	struct finefs_range_node *curr_node;
-	int found = 0;
-	int cpuid = ino % sbi->cpus;
-	unsigned long internal_ino = ino / sbi->cpus;
-	int ret = 0;
+static int finefs_free_inuse_inode(struct super_block *sb, unsigned long ino) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    struct inode_map *inode_map;
+    struct finefs_range_node *i = NULL;
+    struct finefs_range_node *curr_node;
+    int found = 0;
+    int cpuid = ino % sbi->cpus;
+    unsigned long internal_ino = ino / sbi->cpus;
+    int ret = 0;
 
-	rdv_proc("Free inuse ino: %lu", ino);
-	inode_map = &sbi->inode_maps[cpuid];
+    rdv_proc("Free inuse ino: %lu", ino);
+    inode_map = &sbi->inode_maps[cpuid];
 
-	mutex_lock(&inode_map->inode_table_mutex);
-	found = finefs_search_inodetree(sbi, ino, &i);
-	if (!found) {
-		r_error("%s ERROR: ino %lu not found", __func__, ino);
-		mutex_unlock(&inode_map->inode_table_mutex);
-		return -EINVAL;
-	}
+    mutex_lock(&inode_map->inode_table_mutex);
+    found = finefs_search_inodetree(sbi, ino, &i);
+    if (!found) {
+        r_error("%s ERROR: ino %lu not found", __func__, ino);
+        mutex_unlock(&inode_map->inode_table_mutex);
+        return -EINVAL;
+    }
 
-	if ((internal_ino == i->range_low) && (internal_ino == i->range_high)) {
-		/* fits entire node */
-		rb_erase(&i->node, &inode_map->inode_inuse_tree);
-		finefs_free_inode_node(sb, i);
-		inode_map->num_range_node_inode--;
-		goto block_found;
-	}
-	if ((internal_ino == i->range_low) && (internal_ino < i->range_high)) {
-		/* Aligns left */
-		i->range_low = internal_ino + 1;
-		goto block_found;
-	}
-	if ((internal_ino > i->range_low) && (internal_ino == i->range_high)) {
-		/* Aligns right */
-		i->range_high = internal_ino - 1;
-		goto block_found;
-	}
-	if ((internal_ino > i->range_low) && (internal_ino < i->range_high)) {
-		/* Aligns somewhere in the middle */
-		curr_node = finefs_alloc_inode_node(sb);
-		log_assert(curr_node);
-		if (curr_node == NULL) {
-			/* returning without freeing the block */
-			goto block_found;
-		}
-		curr_node->range_low = internal_ino + 1;
-		curr_node->range_high = i->range_high;
-		i->range_high = internal_ino - 1;
-		ret = finefs_insert_inodetree(sbi, curr_node, cpuid);
-		if (ret) {
-			finefs_free_inode_node(sb, curr_node);
-			goto err;
-		}
-		inode_map->num_range_node_inode++;
-		goto block_found;
-	}
+    if ((internal_ino == i->range_low) && (internal_ino == i->range_high)) {
+        /* fits entire node */
+        rb_erase(&i->node, &inode_map->inode_inuse_tree);
+        finefs_free_inode_node(sb, i);
+        inode_map->num_range_node_inode--;
+        goto block_found;
+    }
+    if ((internal_ino == i->range_low) && (internal_ino < i->range_high)) {
+        /* Aligns left */
+        i->range_low = internal_ino + 1;
+        goto block_found;
+    }
+    if ((internal_ino > i->range_low) && (internal_ino == i->range_high)) {
+        /* Aligns right */
+        i->range_high = internal_ino - 1;
+        goto block_found;
+    }
+    if ((internal_ino > i->range_low) && (internal_ino < i->range_high)) {
+        /* Aligns somewhere in the middle */
+        curr_node = finefs_alloc_inode_node(sb);
+        log_assert(curr_node);
+        if (curr_node == NULL) {
+            /* returning without freeing the block */
+            goto block_found;
+        }
+        curr_node->range_low = internal_ino + 1;
+        curr_node->range_high = i->range_high;
+        i->range_high = internal_ino - 1;
+        ret = finefs_insert_inodetree(sbi, curr_node, cpuid);
+        if (ret) {
+            finefs_free_inode_node(sb, curr_node);
+            goto err;
+        }
+        inode_map->num_range_node_inode++;
+        goto block_found;
+    }
 
 err:
-	r_error("Unable to free inode %lu", ino);
-	r_error("Found inuse block %lu - %lu",
-				 i->range_low, i->range_high);
-	mutex_unlock(&inode_map->inode_table_mutex);
-	return ret;
+    r_error("Unable to free inode %lu", ino);
+    r_error("Found inuse block %lu - %lu", i->range_low, i->range_high);
+    mutex_unlock(&inode_map->inode_table_mutex);
+    return ret;
 
 block_found:
-	sbi->s_inodes_used_count--;
-	inode_map->freed++;
-	mutex_unlock(&inode_map->inode_table_mutex);
-	return ret;
+    sbi->s_inodes_used_count--;
+    inode_map->freed++;
+    mutex_unlock(&inode_map->inode_table_mutex);
+    return ret;
 }
 
 /*
@@ -782,49 +762,47 @@ block_found:
  * through the filesystem because the directory entry
  * has been deleted earlier.
  */
-static int finefs_free_inode(struct inode *inode,
-	struct finefs_inode_info_header *sih)
-{
-	struct super_block *sb = inode->i_sb;
-	struct finefs_inode *pi;
-	int err = 0;
-	timing_t free_time;
+static int finefs_free_inode(struct inode *inode, struct finefs_inode_info_header *sih) {
+    struct super_block *sb = inode->i_sb;
+    struct finefs_inode *pi;
+    int err = 0;
+    timing_t free_time;
 
-	FINEFS_START_TIMING(free_inode_t, free_time);
+    FINEFS_START_TIMING(free_inode_t, free_time);
 
-	pi = finefs_get_inode(sb, inode);
+    pi = finefs_get_inode(sb, inode);
 
-	if (pi->valid) {
-		rd_info("%s: inode %lu still valid",
-				__func__, inode->i_ino);
-		pi->valid = 0;
-	}
+    if (pi->valid) {
+        rd_info("%s: inode %lu still valid", __func__, inode->i_ino);
+        pi->valid = 0;
+    }
 
-	if (pi->finefs_ino != inode->i_ino) {
-		r_error("%s: inode %lu ino does not match: %lu",
-				__func__, inode->i_ino, pi->finefs_ino);
-		rd_info("inode size %lu, pi addr 0x%lx, pi head 0x%lx, "
-				"tail 0x%lx, mode %u",
-				inode->i_size, sih->pi_addr, pi->log_head,
-				pi->log_tail, pi->i_mode);
-		rd_info("sih: ino %lu, inode size %lu, mode %u, "
-				"inode mode %u", sih->ino, sih->i_size,
-				sih->i_mode, inode->i_mode);
-		// finefs_print_inode_log(sb, inode);
-	}
+    if (pi->finefs_ino != inode->i_ino) {
+        r_error("%s: inode %lu ino does not match: %lu", __func__, inode->i_ino, pi->finefs_ino);
+        rd_info(
+            "inode size %lu, pi addr 0x%lx, pi head 0x%lx, "
+            "tail 0x%lx, mode %u",
+            inode->i_size, sih->pi_addr, pi->log_head, pi->log_tail, pi->i_mode);
+        rd_info(
+            "sih: ino %lu, inode size %lu, mode %u, "
+            "inode mode %u",
+            sih->ino, sih->i_size, sih->i_mode, inode->i_mode);
+        // finefs_print_inode_log(sb, inode);
+    }
 
-	finefs_free_inode_log(sb, pi);
-	pi->i_blocks = 0;
+    int free_pages = finefs_free_inode_log(sb, pi);
+    log_assert(free_pages == inode->i_blocks && inode->i_blocks == pi->i_blocks);
+    pi->i_blocks = 0;
 
-	sih->log_pages = 0;
-	sih->i_mode = 0;
-	sih->pi_addr = 0;
-	sih->i_size = 0;
+    sih->log_pages = 0;
+    sih->i_mode = 0;
+    sih->pi_addr = 0;
+    sih->i_size = 0;
 
-	err = finefs_free_inuse_inode(sb, pi->finefs_ino);
+    err = finefs_free_inuse_inode(sb, pi->finefs_ino);
 
-	FINEFS_END_TIMING(free_inode_t, free_time);
-	return err;
+    FINEFS_END_TIMING(free_inode_t, free_time);
+    return err;
 }
 
 // 获取指定ino的内存结构，如果不存在，则分配空间返回
@@ -881,7 +859,8 @@ fail:
     return nullptr;
 }
 
-unsigned long finefs_get_last_blocknr(struct super_block *sb, struct finefs_inode_info_header *sih) {
+unsigned long finefs_get_last_blocknr(struct super_block *sb,
+                                      struct finefs_inode_info_header *sih) {
     struct finefs_inode *pi;
     unsigned long last_blocknr;
     unsigned int btype;
@@ -899,84 +878,76 @@ unsigned long finefs_get_last_blocknr(struct super_block *sb, struct finefs_inod
     return last_blocknr;
 }
 
-void finefs_evict_inode(struct inode *inode)
-{
-	struct super_block *sb = inode->i_sb;
-	struct finefs_inode *pi = finefs_get_inode(sb, inode);
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	unsigned long last_blocknr;
-	timing_t evict_time;
-	int err = 0;
-	int freed = 0;
-	int destroy = 0;
+void finefs_evict_inode(struct inode *inode) {
+    struct super_block *sb = inode->i_sb;
+    struct finefs_inode *pi = finefs_get_inode(sb, inode);
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    unsigned long last_blocknr;
+    timing_t evict_time;
+    int err = 0;
+    int freed = 0;
+    int destroy = 0;
 
-	if (!sih) {
-		r_error("%s: ino %lu sih is NULL!",
-				__func__, inode->i_ino);
-		log_assert(0);
-		goto out;
-	}
+    if (!sih) {
+        r_error("%s: ino %lu sih is NULL!", __func__, inode->i_ino);
+        log_assert(0);
+        goto out;
+    }
 
-	FINEFS_START_TIMING(evict_inode_t, evict_time);
-	rdv_proc("%s: %lu", __func__, inode->i_ino);
+    FINEFS_START_TIMING(evict_inode_t, evict_time);
+    rdv_proc("%s: %lu", __func__, inode->i_ino);
     // FIXME: 目前保证删除时，link数为0
     log_assert(!inode->i_nlink);
-	if (!inode->i_nlink) { // !is_bad_inode(inode)
-		// if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
-		// 	goto out;
+    if (!inode->i_nlink) {  // !is_bad_inode(inode)
+        // if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
+        // 	goto out;
 
-		destroy = 1;
-		/* We need the log to free the blocks from the b-tree */
-		switch (inode->i_mode & S_IFMT) {
-		case S_IFREG:
-			last_blocknr = finefs_get_last_blocknr(sb, sih);
-			rd_info("%s: file ino %lu", __func__, inode->i_ino);
-			freed = finefs_delete_file_tree(sb, sih, 0,
-						last_blocknr, true, true);
-			break;
-		case S_IFDIR:
-			rd_info("%s: dir ino %lu", __func__, inode->i_ino);
-			finefs_delete_dir_tree(sb, sih);
-			break;
-		case S_IFLNK:
-            log_assert(0);
-			/* Log will be freed later */
-			rd_info("%s: symlink ino %lu",
-					__func__, inode->i_ino);
-			freed = finefs_delete_file_tree(sb, sih, 0, 0,
-							true, true);
-			break;
-		default:
-			rd_info("%s: special ino %lu",
-					__func__, inode->i_ino);
-            log_assert(0);
-			break;
-		}
+        destroy = 1;
+        /* We need the log to free the blocks from the b-tree */
+        switch (inode->i_mode & S_IFMT) {
+            case S_IFREG:
+                last_blocknr = finefs_get_last_blocknr(sb, sih);
+                rd_info("%s: file ino %lu", __func__, inode->i_ino);
+                freed = finefs_delete_file_tree(sb, sih, 0, last_blocknr, true, true);
+                break;
+            case S_IFDIR:
+                rd_info("%s: dir ino %lu", __func__, inode->i_ino);
+                finefs_delete_dir_tree(sb, sih);
+                break;
+            case S_IFLNK:
+                log_assert(0);
+                /* Log will be freed later */
+                rd_info("%s: symlink ino %lu", __func__, inode->i_ino);
+                freed = finefs_delete_file_tree(sb, sih, 0, 0, true, true);
+                break;
+            default:
+                rd_info("%s: special ino %lu", __func__, inode->i_ino);
+                log_assert(0);
+                break;
+        }
 
-		rdv_proc("%s: Freed %d", __func__, freed);
-		/* Then we can free the inode */
-		err = finefs_free_inode(inode, sih);
-		if (err) {
-			r_error("%s: free inode %lu failed",
-					__func__, inode->i_ino);
-			goto out;
-		}
-		pi = NULL; /* we no longer own the finefs_inode */
+        rdv_proc("%s: Freed %d", __func__, freed);
+        /* Then we can free the inode */
+        err = finefs_free_inode(inode, sih);
+        if (err) {
+            r_error("%s: free inode %lu failed", __func__, inode->i_ino);
+            goto out;
+        }
+        pi = NULL; /* we no longer own the finefs_inode */
 
-		inode->i_mtime = inode->i_ctime = get_cur_time_spec();
-		inode->i_size = 0;
-	}
+        inode->i_mtime = inode->i_ctime = get_cur_time_spec();
+        inode->i_size = 0;
+    }
 out:
-	if (destroy == 0)
-		finefs_free_dram_resource(sb, sih);
+    if (destroy == 0) finefs_free_dram_resource(sb, sih);
 
-	/* TODO: Since we don't use page-cache, do we really need the following
-	 * call? */
-	// truncate_inode_pages(&inode->i_data, 0);
+    /* TODO: Since we don't use page-cache, do we really need the following
+     * call? */
+    // truncate_inode_pages(&inode->i_data, 0);
 
-	clear_inode(inode);
-	FINEFS_END_TIMING(evict_inode_t, evict_time);
+    clear_inode(inode);
+    FINEFS_END_TIMING(evict_inode_t, evict_time);
 }
 
 /* Returns 0 on failure */
@@ -1024,8 +995,8 @@ u64 finefs_new_finefs_inode(struct super_block *sb, u64 *pi_addr) {
 // 新建一个内存inode, 并引用
 // 初始化NVM中inode
 struct inode *finefs_new_vfs_inode(enum finefs_new_inode_type type, struct inode *dir, u64 pi_addr,
-                                 u64 ino, umode_t mode, size_t size, dev_t rdev,
-                                 const struct qstr *qstr) {
+                                   u64 ino, umode_t mode, size_t size, dev_t rdev,
+                                   const struct qstr *qstr) {
     struct super_block *sb;
     struct finefs_sb_info *sbi;
     struct inode *inode;
@@ -1167,120 +1138,112 @@ void finefs_dirty_inode(struct inode *inode, int flags) {
  * Zero the tail page. Used in resize request
  * to avoid to keep data in case the file grows again.
  */
-static void finefs_clear_last_page_tail(struct super_block *sb,
-	struct inode *inode, loff_t newsize)
-{
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	unsigned long offset = newsize & (sb->s_blocksize - 1);
-	unsigned long pgoff, length;
-	u64 nvmm;
-	char *nvmm_addr;
+static void finefs_clear_last_page_tail(struct super_block *sb, struct inode *inode,
+                                        loff_t newsize) {
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    unsigned long offset = newsize & (sb->s_blocksize - 1);
+    unsigned long pgoff, length;
+    u64 nvmm;
+    char *nvmm_addr;
 
-	if (offset == 0 || newsize > inode->i_size)
-		return;
+    if (offset == 0 || newsize > inode->i_size) return;
 
-	length = sb->s_blocksize - offset;
-	pgoff = newsize >> sb->s_blocksize_bits;
+    length = sb->s_blocksize - offset;
+    pgoff = newsize >> sb->s_blocksize_bits;
 
-	nvmm = finefs_find_nvmm_block(sb, si, NULL, pgoff);
-	if (nvmm == 0)
-		return;
+    nvmm = finefs_find_nvmm_block(sb, si, NULL, pgoff);
+    if (nvmm == 0) return;
 
-	nvmm_addr = (char *)finefs_get_block(sb, nvmm);
-	memset(nvmm_addr + offset, 0, length);
-	finefs_flush_buffer(nvmm_addr + offset, length, 0);
+    nvmm_addr = (char *)finefs_get_block(sb, nvmm);
+    memset(nvmm_addr + offset, 0, length);
+    finefs_flush_buffer(nvmm_addr + offset, length, 0);
 
-	/* Clear mmap page */
-	// if (sih->mmap_pages && pgoff <= sih->high_dirty &&
-	// 		pgoff >= sih->low_dirty) {
-	// 	nvmm = (unsigned long)radix_tree_lookup(&sih->cache_tree,
-	// 						pgoff);
-	// 	if (nvmm) {
-	// 		nvmm_addr = finefs_get_block(sb, nvmm);
-	// 		memset(nvmm_addr + offset, 0, length);
-	// 	}
-	// }
+    /* Clear mmap page */
+    // if (sih->mmap_pages && pgoff <= sih->high_dirty &&
+    // 		pgoff >= sih->low_dirty) {
+    // 	nvmm = (unsigned long)radix_tree_lookup(&sih->cache_tree,
+    // 						pgoff);
+    // 	if (nvmm) {
+    // 		nvmm_addr = finefs_get_block(sb, nvmm);
+    // 		memset(nvmm_addr + offset, 0, length);
+    // 	}
+    // }
 }
 
-static void finefs_setsize(struct inode *inode, loff_t oldsize, loff_t newsize)
-{
-	struct super_block *sb = inode->i_sb;
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
+static void finefs_setsize(struct inode *inode, loff_t oldsize, loff_t newsize) {
+    struct super_block *sb = inode->i_sb;
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
 
-	/* We only support truncate regular file */
-	if (!(S_ISREG(inode->i_mode))) {
-		r_error("%s:wrong file mode %x", inode->i_mode);
-		return;
-	}
+    /* We only support truncate regular file */
+    if (!(S_ISREG(inode->i_mode))) {
+        r_error("%s:wrong file mode %x", inode->i_mode);
+        return;
+    }
 
-	// inode_dio_wait(inode);
+    // inode_dio_wait(inode);
 
-	rd_info("%s: inode %lu, old size %lu, new size %lu",
-		__func__, inode->i_ino, oldsize, newsize);
+    rd_info("%s: inode %lu, old size %lu, new size %lu", __func__, inode->i_ino, oldsize, newsize);
 
-	if (newsize != oldsize) {
-		finefs_clear_last_page_tail(sb, inode, newsize);
-		i_size_write(inode, newsize);
-		sih->i_size = newsize;
-	}
+    if (newsize != oldsize) {
+        finefs_clear_last_page_tail(sb, inode, newsize);
+        i_size_write(inode, newsize);
+        sih->i_size = newsize;
+    }
 
-	/* FIXME: we should make sure that there is nobody reading the inode
-	 * before truncating it. Also we need to munmap the truncated range
-	 * from application address space, if mmapped. */
-	/* synchronize_rcu(); */
+    /* FIXME: we should make sure that there is nobody reading the inode
+     * before truncating it. Also we need to munmap the truncated range
+     * from application address space, if mmapped. */
+    /* synchronize_rcu(); */
 
-	/* FIXME: Do we need to clear truncated DAX pages? */
-//	dax_truncate_page(inode, newsize, finefs_dax_get_block);
+    /* FIXME: Do we need to clear truncated DAX pages? */
+    //	dax_truncate_page(inode, newsize, finefs_dax_get_block);
 
-	// truncate_pagecache(inode, newsize);
-	finefs_truncate_file_blocks(inode, newsize, oldsize);  // 回收移除的block
+    // truncate_pagecache(inode, newsize);
+    finefs_truncate_file_blocks(inode, newsize, oldsize);  // 回收移除的block
 }
 
-int finefs_getattr(struct vfsmount *mnt, struct dentry *dentry,
-		         struct kstat *stat)
-{
-	struct inode *inode;
+int finefs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat) {
+    struct inode *inode;
 
-	inode = dentry->d_inode;
-	generic_fillattr(inode, stat);
-	/* stat->blocks should be the number of 512B blocks */
-	stat->blocks = (inode->i_blocks << inode->i_sb->s_blocksize_bits) >> 9;
-	return 0;
+    inode = dentry->d_inode;
+    generic_fillattr(inode, stat);
+    /* stat->blocks should be the number of 512B blocks */
+    stat->blocks = (inode->i_blocks << inode->i_sb->s_blocksize_bits) >> 9;
+    return 0;
 }
 
 // #define SETATTR_BY_CPY_NT
 
 static void finefs_update_setattr_entry(struct inode *inode,
-	struct finefs_setattr_logentry *p_entry, struct iattr *attr)
-{
-	unsigned int ia_valid = attr->ia_valid, attr_mask;
+                                        struct finefs_setattr_logentry *p_entry,
+                                        struct iattr *attr) {
+    unsigned int ia_valid = attr->ia_valid, attr_mask;
 #ifdef SETATTR_BY_CPY_NT
     struct finefs_setattr_logentry tmp;
-    struct finefs_setattr_logentry* entry = &tmp;
+    struct finefs_setattr_logentry *entry = &tmp;
 #else
-    struct finefs_setattr_logentry* entry = p_entry;
+    struct finefs_setattr_logentry *entry = p_entry;
 #endif
-	/* These files are in the lowest byte */
-	attr_mask = ATTR_MODE | ATTR_UID | ATTR_GID | ATTR_SIZE |
-			ATTR_ATIME | ATTR_MTIME | ATTR_CTIME;
+    /* These files are in the lowest byte */
+    attr_mask = ATTR_MODE | ATTR_UID | ATTR_GID | ATTR_SIZE | ATTR_ATIME | ATTR_MTIME | ATTR_CTIME;
 
-	entry->entry_type	= SET_ATTR;
-	entry->attr	= ia_valid & attr_mask;
-	entry->mode	= cpu_to_le16(inode->i_mode);
-	// entry->uid	= cpu_to_le32(i_uid_read(inode));
-	// entry->gid	= cpu_to_le32(i_gid_read(inode));
-	entry->atime	= cpu_to_le32(inode->i_atime.tv_sec);
-	entry->ctime	= cpu_to_le32(inode->i_ctime.tv_sec);
-	entry->mtime	= cpu_to_le32(inode->i_mtime.tv_sec);
+    entry->entry_type = SET_ATTR;
+    entry->attr = ia_valid & attr_mask;
+    entry->mode = cpu_to_le16(inode->i_mode);
+    // entry->uid	= cpu_to_le32(i_uid_read(inode));
+    // entry->gid	= cpu_to_le32(i_gid_read(inode));
+    entry->atime = cpu_to_le32(inode->i_atime.tv_sec);
+    entry->ctime = cpu_to_le32(inode->i_ctime.tv_sec);
+    entry->mtime = cpu_to_le32(inode->i_mtime.tv_sec);
 
-	if (ia_valid & ATTR_SIZE)
-		entry->size = cpu_to_le64(attr->ia_size);
-	else
-		entry->size = cpu_to_le64(inode->i_size);
+    if (ia_valid & ATTR_SIZE)
+        entry->size = cpu_to_le64(attr->ia_size);
+    else
+        entry->size = cpu_to_le64(inode->i_size);
 
-#if LOG_ENTRY_SIZE==64
+#if LOG_ENTRY_SIZE == 64
     barrier();
     entry->entry_version = 0x1234;
 #endif
@@ -1288,14 +1251,14 @@ static void finefs_update_setattr_entry(struct inode *inode,
 #ifdef SETATTR_BY_CPY_NT
     pmem_memcpy_nt_nodrain(p_entry, entry, sizeof(struct finefs_setattr_logentry));
 #else
-	finefs_flush_buffer(p_entry, sizeof(struct finefs_setattr_logentry), 0);
+    finefs_flush_buffer(p_entry, sizeof(struct finefs_setattr_logentry), 0);
 #endif
 }
 
 // 属性还包括文件大小（截断/扩展）
 void finefs_apply_setattr_entry(struct super_block *sb, struct finefs_inode *pi,
-                              struct finefs_inode_info_header *sih,
-                              struct finefs_setattr_logentry *entry) {
+                                struct finefs_inode_info_header *sih,
+                                struct finefs_setattr_logentry *entry) {
     unsigned int data_bits = finefs_blk_type_to_shift[pi->i_blk_type];
     unsigned long first_blocknr, last_blocknr;
     loff_t start, end;
@@ -1332,100 +1295,89 @@ out:
 }
 
 /* Returns new tail after append */
-static u64 finefs_append_setattr_entry(struct super_block *sb,
-	struct finefs_inode *pi, struct inode *inode, struct iattr *attr,
-	u64 tail)
-{
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	struct finefs_setattr_logentry *entry;
-	u64 curr_p, new_tail = 0;
-	int extended = 0;
-	size_t size = sizeof(struct finefs_setattr_logentry);
-	timing_t append_time;
+static u64 finefs_append_setattr_entry(struct super_block *sb, struct finefs_inode *pi,
+                                       struct inode *inode, struct iattr *attr, u64 tail) {
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    struct finefs_setattr_logentry *entry;
+    u64 curr_p, new_tail = 0;
+    int extended = 0;
+    size_t size = sizeof(struct finefs_setattr_logentry);
+    timing_t append_time;
 
-	FINEFS_START_TIMING(append_setattr_t, append_time);
-	rd_info("%s: inode %lu attr change",
-				__func__, inode->i_ino);
+    FINEFS_START_TIMING(append_setattr_t, append_time);
+    rd_info("%s: inode %lu attr change", __func__, inode->i_ino);
 
-	curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended);
-	if (curr_p == 0)
-		BUG();
+    curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended);
+    if (curr_p == 0) BUG();
 
     rd_info("%s curr_p: 0x%lx", __func__, curr_p);
-	entry = (struct finefs_setattr_logentry *)finefs_get_block(sb, curr_p);
-	/* inode is already updated with attr */
-	finefs_update_setattr_entry(inode, entry, attr);
-	new_tail = curr_p + size;
-	sih->last_setattr = curr_p;
+    entry = (struct finefs_setattr_logentry *)finefs_get_block(sb, curr_p);
+    /* inode is already updated with attr */
+    finefs_update_setattr_entry(inode, entry, attr);
+    new_tail = curr_p + size;
+    sih->last_setattr = curr_p;
 
-	FINEFS_END_TIMING(append_setattr_t, append_time);
-	return new_tail;
+    FINEFS_END_TIMING(append_setattr_t, append_time);
+    return new_tail;
 }
 
 // #define LOG_HAS_TAIL
 
-int finefs_notify_change(struct dentry *dentry, struct iattr *attr)
-{
-	struct inode *inode = dentry->d_inode;
-	struct super_block *sb = inode->i_sb;
-	struct finefs_inode *pi = finefs_get_inode(sb, inode);
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
-	int ret = 0;
-	unsigned int ia_valid = attr->ia_valid, attr_mask;
-	loff_t oldsize = inode->i_size;
-	u64 new_tail;
-	timing_t setattr_time;
+int finefs_notify_change(struct dentry *dentry, struct iattr *attr) {
+    struct inode *inode = dentry->d_inode;
+    struct super_block *sb = inode->i_sb;
+    struct finefs_inode *pi = finefs_get_inode(sb, inode);
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
+    int ret = 0;
+    unsigned int ia_valid = attr->ia_valid, attr_mask;
+    loff_t oldsize = inode->i_size;
+    u64 new_tail;
+    timing_t setattr_time;
 
-	FINEFS_START_TIMING(setattr_t, setattr_time);
-	if (!pi)
-		return -EACCES;
+    FINEFS_START_TIMING(setattr_t, setattr_time);
+    if (!pi) return -EACCES;
 
-	// ret = inode_change_ok(inode, attr);
-	// if (ret)
-	// 	return ret;
+    // ret = inode_change_ok(inode, attr);
+    // if (ret)
+    // 	return ret;
 
-	/* Update inode with attr except for size */
-	setattr_copy(inode, attr);
+    /* Update inode with attr except for size */
+    setattr_copy(inode, attr);
 
-	if (ia_valid & ATTR_MODE)
-		sih->i_mode = inode->i_mode;
+    if (ia_valid & ATTR_MODE) sih->i_mode = inode->i_mode;
 
-	attr_mask = ATTR_MODE | ATTR_UID | ATTR_GID | ATTR_SIZE | ATTR_ATIME
-			| ATTR_MTIME | ATTR_CTIME;
+    attr_mask = ATTR_MODE | ATTR_UID | ATTR_GID | ATTR_SIZE | ATTR_ATIME | ATTR_MTIME | ATTR_CTIME;
 
-	ia_valid = ia_valid & attr_mask;
+    ia_valid = ia_valid & attr_mask;
 
-	if (ia_valid == 0)
-		return ret;
+    if (ia_valid == 0) return ret;
 
     // 单纯的pm顺序写，也只是IOPS=2384k, BW=145MiB/s
     // static u64 offset = 1024 << FINEFS_BLOCK_SHIFT;
     // // printf("offset=%llu\n", offset);
-    // finefs_setattr_logentry* entry = (struct finefs_setattr_logentry *)finefs_get_block(sb, offset);
-    // finefs_update_setattr_entry(inode, entry, attr);
-    // offset += 64;
-	// PERSISTENT_BARRIER();
+    // finefs_setattr_logentry* entry = (struct finefs_setattr_logentry *)finefs_get_block(sb,
+    // offset); finefs_update_setattr_entry(inode, entry, attr); offset += 64; PERSISTENT_BARRIER();
 
-	/* We are holding i_mutex so OK to append the log */
-	new_tail = finefs_append_setattr_entry(sb, pi, inode, attr, 0);
+    /* We are holding i_mutex so OK to append the log */
+    new_tail = finefs_append_setattr_entry(sb, pi, inode, attr, 0);
 
     // sih->i_log_tail = new_tail;
-	// finefs_update_tail(pi, new_tail);
+    // finefs_update_tail(pi, new_tail);
     finefs_update_volatile_tail(sih, new_tail);
 
-	/* Only after log entry is committed, we can truncate size */
-	if ((ia_valid & ATTR_SIZE) && (attr->ia_size != oldsize ||
-			pi->i_flags & cpu_to_le32(FINEFS_EOFBLOCKS_FL))) {
-//		finefs_set_blocksize_hint(sb, inode, pi, attr->ia_size);
+    /* Only after log entry is committed, we can truncate size */
+    if ((ia_valid & ATTR_SIZE) &&
+        (attr->ia_size != oldsize || pi->i_flags & cpu_to_le32(FINEFS_EOFBLOCKS_FL))) {
+        //		finefs_set_blocksize_hint(sb, inode, pi, attr->ia_size);
 
-		/* now we can freely truncate the inode */
-		finefs_setsize(inode, oldsize, attr->ia_size);
-	}
+        /* now we can freely truncate the inode */
+        finefs_setsize(inode, oldsize, attr->ia_size);
+    }
 
-	FINEFS_END_TIMING(setattr_t, setattr_time);
-	return ret;
+    FINEFS_END_TIMING(setattr_t, setattr_time);
+    return ret;
 }
 
 void finefs_set_inode_flags(struct inode *inode, struct finefs_inode *pi, unsigned int flags) {
@@ -1511,7 +1463,7 @@ err:
 // num_pages 需要链接的page个数
 // 最后一个page的tail设置为0，fence落盘
 static int finefs_coalesce_log_pages(struct super_block *sb, unsigned long prev_blocknr,
-                                   unsigned long first_blocknr, unsigned long num_pages) {
+                                     unsigned long first_blocknr, unsigned long num_pages) {
     unsigned long next_blocknr;
     u64 curr_block, next_page;
     struct finefs_inode_log_page *curr_page;
@@ -1547,7 +1499,7 @@ static int finefs_coalesce_log_pages(struct super_block *sb, unsigned long prev_
 // new_block 返回分配的第一个page的nvm偏移
 // 返回值是实际分配的page个数，分配好的page已经用链表连接好
 int finefs_allocate_inode_log_pages(struct super_block *sb, struct finefs_inode *pi,
-                                  unsigned long num_pages, u64 *new_block, int cpuid) {
+                                    unsigned long num_pages, u64 *new_block, int cpuid) {
     unsigned long new_inode_blocknr;
     unsigned long first_blocknr;
     unsigned long prev_blocknr;
@@ -1601,7 +1553,8 @@ int finefs_allocate_inode_log_pages(struct super_block *sb, struct finefs_inode 
 // curr_p位置的entry是不是无效
 // length 带回entry的长度
 static bool curr_log_entry_invalid(struct super_block *sb, struct finefs_inode *pi,
-                                   struct finefs_inode_info_header *sih, u64 curr_p, size_t *length) {
+                                   struct finefs_inode_info_header *sih, u64 curr_p,
+                                   size_t *length) {
     struct finefs_setattr_logentry *setattr_entry;
     struct finefs_file_write_entry *entry;
     struct finefs_dentry *dentry;
@@ -1701,8 +1654,8 @@ static void free_curr_page(struct super_block *sb, struct finefs_inode *pi,
 }
 
 int finefs_gc_assign_file_entry(struct super_block *sb, struct finefs_inode_info_header *sih,
-                              struct finefs_file_write_entry *old_entry,
-                              struct finefs_file_write_entry *new_entry) {
+                                struct finefs_file_write_entry *old_entry,
+                                struct finefs_file_write_entry *new_entry) {
     struct finefs_file_write_entry *temp;
     void **pentry;
     unsigned long start_pgoff = old_entry->pgoff;
@@ -1725,7 +1678,8 @@ int finefs_gc_assign_file_entry(struct super_block *sb, struct finefs_inode_info
 }
 
 static int finefs_gc_assign_dentry(struct super_block *sb, struct finefs_inode_info_header *sih,
-                                 struct finefs_dentry *old_dentry, struct finefs_dentry *new_dentry) {
+                                   struct finefs_dentry *old_dentry,
+                                   struct finefs_dentry *new_dentry) {
     struct finefs_dentry *temp;
     void **pentry;
     unsigned long hash;
@@ -1745,7 +1699,8 @@ static int finefs_gc_assign_dentry(struct super_block *sb, struct finefs_inode_i
 }
 
 static int finefs_gc_assign_new_entry(struct super_block *sb, struct finefs_inode *pi,
-                                    struct finefs_inode_info_header *sih, u64 curr_p, u64 new_curr) {
+                                      struct finefs_inode_info_header *sih, u64 curr_p,
+                                      u64 new_curr) {
     struct finefs_file_write_entry *old_entry, *new_entry;
     struct finefs_dentry *old_dentry, *new_dentry;
     void *addr, *new_addr;
@@ -1786,8 +1741,8 @@ static int finefs_gc_assign_new_entry(struct super_block *sb, struct finefs_inod
 
 /* Copy alive log entries to the new log and atomically replace the old log */
 static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_inode *pi,
-                                      struct finefs_inode_info_header *sih, unsigned long blocks,
-                                      unsigned long checked_pages) {
+                                        struct finefs_inode_info_header *sih, unsigned long blocks,
+                                        unsigned long checked_pages) {
     struct finefs_inode_log_page *curr_page = NULL;
     size_t length;
     u64 ino = pi->finefs_ino;
@@ -1808,9 +1763,9 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
     old_curr_p = curr_p;
     old_head = pi->log_head;
     rv_proc("%s Log head 0x%lx, tail 0x%lx", __func__, curr_p, pi->log_tail);
-    if (curr_p == 0 && pi->log_tail == 0) goto out;
+    if (curr_p == 0 && sih->i_log_tail == 0) goto out;
 
-    if (curr_p >> FINEFS_BLOCK_SHIFT == pi->log_tail >> FINEFS_BLOCK_SHIFT) goto out;
+    if (curr_p >> FINEFS_BLOCK_SHIFT == sih->i_log_tail >> FINEFS_BLOCK_SHIFT) goto out;
 
     allocated = finefs_allocate_inode_log_pages(sb, pi, blocks, &new_head);
     if (allocated != blocks) {
@@ -1822,11 +1777,11 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
     }
 
     new_curr = new_head;
-    while (curr_p != pi->log_tail) {
+    while (curr_p != sih->i_log_tail) {
         old_curr_p = curr_p;  // 保存被回收log 链表中的最后一个page
         if (goto_next_page(sb, curr_p)) curr_p = next_log_page(sb, curr_p);
 
-        if (curr_p >> FINEFS_BLOCK_SHIFT == pi->log_tail >> FINEFS_BLOCK_SHIFT) {
+        if (curr_p >> FINEFS_BLOCK_SHIFT == sih->i_log_tail >> FINEFS_BLOCK_SHIFT) {
             /* Don't recycle tail page */
             break;
         }
@@ -1859,8 +1814,9 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
     }
 
     /* Step 1: Link new log to the tail block */
-    tail_block = FINEFS_LOG_BLOCK_OFF(pi->log_tail);
-    curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, FINEFS_LOG_BLOCK_OFF(new_curr));
+    tail_block = FINEFS_LOG_BLOCK_OFF(sih->i_log_tail);
+    curr_page =
+        (struct finefs_inode_log_page *)finefs_get_block(sb, FINEFS_LOG_BLOCK_OFF(new_curr));
     next = curr_page->page_tail.next_page;
     if (next)  // 多分配的空间进行释放
         finefs_free_contiguous_log_blocks(sb, pi, next);
@@ -1876,7 +1832,8 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
 
     /* Step 3: Unlink the old log */
     // 将旧log从链表中断开
-    curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, FINEFS_LOG_BLOCK_OFF(old_curr_p));
+    curr_page =
+        (struct finefs_inode_log_page *)finefs_get_block(sb, FINEFS_LOG_BLOCK_OFF(old_curr_p));
     next = curr_page->page_tail.next_page;
     if (next != tail_block) {
         r_error("Old log error: old curr_p 0x%lx, next 0x%lx curr_p 0x%lx, tail block 0x%lx",
@@ -1904,13 +1861,26 @@ static int need_thorough_gc(struct super_block *sb, struct finefs_inode_info_hea
     return 0;
 }
 
+static int finefs_inode_log_page_num(struct super_block *sb, struct finefs_inode *pi,
+                                     struct finefs_inode_info_header *sih) {
+    int num = 0;
+    struct finefs_inode_log_page *curr_page = NULL;
+    int curr = pi->log_head;
+    while (curr) {
+        ++num;
+        curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
+        curr = curr_page->page_tail.next_page;
+    }
+    return num;
+}
+
 // #define FINEFS_LOG_TEST
 
 // new_block：新分配log page的第一个page的偏移
 // num_pages: 新分配page的个数
 static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode *pi,
-                                  struct finefs_inode_info_header *sih, u64 curr_tail, u64 new_block,
-                                  int num_pages) {
+                                    struct finefs_inode_info_header *sih, u64 curr_tail,
+                                    u64 new_block, int num_pages) {
     u64 curr, next, possible_head = 0;
     int found_head = 0;
     struct finefs_inode_log_page *last_page = NULL;
@@ -1936,7 +1906,7 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
 
     rd_info("%s: log head 0x%lx, tail 0x%lx, new pages: %d", __func__, curr, curr_tail, num_pages);
     while (1) {
-        if (curr >> FINEFS_BLOCK_SHIFT == pi->log_tail >> FINEFS_BLOCK_SHIFT) {
+        if (curr >> FINEFS_BLOCK_SHIFT == sih->i_log_tail >> FINEFS_BLOCK_SHIFT) {
             /* Don't recycle tail page 不回收最后一个page，避免即修改head又修改tail，不能原子*/
             if (found_head == 0) possible_head = cpu_to_le64(curr);
             break;
@@ -1999,6 +1969,8 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     if (sih->valid_bytes % FINEFS_LOG_LAST_ENTRY) blocks++;
 
     FINEFS_END_TIMING(fast_gc_t, gc_time);
+    int log_page_num = finefs_inode_log_page_num(sb, pi, sih);
+    log_assert(log_page_num == sih->log_pages);
 
     // 有效率低于50%，开启彻底gc
     if (need_thorough_gc(sb, sih, blocks, checked_pages)) {
@@ -2007,6 +1979,8 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
             "valid pages %lu",
             sih->ino, checked_pages, blocks);
         finefs_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
+        int log_page_num = finefs_inode_log_page_num(sb, pi, sih);
+        log_assert(log_page_num == sih->log_pages);
     }
 
     return 0;
@@ -2016,7 +1990,7 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
 // 返回新分配log page的偏移地址
 // curr_p = 0 表示为inode分配第一个log page
 static u64 finefs_extend_inode_log(struct super_block *sb, struct finefs_inode *pi,
-                                 struct finefs_inode_info_header *sih, u64 curr_p) {
+                                   struct finefs_inode_info_header *sih, u64 curr_p) {
     u64 new_block;
     int allocated;
     unsigned long num_pages;
@@ -2030,9 +2004,9 @@ static u64 finefs_extend_inode_log(struct super_block *sb, struct finefs_inode *
                 __func__);
             return 0;
         }
-        pi->log_tail = new_block;
+        // pi->log_tail = new_block;
+        // finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 0);
         sih->i_log_tail = new_block;
-        finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 0);
         pi->log_head = new_block;
         sih->log_pages = 1;
         pi->i_blocks++;
@@ -2042,7 +2016,8 @@ static u64 finefs_extend_inode_log(struct super_block *sb, struct finefs_inode *
         //		finefs_dbg("Before append log pages:");
         //		finefs_print_inode_log_page(sb, inode);
         allocated = finefs_allocate_inode_log_pages(sb, pi, num_pages, &new_block);
-        rdv_proc("Link block %lu to block %lu", curr_p >> FINEFS_BLOCK_SHIFT, new_block >> FINEFS_BLOCK_SHIFT);
+        rdv_proc("Link block %lu to block %lu", curr_p >> FINEFS_BLOCK_SHIFT,
+                 new_block >> FINEFS_BLOCK_SHIFT);
         if (allocated <= 0) {
             r_error(
                 "%s ERROR: no inode log page "
@@ -2091,7 +2066,8 @@ static u64 finefs_append_one_log_page(struct super_block *sb, struct finefs_inod
 // extended指示是否扩展了
 // size 要append的log entry大小
 u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
-                         struct finefs_inode_info_header *sih, u64 tail, size_t size, int *extended) {
+                           struct finefs_inode_info_header *sih, u64 tail, size_t size,
+                           int *extended) {
     u64 curr_p;
 
     if (tail)
@@ -2138,8 +2114,9 @@ u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
  * multiple entries.
  * 返回当前entry写入的地址
  */
-u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *pi, struct inode *inode,
-                                 struct finefs_file_write_entry *data, u64 tail) {
+u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *pi,
+                                   struct inode *inode, struct finefs_file_write_entry *data,
+                                   u64 tail) {
     struct finefs_inode_info *si = FINEFS_I(inode);
     struct finefs_inode_info_header *sih = &si->header;
     struct finefs_file_write_entry *entry;
@@ -2154,7 +2131,7 @@ u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *
     if (curr_p == 0) return curr_p;
 
     entry = (struct finefs_file_write_entry *)finefs_get_block(sb, curr_p);
-#if LOG_ENTRY_SIZE==64
+#if LOG_ENTRY_SIZE == 64
     memcpy(entry, data, offsetof(struct finefs_file_write_entry, size));
     barrier();
     entry->entry_version = 0x1234;
@@ -2172,28 +2149,32 @@ u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *
     return curr_p;
 }
 
-void finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi) {
+int finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi) {
     u64 curr_block;
     int freed = 0;
     timing_t free_time;
 
-    if (pi->log_head == 0 || pi->log_tail == 0) return;
+    if (pi->log_head == 0) return 0;
 
     FINEFS_START_TIMING(free_inode_log_t, free_time);
 
     curr_block = pi->log_head;
 
     /* The inode is invalid now, no need to call PCOMMIT */
-    pi->log_head = pi->log_tail = 0;
+    pi->log_head = 0;
     finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
+    rd_info("free inode log %lu", pi->finefs_ino);
 
     freed = finefs_free_contiguous_log_blocks(sb, pi, curr_block);
 
     FINEFS_END_TIMING(free_inode_log_t, free_time);
+
+    return freed;
 }
 
-static inline void finefs_rebuild_file_time_and_size(struct super_block *sb, struct finefs_inode *pi,
-                                                   struct finefs_file_write_entry *entry) {
+static inline void finefs_rebuild_file_time_and_size(struct super_block *sb,
+                                                     struct finefs_inode *pi,
+                                                     struct finefs_file_write_entry *entry) {
     if (!entry || !pi) return;
 
     pi->i_ctime = cpu_to_le32(entry->mtime);
@@ -2202,7 +2183,7 @@ static inline void finefs_rebuild_file_time_and_size(struct super_block *sb, str
 }
 
 int finefs_rebuild_file_inode_tree(struct super_block *sb, struct finefs_inode *pi, u64 pi_addr,
-                                 struct finefs_inode_info_header *sih) {
+                                   struct finefs_inode_info_header *sih) {
     struct finefs_file_write_entry *entry = NULL;
     struct finefs_setattr_logentry *attr_entry = NULL;
     struct finefs_link_change_entry *link_change_entry = NULL;
@@ -2222,8 +2203,9 @@ int finefs_rebuild_file_inode_tree(struct super_block *sb, struct finefs_inode *
 
     curr_p = pi->log_head;
     rdv_proc("Log head 0x%lx, tail 0x%llx", curr_p, pi->log_tail);
-    if (curr_p == 0 && pi->log_tail == 0) return 0;
+    if (curr_p == 0) return 0;
 
+    log_assert(0);
     sih->log_pages = 1;
 
     // TODO: log_tail
