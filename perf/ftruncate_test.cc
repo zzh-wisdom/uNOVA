@@ -34,17 +34,17 @@ int main(int argc, char* argv[]) {
     //     const std::string mntdir = "/tmp/finefs";
     // #endif
     assert(argc == 3);
-    // if (strcmp(argv[1], "nova") == 0) {
-    //     printf("dlopen ./libnova_hook.so\n");
-    //     void *handle = dlopen("./libnova_hook.so", RTLD_NOW);
-    // 	assert(handle);
-    // } else if (strcmp(argv[1], "finefs") == 0) {
-    //     printf("dlopen ./libfinefs_hook.so\n");
-    //     void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
-    // 	assert(handle);
-    // } else {
-    //     exit(-1);
-    // }
+    if (strcmp(argv[1], "nova") == 0) {
+        printf("dlopen ./libnova_hook.so\n");
+        void *handle = dlopen("./libnova_hook.so", RTLD_NOW);
+    	assert(handle);
+    } else if (strcmp(argv[1], "finefs") == 0) {
+        printf("dlopen ./libfinefs_hook.so\n");
+        void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
+    	assert(handle);
+    } else {
+        exit(-1);
+    }
 
     std::string mntdir;
     if (strcmp(argv[1], "nova") == 0) {
