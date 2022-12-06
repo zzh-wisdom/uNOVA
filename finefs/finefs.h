@@ -152,9 +152,7 @@ finefs_get_blocknr(struct super_block *sb, u64 block, unsigned short btype)
 /* ======================= Log entry ========================= */
 
 struct finefs_inode_page_tail {
-	__le64	padding1;
-	__le64	padding2;
-	__le64	padding3;
+	__le64	paddings[7];
 	__le64	next_page;
 } __attribute((__packed__));
 
@@ -250,16 +248,20 @@ struct finefs_dentry {
 	u8	invalid;		/* Invalid now? 恢复时，不应该依赖于该标志*/
 	__le16	de_len;                 /* length of this dentry 即log entry大小*/
 	__le16	links_count;		// 自身的link count
-	__le32	mtime;			/* For both mtime and ctime */
 	__le64	ino;                    /* inode no pointed to by this entry */
 	__le64	size;             // 这个是什么大小？文件吗
+	__le32	mtime;			/* For both mtime and ctime */
 	char	name[FINEFS_NAME_LEN + 1];	/* File name */
+	__le64 entry_version;
 } __attribute((__packed__));
+
+const int s = sizeof(finefs_dentry);
 
 #define FINEFS_DIR_PAD			8	/* Align to 8 bytes boundary */
 #define FINEFS_DIR_ROUND			(FINEFS_DIR_PAD - 1)
-#define FINEFS_DIR_LOG_REC_LEN(name_len)	(((name_len) + 29 + FINEFS_DIR_ROUND) & \
-				      ~FINEFS_DIR_ROUND)
+// #define FINEFS_DIR_LOG_REC_LEN(name_len)	(((name_len) + 29 + FINEFS_DIR_ROUND) & \
+// 				      ~FINEFS_DIR_ROUND)
+#define FINEFS_DIR_LOG_REC_LEN(name_len) (sizeof(struct finefs_dentry))
 
 #if LOG_ENTRY_SIZE==64
 
@@ -300,7 +302,8 @@ struct finefs_link_change_entry {
 	__le32	ctime;
 	__le32	flags;
 	__le32	generation;
-	__le64	paddings[2];
+	__le64	paddings[5];
+	__le64  entry_version;
 } __attribute((__packed__));
 
 enum alloc_type {

@@ -187,8 +187,9 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 	entry->entry_type = DIR_LOG;
 	entry->ino = cpu_to_le64(ino);
 	entry->name_len = dentry->d_name.len;
-	memcpy_to_pmem_nocache(entry->name, dentry->d_name.name,
-				dentry->d_name.len);
+	// memcpy_to_pmem_nocache(entry->name, dentry->d_name.name,
+	// 			dentry->d_name.len);
+	memcpy(entry->name, dentry->d_name.name, dentry->d_name.len);
 	entry->name[dentry->d_name.len] = '\0';
 	entry->file_type = 0;
 	entry->invalid = 0;
@@ -208,7 +209,7 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 			"name len %u, file type %u",
 			curr_p, entry->ino, entry->de_len,
 			entry->name_len, entry->file_type);
-
+	entry->entry_version = 0x1234;
 	finefs_flush_buffer(entry, de_len, 0);
 
 	*curr_tail = curr_p + de_len;

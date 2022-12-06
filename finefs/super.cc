@@ -915,19 +915,24 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
 
     r_info(
         "Data structure size: inode %lu, log_page %lu, "
-        "file_write_entry %lu, dir_entry(max) %d, "
+        "file_write_entry %lu, dentry %lu, "
         "setattr_entry %lu, link_change_entry %lu, "
         "inode_page_tail %lu",
         sizeof(struct finefs_inode), sizeof(struct finefs_inode_log_page),
-        sizeof(struct finefs_file_write_entry), FINEFS_DIR_LOG_REC_LEN(FINEFS_NAME_LEN),
+        sizeof(struct finefs_file_write_entry), sizeof(struct finefs_dentry),
         sizeof(struct finefs_setattr_logentry), sizeof(struct finefs_link_change_entry),
         sizeof(struct finefs_inode_page_tail));
 
+    log_assert(sizeof(struct finefs_inode_log_page) == FINEFS_LOG_SIZE);
     log_assert(sizeof(struct finefs_file_write_entry) == CACHELINE_SIZE);
+    log_assert(sizeof(struct finefs_dentry) == CACHELINE_SIZE);
+    log_assert(sizeof(struct finefs_dentry) == FINEFS_DIR_LOG_REC_LEN(FINEFS_NAME_LEN));
+    log_assert(sizeof(struct finefs_setattr_logentry) == CACHELINE_SIZE);
+    log_assert(sizeof(struct finefs_link_change_entry) == CACHELINE_SIZE);
+    log_assert(sizeof(struct finefs_inode_page_tail) == CACHELINE_SIZE);
 
     assert(sizeof(struct finefs_super_block) <= FINEFS_SB_SIZE);
     assert(sizeof(struct finefs_inode) <= FINEFS_INODE_SIZE);
-    assert(sizeof(struct finefs_inode_log_page) == FINEFS_LOG_SIZE);
 
     rc = finefs_init_rangenode_cache();
     if (rc) {

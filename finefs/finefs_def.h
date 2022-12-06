@@ -35,7 +35,7 @@
 #define FINEFS_INODE_SIZE 128    /* must be power of two */
 #define FINEFS_INODE_BITS   7
 
-#define FINEFS_NAME_LEN 255
+#define FINEFS_NAME_LEN 27
 
 /* ======================= size config ========================= */
 

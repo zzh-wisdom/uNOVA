@@ -132,6 +132,8 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
     u64 ino;
     timing_t create_time;
 
+    log_assert(dentry->d_name.len <= FINEFS_NAME_LEN);
+
     FINEFS_START_TIMING(create_t, create_time);
 
     // 获取nvm中对应的inode地址
@@ -361,6 +363,7 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
     entry->ctime = cpu_to_le32(inode->i_ctime.tv_sec);
     entry->flags = cpu_to_le32(inode->i_flags);
     entry->generation = cpu_to_le32(inode->i_generation);
+    entry->entry_version = 0x1234;
     finefs_flush_buffer(entry, size, 0);
     *new_tail = curr_p + size;
     sih->last_link_change = curr_p;
@@ -495,6 +498,7 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
         r_error("i_nlink(%lu) > FINEFS_LINK_MAX(%lu)", dir->i_nlink, FINEFS_LINK_MAX);
         goto out;
     }
+    log_assert(dentry->d_name.len <= FINEFS_NAME_LEN);
 
     ino = finefs_new_finefs_inode(sb, &pi_addr);
     if (ino == 0) {
