@@ -924,10 +924,14 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
         sizeof(struct finefs_inode_page_tail));
 
     log_assert(sizeof(struct finefs_inode_log_page) == FINEFS_LOG_SIZE);
+#if LOG_ENTRY_SIZE==64
     log_assert(sizeof(struct finefs_file_write_entry) == CACHELINE_SIZE);
+#endif
     log_assert(sizeof(struct finefs_dentry) == CACHELINE_SIZE);
     log_assert(sizeof(struct finefs_dentry) == FINEFS_DIR_LOG_REC_LEN(FINEFS_NAME_LEN));
+#if LOG_ENTRY_SIZE==64
     log_assert(sizeof(struct finefs_setattr_logentry) == CACHELINE_SIZE);
+#endif
     log_assert(sizeof(struct finefs_link_change_entry) == CACHELINE_SIZE);
     log_assert(sizeof(struct finefs_inode_page_tail) == CACHELINE_SIZE);
 
