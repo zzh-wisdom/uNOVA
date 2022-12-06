@@ -490,6 +490,9 @@ ssize_t finefs_cow_file_write(struct file *filp,
 		if (begin_tail == 0)
 			begin_tail = curr_entry;
 		temp_tail = curr_entry + sizeof(struct finefs_file_write_entry);
+
+		// TODO: 目前暂不支持写跨不连续的block
+		log_assert(num_blocks == 0);
 	}
 
 	finefs_memunlock_inode(sb, pi);

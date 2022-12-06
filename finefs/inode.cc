@@ -1282,7 +1282,7 @@ static void finefs_update_setattr_entry(struct inode *inode,
 
 #if LOG_ENTRY_SIZE==64
     barrier();
-    entry->version = 0x1234;
+    entry->entry_version = 0x1234;
 #endif
 
 #ifdef SETATTR_BY_CPY_NT
@@ -1904,6 +1904,8 @@ static int need_thorough_gc(struct super_block *sb, struct finefs_inode_info_hea
     return 0;
 }
 
+// #define FINEFS_LOG_TEST
+
 // new_block：新分配log page的第一个page的偏移
 // num_pages: 新分配page的个数
 static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode *pi,
@@ -1924,13 +1926,15 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     curr = pi->log_head;
     sih->valid_bytes = 0;
 
-    // r_info("%s: log head 0x%lx, tail 0x%lx, new pages: %d", __func__, curr, curr_tail, num_pages);
+#ifdef FINEFS_LOG_TEST
     sih->log_pages += num_pages;
     curr = FINEFS_LOG_BLOCK_OFF(curr_tail);
     curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
     finefs_set_next_page_address(sb, curr_page, new_block, 1);
     return 0;
+#endif
 
+    rd_info("%s: log head 0x%lx, tail 0x%lx, new pages: %d", __func__, curr, curr_tail, num_pages);
     while (1) {
         if (curr >> FINEFS_BLOCK_SHIFT == pi->log_tail >> FINEFS_BLOCK_SHIFT) {
             /* Don't recycle tail page 不回收最后一个page，避免即修改head又修改tail，不能原子*/
@@ -2150,7 +2154,13 @@ u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *
     if (curr_p == 0) return curr_p;
 
     entry = (struct finefs_file_write_entry *)finefs_get_block(sb, curr_p);
+#if LOG_ENTRY_SIZE==64
+    memcpy(entry, data, offsetof(struct finefs_file_write_entry, size));
+    barrier();
+    entry->entry_version = 0x1234;
+#else
     memcpy_to_pmem_nocache(entry, data, sizeof(struct finefs_file_write_entry));
+#endif
     rdv_proc(
         "file %lu entry @ 0x%lx: pgoff %lu, num %u, "
         "block %lu, size %lu",
@@ -2211,7 +2221,7 @@ int finefs_rebuild_file_inode_tree(struct super_block *sb, struct finefs_inode *
     sih->pi_addr = pi_addr;
 
     curr_p = pi->log_head;
-    rdv_proc("Log head 0x%lx, tail 0x%lx", curr_p, pi->log_tail);
+    rdv_proc("Log head 0x%lx, tail 0x%llx", curr_p, pi->log_tail);
     if (curr_p == 0 && pi->log_tail == 0) return 0;
 
     sih->log_pages = 1;

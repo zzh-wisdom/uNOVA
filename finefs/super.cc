@@ -923,6 +923,8 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
         sizeof(struct finefs_setattr_logentry), sizeof(struct finefs_link_change_entry),
         sizeof(struct finefs_inode_page_tail));
 
+    log_assert(sizeof(struct finefs_file_write_entry) == CACHELINE_SIZE);
+
     assert(sizeof(struct finefs_super_block) <= FINEFS_SB_SIZE);
     assert(sizeof(struct finefs_inode) <= FINEFS_INODE_SIZE);
     assert(sizeof(struct finefs_inode_log_page) == FINEFS_LOG_SIZE);

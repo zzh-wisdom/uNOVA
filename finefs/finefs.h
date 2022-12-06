@@ -185,12 +185,35 @@ struct	finefs_inode_log_page {
 /* Inode entry in the log */
 enum finefs_entry_type {
 	FILE_WRITE = 1,
+	// TODO:
+	FILE_WRITE_BEGIN,
+	FILE_WRITE_MIDDLE,
+	FILE_WRITE_END,
 	DIR_LOG,  // 新建一个dir
 	SET_ATTR,
 	LINK_CHANGE,
 	NEXT_PAGE,
 };
 
+#define LOG_ENTRY_SIZE 64
+
+#if LOG_ENTRY_SIZE==64
+struct finefs_file_write_entry {
+	/* ret of find_nvmm_block, the lowest byte is entry type */
+	__le64	block;   // 起始block的NVM偏移地址
+	__le64	pgoff;   // page 偏移
+	__le32	num_pages;  // 写的page个数
+	// TODO： invalid_pages字段是否可以丢弃
+	__le32	invalid_pages; // 为什么这两个不相等就是有效的，其他原因导致无效的page个数？
+	/* For both ctime and mtime */
+	__le32	mtime;
+	__le32	padding;
+	__le64	size;  // 文件的大小, 不要移动定义位置
+	u8      paddings[16];
+	__le64 entry_version;
+} __attribute((__packed__));
+
+#else
 // 40B
 struct finefs_file_write_entry {
 	/* ret of find_nvmm_block, the lowest byte is entry type */
@@ -203,7 +226,8 @@ struct finefs_file_write_entry {
 	__le32	padding;
 	__le64	size;  // 文件的大小
 } __attribute((__packed__));
-const int file_write_entry_size = sizeof(struct finefs_file_write_entry);
+
+#endif
 
 static inline u8 finefs_get_entry_type(void *p)
 {
@@ -237,8 +261,6 @@ struct finefs_dentry {
 #define FINEFS_DIR_LOG_REC_LEN(name_len)	(((name_len) + 29 + FINEFS_DIR_ROUND) & \
 				      ~FINEFS_DIR_ROUND)
 
-#define LOG_ENTRY_SIZE 64
-
 #if LOG_ENTRY_SIZE==64
 
 struct finefs_setattr_logentry {
@@ -252,7 +274,7 @@ struct finefs_setattr_logentry {
 	__le32	ctime;
 	__le64	size;
 	u8      padding[24];
-	__le64 version;
+	__le64 entry_version;
 } __attribute((__packed__));
 #else
 /* Struct of inode attributes change log (setattr) */

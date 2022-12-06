@@ -18,6 +18,16 @@
 1. log先实现为固定大小。
 2. journal为4KB
 
+对于大数据写，可能需要写多个write log entry，此时为了保证原子性，对write entry进行修改，添加三种类似：
+
+- write begin
+- write middle
+- write end
+
+恢复时，只有检查到完整的一对 write begin 和 write end时写才算成功，否则丢弃。
+
+由于cacheline的乱序，可能出现middle丢失，而begin和end已经持久化的情况，此时顺序扫描在第一次检测到middle的version无效时，就直接丢弃。因此该方法可以保证写的原子性。
+
 ## 一些宏
 
 #define LOG_ENTRY_SIZE 64
