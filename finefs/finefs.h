@@ -196,6 +196,8 @@ enum finefs_entry_type {
 #define LOG_ENTRY_SIZE 64
 
 #if LOG_ENTRY_SIZE==64
+
+// TODO: 添加一个中新的log，用于小写，这个改名为大写即可
 struct finefs_file_write_entry {
 	/* ret of find_nvmm_block, the lowest byte is entry type */
 	__le64	block;   // 起始block的NVM偏移地址

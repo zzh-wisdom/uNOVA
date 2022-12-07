@@ -11,6 +11,29 @@
 
 由于堆中不总是满足连续若干page的空间分配要求，因此在某些极端情况下，分配出的log大小可能小于预期，为了处理这种特殊情况，我们需要在log中添加大小字段，以区分log的大小。（希望在实际测试中，这种情况几乎没有发生）。这也好理解，一般只会在写入大小不断变化的负载下，才可能出现。
 
+## 小写slab分配器
+
+分成若干个page链表。不要伙伴算法了，简单的slab
+
+1. 2048
+2. 1024
+3. 512
+4. 256
+5. 128
+6. 64
+
+每一个级别在内存中一个free page链表。 指数递增的slab大小可能会造成比较严重的空间浪费，但是小数据会在后面和平到page中，
+
+- 头： 保存page的个数page_num，当前分配的page指针page_point
+- 链表中的一个节点描述一个nvm page，包括空闲的slab个数，slab_num; 和一个bitmap u64
+
+- 分配时：对cpu对应的slab分配器加锁，到对应级别的free page链表中分配，根据page_point，bitmap分别一个slab，更改bitmap和slab num。
+   1. 如果free page链表为空，则从全局的page head中分配一个空闲页（可以搞成批量分配多个page）
+   2. 如果page分配完成，从链表中删除，并释放对应的内存结构。更改page_point和page_num
+- 释放时：根据page编号得到它所属的cpu，并对该cpu对应的slab分配器加锁。扫描对应的级别的page list。
+  - 如果找到对应的page，则更改bitmap和slab_num.
+  - 如果没找到，则插入一个新的page到尾部，更新page_num
+
 ## 事务流程
 
 ### rmdir
