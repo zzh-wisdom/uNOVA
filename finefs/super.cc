@@ -40,6 +40,42 @@
 // static const struct export_operations finefs_export_ops;
 static struct kmem_cache *finefs_inode_cachep;
 static struct kmem_cache *finefs_range_node_cachep;
+struct kmem_cache *finefs_file_entry_cachep;
+
+static int init_file_entry_cache() {
+    finefs_file_entry_cachep =
+        kmem_cache_create(sizeof(finefs_file_page_entry), sizeof(finefs_file_page_entry));
+    if (finefs_file_entry_cachep == NULL) return -ENOMEM;
+    return 0;
+}
+
+static void destroy_file_entry_cache(void) { kmem_cache_destroy(finefs_file_entry_cachep); }
+
+static int init_inode_cache() {
+    finefs_inode_cachep =
+        kmem_cache_create(sizeof(struct finefs_inode_info), sizeof(struct finefs_inode_info));
+    if (finefs_inode_cachep == NULL) return -ENOMEM;
+    return 0;
+}
+
+static void destroy_inode_cache(void) { kmem_cache_destroy(finefs_inode_cachep); }
+
+static struct inode *finefs_alloc_inode(struct super_block *sb) {
+    rdv_proc("%s", __func__);
+    struct finefs_inode_info *vi;
+    vi = (struct finefs_inode_info *)kmem_cache_alloc(finefs_inode_cachep);
+    if (!vi) return NULL;
+    // vi->vfs_inode.i_version = 1;
+    return &vi->vfs_inode;
+}
+
+static void finefs_destroy_inode(struct inode *inode) {
+    rdv_proc("%s: %lu", __func__, inode->i_ino);
+    // call_rcu(&inode->i_rcu, finefs_i_callback);
+    struct finefs_inode_info *vi = FINEFS_I(inode);
+    kmem_cache_free(finefs_inode_cachep, vi);
+}
+
 
 /* FIXME: should the following variable be one per FINEFS instance? */
 unsigned int finefs_dbgmask = 0;
@@ -51,10 +87,17 @@ int finefs_init_rangenode_cache(void) {
     if (finefs_range_node_cachep == NULL) return -ENOMEM;
     return 0;
 }
-
 void finefs_destroy_rangenode_cache(void) {
     r_warning("TODO: 优化 kmem_cache");
     kmem_cache_destroy(finefs_range_node_cachep);
+}
+static inline struct finefs_range_node *finefs_alloc_range_node(struct super_block *sb) {
+    struct finefs_range_node *p;
+    p = (struct finefs_range_node *)kmem_cache_alloc(finefs_range_node_cachep);
+    return p;
+}
+void finefs_free_range_node(struct finefs_range_node *node) {
+    kmem_cache_free(finefs_range_node_cachep, node);
 }
 
 static void finefs_set_blocksize(struct super_block *sb, unsigned long size) {
@@ -417,22 +460,6 @@ static inline void finefs_set_default_opts(struct finefs_sb_info *sbi) {
 // 	return 0;
 // }
 
-static struct inode *finefs_alloc_inode(struct super_block *sb) {
-    rdv_proc("%s", __func__);
-    struct finefs_inode_info *vi;
-    vi = (struct finefs_inode_info *)kmem_cache_alloc(finefs_inode_cachep);
-    if (!vi) return NULL;
-    // vi->vfs_inode.i_version = 1;
-    return &vi->vfs_inode;
-}
-
-static void finefs_destroy_inode(struct inode *inode) {
-    rdv_proc("%s: %lu", __func__, inode->i_ino);
-    // call_rcu(&inode->i_rcu, finefs_i_callback);
-    struct finefs_inode_info *vi = FINEFS_I(inode);
-    kmem_cache_free(finefs_inode_cachep, vi);
-}
-
 // int finefs_statfs(struct dentry *d, struct kstatfs *buf)
 // {
 // 	struct super_block *sb = d->d_sb;
@@ -529,22 +556,12 @@ static void finefs_destroy_inode(struct inode *inode) {
 // 	return ret;
 // }
 
-void finefs_free_range_node(struct finefs_range_node *node) {
-    kmem_cache_free(finefs_range_node_cachep, node);
-}
-
 void finefs_free_blocknode(struct super_block *sb, struct finefs_range_node *node) {
     finefs_free_range_node(node);
 }
 
 void finefs_free_inode_node(struct super_block *sb, struct finefs_range_node *node) {
     finefs_free_range_node(node);
-}
-
-static inline struct finefs_range_node *finefs_alloc_range_node(struct super_block *sb) {
-    struct finefs_range_node *p;
-    p = (struct finefs_range_node *)kmem_cache_alloc(finefs_range_node_cachep);
-    return p;
 }
 
 // 内存cache中申请一个空间
@@ -556,30 +573,12 @@ struct finefs_range_node *finefs_alloc_inode_node(struct super_block *sb) {
     return finefs_alloc_range_node(sb);
 }
 
-// static void finefs_i_callback(struct rcu_head *head)
-// {
-// 	struct inode *inode = container_of(head, struct inode, i_rcu);
-// 	struct finefs_inode_info *vi = FINEFS_I(inode);
-
-// 	finefs_dbg_verbose("%s: ino %lu\n", __func__, inode->i_ino);
-// 	kmem_cache_free(finefs_inode_cachep, vi);
-// }
-
 // static void init_once(void *foo)
 // {
 // 	struct finefs_inode_info *vi = foo;
 
 // 	inode_init_once(&vi->vfs_inode);
 // }
-
-static int init_inodecache() {
-    finefs_inode_cachep =
-        kmem_cache_create(sizeof(struct finefs_inode_info), sizeof(struct finefs_inode_info));
-    if (finefs_inode_cachep == NULL) return -ENOMEM;
-    return 0;
-}
-
-static void destroy_inodecache(void) { kmem_cache_destroy(finefs_inode_cachep); }
 
 // static struct dentry *finefs_mount(struct file_system_type *fs_type, int flags, const char
 // *dev_name,
@@ -673,7 +672,8 @@ static void finefs_put_super(struct super_block *sb) {
     FREE(sbi);
     sb->s_fs_info = NULL;
 
-    destroy_inodecache();
+    destroy_inode_cache();
+    destroy_file_entry_cache();
     finefs_destroy_rangenode_cache();
 }
 
@@ -943,8 +943,11 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
         goto out0;
     }
 
-    rc = init_inodecache();
+    rc = init_inode_cache();
     if (rc) goto out1;
+
+    rc = init_file_entry_cache();
+    if (rc) goto out2;
 
     //
     // rc = register_filesystem(&finefs_fs_type);
@@ -954,14 +957,17 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
     rc = finefs_fill_super(sb, cfg->format);
     if (rc) {
         r_error("%s fail.\n", "finefs_fill_super");
-        goto out2;
+        goto out3;
     }
 
     FINEFS_END_TIMING(init_t, init_time);
     return 0;
 
+out3:
+    destroy_file_entry_cache();
+
 out2:
-    destroy_inodecache();
+    destroy_inode_cache();
 out1:
     finefs_destroy_rangenode_cache();
 out0:

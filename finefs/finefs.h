@@ -193,6 +193,25 @@ enum finefs_entry_type {
 	NEXT_PAGE,
 };
 
+struct finefs_file_write_entry;
+struct finefs_file_page_entry {
+	finefs_file_write_entry* nvm_entry_p;
+	__le64 file_pgoff;   // page 偏移
+	void* nvm_block_p;
+};
+void finefs_page_write_entry_set(finefs_file_page_entry* entry,
+	finefs_file_write_entry* nvm_entry_p, u64 file_pgoff, void* nvm_block_p);
+
+extern struct kmem_cache *finefs_file_entry_cachep;
+static inline struct finefs_file_page_entry *finefs_alloc_page_entry(struct super_block *sb) {
+    struct finefs_file_page_entry *p;
+    p = (struct finefs_file_page_entry *)kmem_cache_alloc(finefs_file_entry_cachep);
+    return p;
+}
+static inline void finefs_free_page_entry(struct finefs_file_page_entry *node) {
+    kmem_cache_free(finefs_file_entry_cachep, node);
+}
+
 #define LOG_ENTRY_SIZE 64
 
 #if LOG_ENTRY_SIZE==64
@@ -201,14 +220,14 @@ enum finefs_entry_type {
 struct finefs_file_write_entry {
 	/* ret of find_nvmm_block, the lowest byte is entry type */
 	__le64	block;   // 起始block的NVM偏移地址
-	__le64	pgoff;   // page 偏移
+	__le64	pgoff;   // page 偏移(编号)
 	__le32	num_pages;  // 写的page个数
 	// TODO： invalid_pages字段是否可以丢弃
 	__le32	invalid_pages; // 为什么这两个不相等就是有效的，其他原因导致无效的page个数？
 	/* For both ctime and mtime */
 	__le32	mtime;
 	__le32	padding;
-	__le64	size;  // 文件的大小, 不要移动定义位置
+	__le64	size;    // 文件的大小, 不要移动定义位置
 	u8      paddings[16];
 	__le64 entry_version;
 } __attribute((__packed__));
@@ -732,16 +751,28 @@ static inline void memset_nt(void *dest, uint32_t dword, size_t length)
 		: "=D"(dummy1), "=d" (dummy2) : "D" (dest), "a" (qword), "d" (length) : "memory", "rcx");
 }
 
-static inline struct finefs_file_write_entry *
-finefs_get_write_entry(struct super_block *sb,
+// static inline struct finefs_file_write_entry *
+// finefs_get_write_entry(struct super_block *sb,
+// 	struct finefs_inode_info *si, unsigned long blocknr)
+// {
+// 	struct finefs_inode_info_header *sih = &si->header;
+// 	struct finefs_file_write_entry *entry;
+
+// 	entry = (struct finefs_file_write_entry *)radix_tree_lookup(&sih->tree, blocknr);
+
+// 	return entry;
+// }
+
+static inline struct finefs_file_page_entry*
+finefs_get_page_entry(struct super_block *sb,
 	struct finefs_inode_info *si, unsigned long blocknr)
 {
 	struct finefs_inode_info_header *sih = &si->header;
-	struct finefs_file_write_entry *entry;
+	struct finefs_file_page_entry *page_entry_dram;
 
-	entry = (struct finefs_file_write_entry *)radix_tree_lookup(&sih->tree, blocknr);
+	page_entry_dram = (struct finefs_file_page_entry *)radix_tree_lookup(&sih->tree, blocknr);
 
-	return entry;
+	return page_entry_dram;
 }
 
 void finefs_print_curr_log_page(struct super_block *sb, u64 curr);
@@ -777,19 +808,47 @@ static inline unsigned long get_nvmm(struct super_block *sb,
 		- data->pgoff;
 }
 
+// 获取偏移 pgoff 对应的块号
+static inline unsigned long get_blocknr_from_page_entry(struct super_block *sb,
+	struct finefs_inode_info_header *sih,
+	finefs_file_page_entry *data, unsigned long pgoff)
+{
+	// if (data->pgoff > pgoff || (unsigned long)data->pgoff +
+	// 		(unsigned long)data->num_pages <= pgoff) {
+	// 	struct finefs_sb_info *sbi = FINEFS_SB(sb);
+	// 	struct finefs_inode *pi;
+	// 	u64 curr;
+
+	// 	curr = finefs_get_addr_off(sbi, data);
+	// 	rd_info("Entry ERROR: inode %lu, curr 0x%lx, pgoff %lu, "
+	// 		"entry pgoff %lu, num %u", sih->ino,
+	// 		curr, pgoff, data->pgoff, data->num_pages);
+	// 	pi = (struct finefs_inode *)finefs_get_block(sb, sih->pi_addr);
+	// 	finefs_print_finefs_log_pages(sb, sih, pi);
+	// 	finefs_print_finefs_log(sb, sih, pi);
+	// 	log_assert(0);
+	// }
+	finefs_file_write_entry* nvm_write_entry = data->nvm_entry_p;
+	dlog_assert(data->file_pgoff == pgoff);
+	dlog_assert(nvm_write_entry->pgoff <= pgoff &&
+		nvm_write_entry->pgoff + nvm_write_entry->num_pages > pgoff);
+	return (unsigned long)((char*)finefs_get_block(sb, 0) - (char*)data->nvm_block_p)
+		>> FINEFS_BLOCK_SHIFT;
+}
+
 static inline u64 finefs_find_nvmm_block(struct super_block *sb,
-	struct finefs_inode_info *si, struct finefs_file_write_entry *entry,
+	struct finefs_inode_info *si, struct finefs_file_page_entry *page_entry,
 	unsigned long blocknr)
 {
 	unsigned long nvmm;
 
-	if (!entry) {
-		entry = finefs_get_write_entry(sb, si, blocknr);
-		if (!entry)
+	if (!page_entry) {
+		page_entry = finefs_get_page_entry(sb, si, blocknr);
+		if (!page_entry)
 			return 0;
 	}
 
-	nvmm = get_nvmm(sb, &si->header, entry, blocknr);
+	nvmm = get_blocknr_from_page_entry(sb, &si->header, page_entry, blocknr);
 	return nvmm << FINEFS_BLOCK_SHIFT;
 }
 
@@ -1021,7 +1080,9 @@ int finefs_get_inode_address(struct super_block *sb, u64 ino,
 	u64 *pi_addr, int extendable);
 int finefs_set_blocksize_hint(struct super_block *sb, struct inode *inode,
 	struct finefs_inode *pi, loff_t new_size);
-struct finefs_file_write_entry *finefs_find_next_entry(struct super_block *sb,
+// struct finefs_file_write_entry *finefs_find_next_entry(struct super_block *sb,
+// 	struct finefs_inode_info_header *sih, pgoff_t pgoff);
+struct finefs_file_page_entry *finefs_find_next_page_entry(struct super_block *sb,
 	struct finefs_inode_info_header *sih, pgoff_t pgoff);
 extern struct inode *finefs_iget(struct super_block *sb, unsigned long ino);
 extern void finefs_evict_inode(struct inode *inode);

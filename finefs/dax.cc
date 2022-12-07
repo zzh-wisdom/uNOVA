@@ -29,7 +29,8 @@ do_dax_mapping_read(struct file *filp, char *buf,
 	struct super_block *sb = inode->i_sb;
 	struct finefs_inode_info *si = FINEFS_I(inode);
 	struct finefs_inode_info_header *sih = &si->header;
-	struct finefs_file_write_entry *entry;
+	struct finefs_file_page_entry *page_entry;
+	struct finefs_file_write_entry *write_entry;
 	pgoff_t index, end_index;
 	unsigned long offset;
 	loff_t isize, pos;
@@ -78,8 +79,8 @@ do_dax_mapping_read(struct file *filp, char *buf,
 			}
 		}
 
-		entry = finefs_get_write_entry(sb, si, index);
-		if (unlikely(entry == NULL)) {
+		page_entry = finefs_get_page_entry(sb, si, index);
+		if (unlikely(page_entry == NULL)) {
 			// 一个空洞的页
 			rdv_proc("Required extent not found: pgoff %lu, "
 				"inode size %lld", index, isize);
@@ -89,22 +90,25 @@ do_dax_mapping_read(struct file *filp, char *buf,
 		}
 
 		/* Find contiguous blocks */
-		if (index < entry->pgoff ||
-			index - entry->pgoff >= entry->num_pages) { // 超出范围了
-			r_error("%s ERROR: %lu, entry pgoff %lu, num %u, "
-				"blocknr %lu", __func__, index, entry->pgoff,
-				entry->num_pages, entry->block >> FINEFS_BLOCK_SHIFT);
-			return -EINVAL;
-		}
-		if (entry->invalid_pages == 0) {
-			nr = (entry->num_pages - (index - entry->pgoff))
+		// if (index < entry->pgoff ||
+		// 	index - entry->pgoff >= entry->num_pages) { // 超出范围了
+		// 	r_error("%s ERROR: %lu, entry pgoff %lu, num %u, "
+		// 		"blocknr %lu", __func__, index, entry->pgoff,
+		// 		entry->num_pages, entry->block >> FINEFS_BLOCK_SHIFT);
+		// 	return -EINVAL;
+		// }
+		log_assert(index == page_entry->file_pgoff);
+		write_entry = page_entry->nvm_entry_p;
+		if (write_entry->invalid_pages == 0) {
+			nr = (write_entry->num_pages - (index - write_entry->pgoff))
 				* FINEFS_BLOCK_SIZE;
 		} else {  // 如果有无效的page，一个一个page的拷贝。防止下一个page就是无效的
 			nr = FINEFS_BLOCK_SIZE;
 		}
 
-		nvmm = get_nvmm(sb, sih, entry, index);
-		dax_mem = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
+		// nvmm = get_nvmm(sb, sih, entry, index);
+		// dax_mem = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
+		dax_mem = page_entry->nvm_block_p;
 
 memcpy:
 		nr = nr - offset;
@@ -170,21 +174,21 @@ ssize_t finefs_dax_file_read(struct file *filp, char *buf,
 // is_end_blk为true，表示覆盖的是尾部，则就要拷贝头部数据
 static inline int finefs_copy_partial_block(struct super_block *sb,
 	struct finefs_inode_info_header *sih,
-	struct finefs_file_write_entry *entry, unsigned long index,
+	struct finefs_file_page_entry *entry, unsigned long index,
 	size_t offset, void* kmem, bool is_end_blk)
 {
 	void *ptr;
 	unsigned long nvmm;
 
-	nvmm = get_nvmm(sb, sih, entry, index);
-	ptr = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
-	if (ptr != NULL) {
-		if (is_end_blk)
-			memcpy(kmem + offset, ptr + offset,
-				sb->s_blocksize - offset);
-		else
-			memcpy(kmem, ptr, offset);
-	}
+	// nvmm = get_nvmm(sb, sih, entry, index);
+	// ptr = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
+	ptr = entry->nvm_block_p;
+	log_assert(ptr);
+	if (is_end_blk)
+		memcpy(kmem + offset, ptr + offset,
+			sb->s_blocksize - offset);
+	else
+		memcpy(kmem, ptr, offset);
 
 	return 0;
 }
@@ -202,7 +206,8 @@ static void finefs_handle_head_tail_blocks(struct super_block *sb,
 	struct finefs_inode_info_header *sih = &si->header;
 	size_t offset, eblk_offset;
 	unsigned long start_blk, end_blk, num_blocks;
-	struct finefs_file_write_entry *entry;
+	struct finefs_file_page_entry *page_entry;
+	struct finefs_file_write_entry *write_entry;
 	timing_t partial_time;
 
 	FINEFS_START_TIMING(partial_block_t, partial_time);
@@ -219,14 +224,14 @@ static void finefs_handle_head_tail_blocks(struct super_block *sb,
 	rdv_proc("%s: start offset %lu start blk %lu %p", __func__,
 				offset, start_blk, kmem);
 	if (offset != 0) {
-		entry = finefs_get_write_entry(sb, si, start_blk);
-		if (entry == NULL) {
+		page_entry = finefs_get_page_entry(sb, si, start_blk);
+		if (page_entry == NULL) {
 			/* Fill zero */
 		    	memset(kmem, 0, offset);
 		} else {
 			/* Copy from original block */
 			// 处理第一个非对齐的块
-			finefs_copy_partial_block(sb, sih, entry, start_blk,
+			finefs_copy_partial_block(sb, sih, page_entry, start_blk,
 					offset, kmem, false);
 		}
 		finefs_flush_buffer(kmem, offset, 0);
@@ -239,14 +244,14 @@ static void finefs_handle_head_tail_blocks(struct super_block *sb,
 	rdv_proc("%s: end offset %lu, end blk %lu %p", __func__,
 				eblk_offset, end_blk, kmem);
 	if (eblk_offset != 0) {
-		entry = finefs_get_write_entry(sb, si, end_blk);
-		if (entry == NULL) {
+		page_entry = finefs_get_page_entry(sb, si, end_blk);
+		if (page_entry == NULL) {
 			/* Fill zero */
 		    	memset(kmem + eblk_offset, 0,
 					sb->s_blocksize - eblk_offset);
 		} else {
 			/* Copy from original block */
-			finefs_copy_partial_block(sb, sih, entry, end_blk,
+			finefs_copy_partial_block(sb, sih, page_entry, end_blk,
 					eblk_offset, kmem, true);
 		}
 		finefs_flush_buffer(kmem + eblk_offset,
@@ -421,7 +426,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 						allocated, blocknr);
 
 		if (allocated <= 0) {
-			r_warning("%s alloc blocks failed %d", __func__,
+			r_error("%s alloc blocks failed %d", __func__,
 								allocated);
 			ret = allocated;
 			goto out;
@@ -434,7 +439,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 
 		// 新配备区域的nvm虚拟地址
 		kmem = finefs_get_block(inode->i_sb,
-			finefs_get_block_off(sb, blocknr,	pi->i_blk_type));
+			finefs_get_block_off(sb, blocknr, pi->i_blk_type));
 
 		if (offset || ((offset + bytes) & (FINEFS_BLOCK_SIZE - 1)) != 0)
 			finefs_handle_head_tail_blocks(sb, pi, inode, pos, bytes,
@@ -443,8 +448,8 @@ ssize_t finefs_cow_file_write(struct file *filp,
 		/* Now copy from user buf */
 //		finefs_dbg("Write: %p", kmem);
 		FINEFS_START_TIMING(memcpy_w_nvmm_t, memcpy_time);
-		copied = bytes - memcpy_to_pmem_nocache(kmem + offset,
-						buf, bytes);
+		// 写入更改的数据区间
+		copied = bytes - memcpy_to_pmem_nocache(kmem + offset, buf, bytes);
 		FINEFS_END_TIMING(memcpy_w_nvmm_t, memcpy_time);
 
 		entry_data.pgoff = cpu_to_le64(start_blk);

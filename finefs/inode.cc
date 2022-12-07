@@ -183,6 +183,7 @@ int finefs_get_inode_address(struct super_block *sb, u64 ino, u64 *pi_addr, int 
 
 // 释放连续的数据块
 // 返回实质释放的page个数
+// TODO: 这里还可以优化
 static inline int finefs_free_contiguous_data_blocks(
     struct super_block *sb, struct finefs_inode_info_header *sih, struct finefs_inode *pi,
     struct finefs_file_write_entry *entry, unsigned long pgoff, unsigned long num_pages,
@@ -196,7 +197,7 @@ static inline int finefs_free_contiguous_data_blocks(
             "invalid %lu, try to free %lu, pgoff %lu",
             __func__, sih->ino, entry->pgoff, entry->num_pages, entry->invalid_pages, num_pages,
             pgoff);
-        return freed;
+        return freed;  // 这是有可能发生的
     }
 
     // TODO: 这个又是NVM本地写，随机性很严重
@@ -330,6 +331,7 @@ int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_hea
                             unsigned long start_blocknr, unsigned long last_blocknr,
                             bool delete_nvmm, bool delete_mmap) {
     struct finefs_file_write_entry *entry;
+    struct finefs_file_page_entry *page_entry_dram;
     struct finefs_inode *pi;
     unsigned long free_blocknr = 0, num_free = 0;
     unsigned long pgoff = start_blocknr;
@@ -352,8 +354,9 @@ int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_hea
 
     pgoff = start_blocknr;
     while (pgoff <= last_blocknr) {
-        entry = (struct finefs_file_write_entry *)radix_tree_lookup(&sih->tree, pgoff);
-        if (entry) {
+        page_entry_dram = (struct finefs_file_page_entry *)radix_tree_lookup(&sih->tree, pgoff);
+        if (page_entry_dram) {
+            entry = page_entry_dram->nvm_entry_p;
             ret = radix_tree_delete(&sih->tree, pgoff);
             BUG_ON(!ret || ret != entry);
             if (delete_nvmm)
@@ -362,8 +365,9 @@ int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_hea
             pgoff++;
         } else {
             /* We are finding a hole. Jump to the next entry. */
-            entry = finefs_find_next_entry(sb, sih, pgoff);
-            if (!entry) break;
+            page_entry_dram = finefs_find_next_page_entry(sb, sih, pgoff);
+            if (!page_entry_dram) break;
+            entry = page_entry_dram->nvm_entry_p;
             pgoff++;
             pgoff = pgoff > entry->pgoff ? pgoff : entry->pgoff;
         }
@@ -435,11 +439,23 @@ static void finefs_truncate_file_blocks(struct inode *inode, loff_t start, loff_
     return;
 }
 
-struct finefs_file_write_entry *finefs_find_next_entry(struct super_block *sb,
-                                                       struct finefs_inode_info_header *sih,
-                                                       pgoff_t pgoff) {
-    struct finefs_file_write_entry *entry = NULL;
-    struct finefs_file_write_entry *entries[1];
+// struct finefs_file_write_entry *finefs_find_next_entry(struct super_block *sb,
+//                                                        struct finefs_inode_info_header *sih,
+//                                                        pgoff_t pgoff) {
+//     struct finefs_file_write_entry *entry = NULL;
+//     struct finefs_file_write_entry *entries[1];
+//     int nr_entries;
+
+//     nr_entries = radix_tree_gang_lookup(&sih->tree, (void **)entries, pgoff, 1);
+//     if (nr_entries == 1) entry = entries[0];
+
+//     return entry;
+// }
+
+struct finefs_file_page_entry *finefs_find_next_page_entry(struct super_block *sb,
+	struct finefs_inode_info_header *sih, pgoff_t pgoff) {
+    struct finefs_file_page_entry *entry = NULL;
+    struct finefs_file_page_entry *entries[1];
     int nr_entries;
 
     nr_entries = radix_tree_gang_lookup(&sih->tree, (void **)entries, pgoff, 1);
@@ -494,42 +510,60 @@ struct finefs_file_write_entry *finefs_find_next_entry(struct super_block *sb,
 // 	return blocks;
 // }
 
+void finefs_page_write_entry_set(finefs_file_page_entry* entry,
+	finefs_file_write_entry* nvm_entry_p, u64 file_pgoff, void* nvm_block_p) {
+    entry->nvm_entry_p = nvm_entry_p;
+    entry->file_pgoff = file_pgoff;
+    entry->nvm_block_p = nvm_block_p;
+}
+
 // file 写操作时，更新radix tree
 int finefs_assign_write_entry(struct super_block *sb, struct finefs_inode *pi,
                               struct finefs_inode_info_header *sih,
                               struct finefs_file_write_entry *entry, bool free) {
-    struct finefs_file_write_entry *old_entry;
+    struct finefs_file_write_entry *old_nvm_entry;
+    finefs_file_page_entry* old_dram_entry;
     void **pentry;
     unsigned long old_nvmm;
     unsigned long start_pgoff = entry->pgoff;
+    unsigned long start_block = entry->block;
     unsigned int num = entry->num_pages;
-    unsigned long curr_pgoff;
+    unsigned long curr_pgoff = start_pgoff;
+    char* curr_block_p = (char*)finefs_get_block(sb, start_block);
     int i;
     int ret;
     timing_t assign_time;
+    finefs_file_page_entry* dram_entry = nullptr;
 
     FINEFS_START_TIMING(assign_t, assign_time);
     for (i = 0; i < num; i++) {  // 插入也只能一个一个page插入
-        curr_pgoff = start_pgoff + i;
-
         pentry = radix_tree_lookup_slot(&sih->tree, curr_pgoff);
         if (pentry) {
-            old_entry = (struct finefs_file_write_entry *)radix_tree_deref_slot(pentry);
-            old_nvmm = get_nvmm(sb, sih, old_entry, curr_pgoff);
+            old_dram_entry = (struct finefs_file_page_entry *)radix_tree_deref_slot(pentry);
+            old_nvmm = get_blocknr_from_page_entry(sb, sih, old_dram_entry, curr_pgoff);
+            // old_nvmm = get_nvmm(sb, sih, old_entry, curr_pgoff);
+            old_nvm_entry = old_dram_entry->nvm_entry_p;
             if (free) {
-                old_entry->invalid_pages++;
+                old_nvm_entry->invalid_pages++;
                 finefs_free_data_blocks(sb, pi, old_nvmm, 1);
                 pi->i_blocks--;
             }
-            radix_tree_replace_slot(pentry, entry);
+            finefs_page_write_entry_set(old_dram_entry, entry, curr_pgoff, curr_block_p);
+            // radix_tree_replace_slot(pentry, entry);
         } else {
             // 之前是hole/初始化
-            ret = radix_tree_insert(&sih->tree, curr_pgoff, entry);
+            dram_entry = finefs_alloc_page_entry(sb);
+            log_assert(dram_entry);
+            finefs_page_write_entry_set(dram_entry, entry, curr_pgoff, curr_block_p);
+            ret = radix_tree_insert(&sih->tree, curr_pgoff, dram_entry);
             if (ret) {
                 rd_info("%s: ERROR %d", __func__, ret);
+                finefs_free_page_entry(dram_entry);
                 goto out;
             }
         }
+        ++curr_pgoff;
+        curr_block_p += FINEFS_BLOCK_SIZE;
     }
 
 out:
@@ -1672,7 +1706,7 @@ static void free_curr_page(struct super_block *sb, struct finefs_inode *pi,
 int finefs_gc_assign_file_entry(struct super_block *sb, struct finefs_inode_info_header *sih,
                                 struct finefs_file_write_entry *old_entry,
                                 struct finefs_file_write_entry *new_entry) {
-    struct finefs_file_write_entry *temp;
+    struct finefs_file_page_entry *temp;
     void **pentry;
     unsigned long start_pgoff = old_entry->pgoff;
     unsigned int num = old_entry->num_pages;
@@ -1685,8 +1719,11 @@ int finefs_gc_assign_file_entry(struct super_block *sb, struct finefs_inode_info
 
         pentry = radix_tree_lookup_slot(&sih->tree, curr_pgoff);
         if (pentry) {
-            temp = (struct finefs_file_write_entry *)radix_tree_deref_slot(pentry);
-            if (temp == old_entry) radix_tree_replace_slot(pentry, new_entry);
+            temp = (struct finefs_file_page_entry *)radix_tree_deref_slot(pentry);
+            if (temp->nvm_entry_p == old_entry) {
+                temp->nvm_entry_p = new_entry;
+                // radix_tree_replace_slot(pentry, new_entry);
+            }
         }
     }
 
