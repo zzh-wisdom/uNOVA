@@ -1492,6 +1492,18 @@ static int finefs_coalesce_log_pages(struct super_block *sb, unsigned long prev_
     return 0;
 }
 
+static int finefs_inode_log_page_num(struct super_block *sb, u64 curr) {
+    int num = 0;
+    struct finefs_inode_log_page *curr_page = NULL;
+    while (curr) {
+        ++num;
+        curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
+        curr = curr_page->page_tail.next_page;
+    }
+    return num;
+}
+
+
 // #define LOG_ZERO
 
 /* Log block resides in NVMM */
@@ -1530,7 +1542,7 @@ int finefs_allocate_inode_log_pages(struct super_block *sb, struct finefs_inode 
     while (num_pages) {
         allocated = finefs_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0, cpuid);
 
-        rdv_proc("Alloc %d log blocks @ 0x%lx", allocated, new_inode_blocknr);
+        r_info("Alloc %d log blocks @ 0x%lx", allocated, new_inode_blocknr);
         if (allocated <= 0) {
             r_error(
                 "%s: no inode log page available: "
@@ -1546,6 +1558,9 @@ int finefs_allocate_inode_log_pages(struct super_block *sb, struct finefs_inode 
     }
 
     *new_block = finefs_get_block_off(sb, first_blocknr, FINEFS_BLOCK_TYPE_4K);
+
+    // int log_page_num = finefs_inode_log_page_num(sb, *new_block);
+    // log_assert(log_page_num == ret_pages && num_pages == 0);
 
     return ret_pages;
 }
@@ -1588,6 +1603,7 @@ static bool curr_log_entry_invalid(struct super_block *sb, struct finefs_inode *
             *length = le16_to_cpu(dentry->de_len);
             break;
         case NEXT_PAGE:
+            log_assert(0);
             /* No more entries in this page */
             *length = FINEFS_BLOCK_SIZE - FINEFS_LOG_ENTRY_LOC(curr_p);
             ;
@@ -1861,19 +1877,6 @@ static int need_thorough_gc(struct super_block *sb, struct finefs_inode_info_hea
     return 0;
 }
 
-static int finefs_inode_log_page_num(struct super_block *sb, struct finefs_inode *pi,
-                                     struct finefs_inode_info_header *sih) {
-    int num = 0;
-    struct finefs_inode_log_page *curr_page = NULL;
-    int curr = pi->log_head;
-    while (curr) {
-        ++num;
-        curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
-        curr = curr_page->page_tail.next_page;
-    }
-    return num;
-}
-
 // #define FINEFS_LOG_TEST
 
 // new_block：新分配log page的第一个page的偏移
@@ -1959,7 +1962,6 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     /* Don't update log tail pointer here */
     // TODO: 这个不一定需要把，如果第一个log page 没有释放，那head没必要改
     finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 1);
-
     if (first_need_free) {
         rdv_proc("Free log head block 0x%lx", curr >> FINEFS_BLOCK_SHIFT);
         finefs_free_log_blocks(sb, pi, finefs_get_blocknr(sb, curr, btype), 1);
@@ -1969,17 +1971,17 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     if (sih->valid_bytes % FINEFS_LOG_LAST_ENTRY) blocks++;
 
     FINEFS_END_TIMING(fast_gc_t, gc_time);
-    int log_page_num = finefs_inode_log_page_num(sb, pi, sih);
-    log_assert(log_page_num == sih->log_pages);
+    // int log_page_num = finefs_inode_log_page_num(sb, pi->log_head);
+    // log_assert(log_page_num == sih->log_pages);
 
     // 有效率低于50%，开启彻底gc
     if (need_thorough_gc(sb, sih, blocks, checked_pages)) {
-        rd_info(
+        r_info(
             "Thorough GC for inode %lu: checked pages %lu, "
             "valid pages %lu",
             sih->ino, checked_pages, blocks);
         finefs_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
-        int log_page_num = finefs_inode_log_page_num(sb, pi, sih);
+        int log_page_num = finefs_inode_log_page_num(sb, pi->log_head);
         log_assert(log_page_num == sih->log_pages);
     }
 

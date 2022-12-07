@@ -117,3 +117,7 @@ target_link_libraries(perf_open
     pthread syscall_intercept dl
 )
 
+add_executable(perf_write perf/write_test.cc)
+target_link_libraries(perf_write
+    pthread syscall_intercept dl
+)

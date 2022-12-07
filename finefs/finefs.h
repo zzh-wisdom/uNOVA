@@ -873,9 +873,7 @@ static inline void finefs_set_next_page_address(struct super_block *sb,
 {
 	curr_page->page_tail.next_page = next_page;
 	finefs_flush_buffer(&curr_page->page_tail,
-				sizeof(struct finefs_inode_page_tail), 0);
-	if (fence)
-		PERSISTENT_BARRIER();
+				sizeof(struct finefs_inode_page_tail), fence);
 }
 
 #define	CACHE_ALIGN(p)	((p) & ~(CACHELINE_SIZE - 1))
@@ -902,8 +900,10 @@ static inline bool goto_next_page(struct super_block *sb, u64 curr_p)
 
 	addr = finefs_get_block(sb, curr_p);
 	type = finefs_get_entry_type(addr);
-	if (type == NEXT_PAGE)
+	if (type == NEXT_PAGE) {
+		log_assert(0);
 		return true;
+	}
 
 	return false;
 }
