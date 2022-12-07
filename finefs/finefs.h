@@ -201,6 +201,7 @@ struct finefs_file_page_entry {
 };
 void finefs_page_write_entry_set(finefs_file_page_entry* entry,
 	finefs_file_write_entry* nvm_entry_p, u64 file_pgoff, void* nvm_block_p);
+bool finefs_page_entry_is_right(super_block* sb, finefs_file_page_entry* page_entry);
 
 extern struct kmem_cache *finefs_file_entry_cachep;
 static inline struct finefs_file_page_entry *finefs_alloc_page_entry(struct super_block *sb) {
@@ -832,8 +833,12 @@ static inline unsigned long get_blocknr_from_page_entry(struct super_block *sb,
 	dlog_assert(data->file_pgoff == pgoff);
 	dlog_assert(nvm_write_entry->pgoff <= pgoff &&
 		nvm_write_entry->pgoff + nvm_write_entry->num_pages > pgoff);
-	return (unsigned long)((char*)finefs_get_block(sb, 0) - (char*)data->nvm_block_p)
-		>> FINEFS_BLOCK_SHIFT;
+	u64 block_off = (unsigned long)((uintptr_t)(data->nvm_block_p) -
+		(uintptr_t)finefs_get_super(sb));
+	u64 write_entry_block = nvm_write_entry->block & FINEFS_BLOCK_MASK;
+	dlog_assert(write_entry_block <= block_off &&
+		write_entry_block + nvm_write_entry->num_pages > block_off);
+	return block_off >> FINEFS_BLOCK_SHIFT;
 }
 
 static inline u64 finefs_find_nvmm_block(struct super_block *sb,

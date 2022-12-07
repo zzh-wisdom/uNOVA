@@ -517,6 +517,22 @@ void finefs_page_write_entry_set(finefs_file_page_entry* entry,
     entry->nvm_block_p = nvm_block_p;
 }
 
+bool finefs_page_entry_is_right(super_block* sb, finefs_file_page_entry* page_entry) {
+    finefs_file_write_entry* write_entry = page_entry->nvm_entry_p;
+    u64 pgoff = page_entry->file_pgoff;
+
+	dlog_assert(write_entry->pgoff <= pgoff &&
+		write_entry->pgoff + write_entry->num_pages > pgoff);
+	u64 block_off = (unsigned long)((uintptr_t)(page_entry->nvm_block_p) -
+		(uintptr_t)finefs_get_super(sb));
+	u64 write_entry_block = write_entry->block & FINEFS_BLOCK_MASK;
+	dlog_assert(write_entry_block <= block_off &&
+		write_entry_block + write_entry->num_pages > block_off);
+
+    return true;
+}
+
+
 // file 写操作时，更新radix tree
 int finefs_assign_write_entry(struct super_block *sb, struct finefs_inode *pi,
                               struct finefs_inode_info_header *sih,
@@ -529,7 +545,7 @@ int finefs_assign_write_entry(struct super_block *sb, struct finefs_inode *pi,
     unsigned long start_block = entry->block;
     unsigned int num = entry->num_pages;
     unsigned long curr_pgoff = start_pgoff;
-    char* curr_block_p = (char*)finefs_get_block(sb, start_block);
+    char* curr_block_p = (char*)finefs_get_block(sb, start_block & FINEFS_BLOCK_MASK);
     int i;
     int ret;
     timing_t assign_time;
@@ -1722,6 +1738,7 @@ int finefs_gc_assign_file_entry(struct super_block *sb, struct finefs_inode_info
             temp = (struct finefs_file_page_entry *)radix_tree_deref_slot(pentry);
             if (temp->nvm_entry_p == old_entry) {
                 temp->nvm_entry_p = new_entry;
+                dlog_assert(finefs_page_entry_is_right(sb, temp));
                 // radix_tree_replace_slot(pentry, new_entry);
             }
         }

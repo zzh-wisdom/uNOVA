@@ -97,8 +97,8 @@ do_dax_mapping_read(struct file *filp, char *buf,
 		// 		entry->num_pages, entry->block >> FINEFS_BLOCK_SHIFT);
 		// 	return -EINVAL;
 		// }
-		log_assert(index == page_entry->file_pgoff);
 		write_entry = page_entry->nvm_entry_p;
+		dlog_assert(index == page_entry->file_pgoff);
 		if (write_entry->invalid_pages == 0) {
 			nr = (write_entry->num_pages - (index - write_entry->pgoff))
 				* FINEFS_BLOCK_SIZE;
