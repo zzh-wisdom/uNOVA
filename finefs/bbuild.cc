@@ -405,7 +405,7 @@ void finefs_save_inode_list_to_log(struct super_block *sb) {
     num_blocks = num_nodes / RANGENODE_PER_PAGE;
     if (num_nodes % RANGENODE_PER_PAGE) num_blocks++;
 
-    allocated = finefs_allocate_inode_log_pages(sb, pi, num_blocks, &new_block);
+    allocated = finefs_allocate_inode_log_pages(sb, pi, num_blocks, &new_block, true);
     if (allocated != num_blocks) {
         r_error("Error saving inode list: %d", allocated);
         return;
@@ -453,7 +453,7 @@ void finefs_save_blocknode_mappings_to_log(struct super_block *sb) {
     num_pages = num_blocknode / RANGENODE_PER_PAGE;
     if (num_blocknode % RANGENODE_PER_PAGE) num_pages++;
 
-    allocated = finefs_allocate_inode_log_pages(sb, pi, num_pages, &new_block);
+    allocated = finefs_allocate_inode_log_pages(sb, pi, num_pages, &new_block, true);
     if (allocated != num_pages) {
         rd_info("Error saving blocknode mappings: %d", allocated);
         return;

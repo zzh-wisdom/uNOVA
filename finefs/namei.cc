@@ -353,7 +353,7 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
     FINEFS_START_TIMING(append_link_change_t, append_time);
     rdv_proc("%s: inode %lu attr change", __func__, inode->i_ino);
 
-    curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended);
+    curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended, false);
     inode->i_blocks = pi->i_blocks;
     if (curr_p == 0) return -ENOMEM;
 

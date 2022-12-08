@@ -152,7 +152,11 @@ finefs_get_blocknr(struct super_block *sb, u64 block, unsigned short btype)
 /* ======================= Log entry ========================= */
 
 struct finefs_inode_page_tail {
-	__le64	paddings[7];
+	__le64	paddings[4];
+	__le32  padding;
+	__le32  valid_num;
+	__le64  bitmap;
+	__le64  log_version;
 	__le64	next_page;
 } __attribute((__packed__));
 
@@ -267,7 +271,8 @@ struct finefs_dentry {
 	u8	entry_type;
 	u8	name_len;               /* length of the dentry name */
 	u8	file_type;              /* file type 没有作用，entry_type已经足够*/
-	u8	invalid;		/* Invalid now? 恢复时，不应该依赖于该标志*/
+	// u8	invalid;		        /* Invalid now? 恢复时，不应该依赖于该标志， TODO: 删除*/
+	u8  padding;
 	__le16	de_len;                 /* length of this dentry 即log entry大小*/
 	__le16	links_count;		// 自身的link count
 	__le64	ino;                    /* inode no pointed to by this entry */
@@ -352,9 +357,9 @@ static inline void finefs_update_tail(struct finefs_inode *pi, u64 new_tail)
 }
 
 /* symlink.c */
-int finefs_block_symlink(struct super_block *sb, struct finefs_inode *pi,
-	struct inode *inode, u64 log_block,
-	unsigned long name_blocknr, const char *symname, int len);
+// int finefs_block_symlink(struct super_block *sb, struct finefs_inode *pi,
+// 	struct inode *inode, u64 log_block,
+// 	unsigned long name_blocknr, const char *symname, int len);
 
 /* Inline functions start here */
 
@@ -925,6 +930,8 @@ enum finefs_new_inode_type {
 	TYPE_MKDIR
 };
 
+/************************* log op ***************************/
+
 // 返回下一个log的指针
 static inline u64 next_log_page(struct super_block *sb, u64 curr_p)
 {
@@ -942,7 +949,45 @@ static inline void finefs_set_next_page_address(struct super_block *sb,
 				sizeof(struct finefs_inode_page_tail), fence);
 }
 
-#define	CACHE_ALIGN(p)	((p) & ~(CACHELINE_SIZE - 1))
+#define FINEFS_LOG_ENTRY_VALID_NUM_INIT (63)
+#define FINEFS_LOG_BITMAP_INIT ((~(0ul)) >> 1)
+
+static inline void finefs_log_page_tail_init(struct super_block *sb,
+	struct finefs_inode_log_page *curr_page, u64 next_page, bool for_gc, int fence) {
+	curr_page->page_tail.valid_num = FINEFS_LOG_ENTRY_VALID_NUM_INIT;
+	curr_page->page_tail.bitmap = FINEFS_LOG_BITMAP_INIT;
+	if(for_gc) {
+		curr_page->page_tail.log_version = 0;
+	} else {
+		curr_page->page_tail.log_version++;
+	}
+	curr_page->page_tail.next_page = next_page;
+	finefs_flush_buffer(&curr_page->page_tail,
+				sizeof(struct finefs_inode_page_tail), fence);
+}
+
+static force_inline bool finefs_log_page_tail_remain_init(struct super_block *sb,
+	struct finefs_inode_log_page *curr_page) {
+	return (curr_page->page_tail.valid_num == FINEFS_LOG_ENTRY_VALID_NUM_INIT) &&
+		(curr_page->page_tail.bitmap == FINEFS_LOG_BITMAP_INIT);
+}
+
+static force_inline bool log_entry_is_set_valid(void* entry) {
+	finefs_inode_page_tail* page_tail = (finefs_inode_page_tail*)FINEFS_LOG_TAIL((uintptr_t)entry);
+	int entry_nr = (((uintptr_t)entry) & FINEFS_LOG_UMASK) >> CACHELINE_SHIFT;
+	return ((page_tail->bitmap >> (entry_nr)) & 1);
+}
+
+static force_inline void log_entry_set_invalid(void* entry) {
+	finefs_inode_page_tail* page_tail = (finefs_inode_page_tail*)FINEFS_LOG_TAIL((uintptr_t)entry);
+	int entry_nr = (((uintptr_t)entry) & FINEFS_LOG_UMASK) >> CACHELINE_SHIFT;
+	dlog_assert((page_tail->bitmap >> (entry_nr)) & 1);
+	--page_tail->valid_num;
+	bitmap_clear_bit_atomic(entry_nr, (unsigned long *)&(page_tail->bitmap));
+	dlog_assert(((page_tail->bitmap >> (entry_nr)) & 1) == 0);
+	dlog_assert(page_tail->valid_num ==
+		bitmap_set_weight((unsigned long *)&(page_tail->bitmap), BITS_PER_TYPE(page_tail->bitmap)));
+}
 
 // 判断能否容下size大小的entry
 static inline bool is_last_entry(u64 curr_p, size_t size)
@@ -1106,13 +1151,13 @@ void finefs_apply_setattr_entry(struct super_block *sb, struct finefs_inode *pi,
 int finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi);
 int finefs_allocate_inode_log_pages(struct super_block *sb,
 	struct finefs_inode *pi, unsigned long num_pages,
-	u64 *new_block, int cpuid=-1);
+	u64 *new_block, bool for_gc, int cpuid=-1);
 int finefs_delete_file_tree(struct super_block *sb,
 	struct finefs_inode_info_header *sih, unsigned long start_blocknr,
 	unsigned long last_blocknr, bool delete_nvmm, bool delete_mmap);
 u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
 	struct finefs_inode_info_header *sih, u64 tail, size_t size,
-	int *extended);
+	int *extended, bool for_gc);
 u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *pi,
 	struct inode *inode, struct finefs_file_write_entry *data, u64 tail);
 int finefs_rebuild_file_inode_tree(struct super_block *sb,

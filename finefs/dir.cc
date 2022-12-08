@@ -89,8 +89,8 @@ static int finefs_remove_dir_radix_tree(struct super_block *sb,
 		}
 		rd_info("%s: %s", __func__, entry->name);
 
-		if (entry->ino == 0 || entry->invalid ||
-		    finefs_check_dentry_match(sb, entry, name, namelen)) {
+		if (entry->ino == 0 ||
+		    finefs_check_dentry_match(sb, entry, name, namelen)) {  // entry->invalid
 			r_error("%s dentry not match: %s, length %d, "
 					"hash %lu", __func__, name,
 					namelen, hash);
@@ -103,9 +103,10 @@ static int finefs_remove_dir_radix_tree(struct super_block *sb,
 			return -EINVAL;
 		}
 
-		/* No need to flush */
-		entry->invalid = 1;  // 把旧的entry标记为无效，只是为了方便垃圾回收，不作用与原子性
+		// /* No need to flush */
+		// entry->invalid = 1;  // 把旧的entry标记为无效，只是为了方便垃圾回收，不作用与原子性
 		// 不flush是因为恢复时可以根据后面的log得知该entry是否有效
+		log_entry_set_invalid(entry);
 	}
 
 	return 0;
@@ -179,7 +180,7 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 	FINEFS_START_TIMING(append_dir_entry_t, append_time);
 
 	// 获取这次写log的位置
-	curr_p = finefs_get_append_head(sb, pidir, sih, tail, size, &extended);
+	curr_p = finefs_get_append_head(sb, pidir, sih, tail, size, &extended, false);
 	if (curr_p == 0)
 		BUG();
 
@@ -192,7 +193,7 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 	memcpy(entry->name, dentry->d_name.name, dentry->d_name.len);
 	entry->name[dentry->d_name.len] = '\0';
 	entry->file_type = 0;
-	entry->invalid = 0;
+	// entry->invalid = 0;
 	entry->mtime = cpu_to_le32(dir->i_mtime.tv_sec);
 	entry->size = cpu_to_le64(dir->i_size);
 
@@ -212,6 +213,7 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 	entry->entry_version = 0x1234;
 	finefs_flush_buffer(entry, de_len, 0);
 
+	dlog_assert(log_entry_is_set_valid(entry));
 	*curr_tail = curr_p + de_len;
 
 	dir->i_blocks = pidir->i_blocks;
@@ -234,7 +236,7 @@ int finefs_append_root_init_entries(struct super_block *sb,
 		return -EINVAL;
 	}
 
-	allocated = finefs_allocate_inode_log_pages(sb, pi, 1, &new_block, cpuid);
+	allocated = finefs_allocate_inode_log_pages(sb, pi, 1, &new_block, cpuid, false);
 	if (allocated != 1) {
 		r_error("ERROR: no inode log page available");
 		return -ENOMEM;
@@ -243,11 +245,12 @@ int finefs_append_root_init_entries(struct super_block *sb,
 	pi->log_head = new_block;
 	pi->i_blocks = 1;
 	finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
+	dlog_assert(finefs_log_page_tail_remain_init(sb, (finefs_inode_log_page*)finefs_get_block(sb, pi->log_head)));
 
 	de_entry = (struct finefs_dentry *)finefs_get_block(sb, new_block);
 	de_entry->entry_type = DIR_LOG;
 	de_entry->name_len = 1;
-	de_entry->invalid = 0;
+	// de_entry->invalid = 0;
 	de_entry->de_len = cpu_to_le16(FINEFS_DIR_LOG_REC_LEN(1));
 	de_entry->links_count = 1;
 	de_entry->mtime = GetTsSec();
@@ -255,6 +258,7 @@ int finefs_append_root_init_entries(struct super_block *sb,
 	de_entry->size = sb->s_blocksize;
 	strncpy(de_entry->name, ".\0", 2);
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(1), 0);
+	dlog_assert(log_entry_is_set_valid(de_entry));
 
 	curr_p = new_block + FINEFS_DIR_LOG_REC_LEN(1);
 
@@ -262,7 +266,7 @@ int finefs_append_root_init_entries(struct super_block *sb,
 					le16_to_cpu(de_entry->de_len));
 	de_entry->entry_type = DIR_LOG;
 	de_entry->name_len = 2;
-	de_entry->invalid = 0;
+	// de_entry->invalid = 0;
 	de_entry->de_len = cpu_to_le16(FINEFS_DIR_LOG_REC_LEN(2));
 	de_entry->links_count = 2;
 	de_entry->mtime = GetTsSec();
@@ -270,6 +274,7 @@ int finefs_append_root_init_entries(struct super_block *sb,
 	de_entry->size = sb->s_blocksize;
 	strncpy(de_entry->name, "..\0", 3);
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(2), 0);
+	dlog_assert(log_entry_is_set_valid(de_entry));
 
 	curr_p += FINEFS_DIR_LOG_REC_LEN(2);
 	// finefs_update_tail(pi, curr_p);
@@ -299,7 +304,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 		return -EINVAL;
 	}
 
-	allocated = finefs_allocate_inode_log_pages(sb, pi, 1, &new_block, cpuid);
+	allocated = finefs_allocate_inode_log_pages(sb, pi, 1, &new_block, cpuid, false);
 	if (allocated != 1) {
 		r_error("ERROR: no inode log page available");
 		return -ENOMEM;
@@ -308,11 +313,12 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	pi->log_head = new_block;
 	pi->i_blocks = 1;
 	finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
+	dlog_assert(finefs_log_page_tail_remain_init(sb, (finefs_inode_log_page*)finefs_get_block(sb, pi->log_head)));
 
 	de_entry = (struct finefs_dentry *)finefs_get_block(sb, new_block);
 	de_entry->entry_type = DIR_LOG;
 	de_entry->name_len = 1;
-	de_entry->invalid = 0;
+	// de_entry->invalid = 0;
 	de_entry->de_len = cpu_to_le16(FINEFS_DIR_LOG_REC_LEN(1));
 	de_entry->links_count = 1;
 	de_entry->mtime = GetTsSec();
@@ -320,6 +326,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	de_entry->size = sb->s_blocksize;
 	strncpy(de_entry->name, ".\0", 2);
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(1), 0);
+	dlog_assert(log_entry_is_set_valid(de_entry));
 
 	curr_p = new_block + FINEFS_DIR_LOG_REC_LEN(1);
 
@@ -327,7 +334,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 					le16_to_cpu(de_entry->de_len));
 	de_entry->entry_type = DIR_LOG;
 	de_entry->name_len = 2;
-	de_entry->invalid = 0;
+	// de_entry->invalid = 0;
 	de_entry->de_len = cpu_to_le16(FINEFS_DIR_LOG_REC_LEN(2));
 	de_entry->links_count = 2;
 	de_entry->mtime = GetTsSec();
@@ -335,6 +342,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	de_entry->size = sb->s_blocksize;
 	strncpy(de_entry->name, "..\0", 3);
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(2), 0);
+	dlog_assert(log_entry_is_set_valid(de_entry));
 
 	curr_p += FINEFS_DIR_LOG_REC_LEN(2);
 	// finefs_update_tail(pi, curr_p);
@@ -554,7 +562,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 			le16_to_cpu(entry->de_len));
 
 		if (entry->ino > 0) {
-			if (entry->invalid == 0) {
+			if (log_entry_is_set_valid(entry)) {
 				/* A valid entry to add */
 				ret = finefs_replay_add_dentry(sb, sih, entry);
 			}
