@@ -13,6 +13,18 @@
 
 gc的log应该从data heap中分配，防止对version的污染。后台gc生成的log中，tail的version设置为0，表示该log不用检查version，一直时有效的。
 
+### log entry
+
+log entry中包含ino和version等信息，因此entry可以乱序存放。
+
+注意的是finefs中存在四种事务：创建inode（目录或者文件）、删除inode（目录或者文件）、文件写（需要的log entry大于1）、和rename（待实现）
+
+正在执行事务的多个log之间需要保证顺序，它们被存放在active log中，一旦事务提交，log之间的顺序可以被打乱。因为事务的本质是让多个log entry同时存在和同时不存在，未提交时保持顺序是为了方便回滚。提交后，它们已经同时存在了，而不论他们的顺序如何。
+
+rename操作，每个dentry log的version依旧取自它们所属的新inode。实际上，rename就是删除inode和创建inode两个操作的结合。只要保证它们的原子性即可。
+
+> 先把所有的log entry操作和bitmap做适配，提交后，再改变gc方式
+
 ## 小写slab分配器
 
 分成若干个page链表。不要伙伴算法了，简单的slab
@@ -56,13 +68,15 @@ TODO: 推荐使用跳表而不是radix tree。后者需要逐个block处理，�
    3. 提交事务，journal head  = tail
 4. 最后上层调用evict_inode真正删除inode，并回收
 
-> 涉及三个实体，父母、孩子和inode有效位。其实父母由inode和dentry组成，这个保证一致即可
+> 涉及三个实体，父母、孩子和inode有效位。这个保证一致即可(包括父母inode的link，dentry删除，和孩子inode的link，如果link为0，则还有valid标志位和version)
 
 更改后：
 
-1. dir log中，写rmdir entry。记录父母删除的inode、iversion和link。表示孩子dentry删除。flush fennce
-2. 执行事务实际删除 inode（即把inode置为无效） flush fence。将旧的entry标记为无效，方便回收
-3. 提交事务写commit entry flush fence
+inode中受到父母影响的状态有：link，valid，和version。因此redo log中需要包含这些信息。
+
+1. dir log中，写rmdir entry（redo）。记录父母删除的inode、更新后的iversion和link。表示孩子dentry删除。flush fennce
+2. 执行事务实际删除 inode（即把inode置为无效，更新iversion） flush fence。将旧的entry标记为无效，方便回收
+3. 提交事务写commit entry flush fence（这个不需要吧，就把上面的当做redo log算了，写入就表示事务完成）
 
 恢复时，仅看到rmdir entry，说明事务未完成，将inode标记为有效，完成回滚。否则保留
 
@@ -72,12 +86,15 @@ TODO: 推荐使用跳表而不是radix tree。后者需要逐个block处理，�
 
 ### 导致log失效的操作有
 
-目录删除 rmdir
-unlink
-setattr
+inode删除 rmdir和unlink
 write
+删除文件导致的block回收
 
-## 注意
+<!-- setattr 不会失效-->
+
+## 总则
+
+### 注意
 
 目前：
 
@@ -93,6 +110,14 @@ write
 恢复时，只有检查到完整的一对 write begin 和 write end时写才算成功，否则丢弃。
 
 由于cacheline的乱序，可能出现middle丢失，而begin和end已经持久化的情况，此时顺序扫描在第一次检测到middle的version无效时，就直接丢弃。因此该方法可以保证写的原子性。
+
+### 遗留问题
+
+1. ftruncate的log需要永远保持有效，避免旧的write log又重新生效。因此当操作多时，比较浪费时间。改进：计算ftruncate总次数，当达到阈值时，后台全部log扫描，回收无用的ftruncate的entry。
+2. 目录的radix-tree依然指向nvm log，这个不是我们工作的重点
+3. 带数据的文件删除，有待优化
+4. 不考虑线程混合，可以看成每个cpu操作的空间和文件都是固定的（除了rename）。而且测试不会测混合操作的情况。如果需要完这个，注意（FIXME: THREASDD）
+5. 不支持ftuncate将文件缩小
 
 ## 一些宏
 

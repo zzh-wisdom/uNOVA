@@ -56,6 +56,9 @@ int main(int argc, char* argv[]) {
     }
     int bs = atoi(argv[2]);
     uint64_t OP = atoi(argv[3]);
+    uint64_t bs_num = FILE_SIZE / bs;
+    bs_num = std::min(bs_num, OP);
+    OP = bs_num;
     printf("mnt %s, bs: %d, OP: %lu\n", mntdir.c_str(), bs, OP);
 
     int mkdir_flag = S_IRWXU | S_IRWXG | S_IRWXO;
@@ -74,9 +77,7 @@ int main(int argc, char* argv[]) {
     void* buf = malloc(bs);
     memset(buf, 0x3f, bs);
 
-    uint64_t bs_num = FILE_SIZE / bs;
     // load append
-    bs_num = std::min(bs_num, OP);
     start_us = GetTsUsec();
     for(int i = 0; i < bs_num; ++i) {
         ret = write(fd, buf, bs);
@@ -118,6 +119,10 @@ int main(int argc, char* argv[]) {
     interval_s = (double)(end_us - start_us) / 1000 / 1000;
     printf("read bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops\n",
            OP * (bs) / 1024.0 / 1024 / interval_s, OP / 1000.0 / interval_s);
+
+    close(fd);
+    ret = unlink(dir1_file.c_str());
+    assert(ret == 0);
 
     printf("Test pass\n");
 }

@@ -531,6 +531,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 		type = finefs_get_entry_type(addr);
 		switch (type) {
 			case SET_ATTR:
+				log_assert(0);
 				attr_entry =
 					(struct finefs_setattr_logentry *)addr;
 				finefs_apply_setattr_entry(sb, pi, sih,

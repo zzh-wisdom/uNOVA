@@ -91,5 +91,11 @@ int main(int argc, char* argv[]) {
     printf("bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops\n",
            TOTAL_OPS * 64.0 / 1024 / 1024 / interval_s, TOTAL_OPS / 1000.0 / interval_s);
 
+    for(int i = 0; i < files; ++i) {
+        close(fds[i]);
+        const std::string file_name = dir1_file + "-" + std::to_string(i);
+        ret = unlink(file_name.c_str());
+        assert(ret == 0);
+    }
     printf("Test pass\n");
 }

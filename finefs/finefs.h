@@ -972,18 +972,22 @@ static force_inline bool finefs_log_page_tail_remain_init(struct super_block *sb
 		(curr_page->page_tail.bitmap == FINEFS_LOG_BITMAP_INIT);
 }
 
+#define FINEFS_LOG_ENTRY_NR(entry) ((((uintptr_t)entry) & FINEFS_LOG_UMASK) >> CACHELINE_SHIFT)
+
 static force_inline bool log_entry_is_set_valid(void* entry) {
 	finefs_inode_page_tail* page_tail = (finefs_inode_page_tail*)FINEFS_LOG_TAIL((uintptr_t)entry);
-	int entry_nr = (((uintptr_t)entry) & FINEFS_LOG_UMASK) >> CACHELINE_SHIFT;
+	int entry_nr = FINEFS_LOG_ENTRY_NR(entry);
 	return ((page_tail->bitmap >> (entry_nr)) & 1);
 }
 
+// FIXME: THREADS
 static force_inline void log_entry_set_invalid(void* entry) {
 	finefs_inode_page_tail* page_tail = (finefs_inode_page_tail*)FINEFS_LOG_TAIL((uintptr_t)entry);
-	int entry_nr = (((uintptr_t)entry) & FINEFS_LOG_UMASK) >> CACHELINE_SHIFT;
+	int entry_nr = FINEFS_LOG_ENTRY_NR(entry);
 	dlog_assert((page_tail->bitmap >> (entry_nr)) & 1);
 	--page_tail->valid_num;
-	bitmap_clear_bit_atomic(entry_nr, (unsigned long *)&(page_tail->bitmap));
+	// bitmap_clear_bit_atomic
+	bitmap_clear_bit(entry_nr, (unsigned long *)&(page_tail->bitmap));
 	dlog_assert(((page_tail->bitmap >> (entry_nr)) & 1) == 0);
 	dlog_assert(page_tail->valid_num ==
 		bitmap_set_weight((unsigned long *)&(page_tail->bitmap), BITS_PER_TYPE(page_tail->bitmap)));
@@ -1148,7 +1152,7 @@ extern unsigned long finefs_find_region(struct inode *inode, loff_t *offset,
 void finefs_apply_setattr_entry(struct super_block *sb, struct finefs_inode *pi,
 	struct finefs_inode_info_header *sih,
 	struct finefs_setattr_logentry *entry);
-int finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi);
+int finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi, struct finefs_inode_info_header *sih);
 int finefs_allocate_inode_log_pages(struct super_block *sb,
 	struct finefs_inode *pi, unsigned long num_pages,
 	u64 *new_block, bool for_gc, int cpuid=-1);

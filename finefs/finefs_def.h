@@ -146,6 +146,8 @@ struct finefs_super_block {
  * Structure of an inode in FINEFS.
  * Keep the inode size to within 120 bytes: We use the last eight bytes
  * as inode table tail pointer.
+ *
+ * TODO: 添加version
  */
 struct finefs_inode {
 	/* first 48 bytes */
