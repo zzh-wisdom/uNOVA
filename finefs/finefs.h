@@ -308,25 +308,6 @@ static force_inline bool finefs_log_page_tail_remain_init(struct super_block *sb
 
 #define FINEFS_LOG_ENTRY_NR(entry) ((((uintptr_t)entry) & FINEFS_LOG_UMASK) >> CACHELINE_SHIFT)
 
-static force_inline bool log_entry_is_set_valid(void* entry) {
-	finefs_inode_page_tail* page_tail = (finefs_inode_page_tail*)FINEFS_LOG_TAIL((uintptr_t)entry);
-	int entry_nr = FINEFS_LOG_ENTRY_NR(entry);
-	return ((page_tail->bitmap >> (entry_nr)) & 1);
-}
-
-// FIXME: THREADS
-static force_inline void log_entry_set_invalid(void* entry) {
-	finefs_inode_page_tail* page_tail = (finefs_inode_page_tail*)FINEFS_LOG_TAIL((uintptr_t)entry);
-	int entry_nr = FINEFS_LOG_ENTRY_NR(entry);
-	dlog_assert((page_tail->bitmap >> (entry_nr)) & 1);
-	--page_tail->valid_num;
-	// bitmap_clear_bit_atomic
-	bitmap_clear_bit(entry_nr, (unsigned long *)&(page_tail->bitmap));
-	dlog_assert(((page_tail->bitmap >> (entry_nr)) & 1) == 0);
-	dlog_assert(page_tail->valid_num ==
-		bitmap_set_weight((unsigned long *)&(page_tail->bitmap), BITS_PER_TYPE(page_tail->bitmap)));
-}
-
 // 判断能否容下size大小的entry
 static inline bool is_last_entry(u64 curr_p, size_t size)
 {
@@ -804,6 +785,26 @@ struct ptr_pair *finefs_get_journal_pointers(struct super_block *sb, int cpu)
 		FINEFS_BLOCK_SIZE)	+ cpu * CACHELINE_SIZE);
 }
 
+static force_inline bool log_entry_is_set_valid(void* entry) {
+	finefs_inode_page_tail* page_tail = (finefs_inode_page_tail*)FINEFS_LOG_TAIL((uintptr_t)entry);
+	int entry_nr = FINEFS_LOG_ENTRY_NR(entry);
+	return ((page_tail->bitmap >> (entry_nr)) & 1);
+}
+
+// FIXME: THREADS
+static force_inline void log_entry_set_invalid(struct finefs_inode_info_header *sih, void* entry) {
+	finefs_inode_page_tail* page_tail = (finefs_inode_page_tail*)FINEFS_LOG_TAIL((uintptr_t)entry);
+	int entry_nr = FINEFS_LOG_ENTRY_NR(entry);
+	dlog_assert((page_tail->bitmap >> (entry_nr)) & 1);
+	--page_tail->valid_num;
+	// bitmap_clear_bit_atomic
+	bitmap_clear_bit(entry_nr, (unsigned long *)&(page_tail->bitmap));
+	dlog_assert(((page_tail->bitmap >> (entry_nr)) & 1) == 0);
+	dlog_assert(page_tail->valid_num ==
+		bitmap_set_weight((unsigned long *)&(page_tail->bitmap), BITS_PER_TYPE(page_tail->bitmap)));
+	sih->valid_bytes -= CACHELINE_SIZE;
+}
+
 struct inode_table {
 	__le64 log_head;
 };
@@ -1178,7 +1179,7 @@ extern int finefs_remove_dentry(struct dentry *dentry, int dec_link, u64 tail,
 void finefs_print_dir_tree(struct super_block *sb,
 	struct finefs_inode_info_header *sih, unsigned long ino);
 void finefs_delete_dir_tree(struct super_block *sb,
-	struct finefs_inode_info_header *sih);
+	struct finefs_inode_info_header *sih, bool delete_nvmm);
 struct finefs_dentry *finefs_find_dentry(struct super_block *sb,
 	struct finefs_inode *pi, struct inode *inode, const char *name,
 	unsigned long name_len);

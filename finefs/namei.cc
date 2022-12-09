@@ -127,6 +127,7 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
     int err = 0;
     struct super_block *sb = dir->i_sb;
     struct finefs_inode *pidir, *pi;
+    finefs_inode_info_header* p_sih = &FINEFS_I(dir)->header;
     u64 pi_addr = 0;  // 新分配inode的nvm地址
     u64 tail = 0;
     u64 ino;
@@ -159,7 +160,7 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 
     pi = (struct finefs_inode *)finefs_get_block(sb, pi_addr);
     finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
-    FINEFS_I(dir)->header.i_log_tail = tail;
+    p_sih->i_log_tail = tail;
     inode_unref(inode);
     FINEFS_END_TIMING(create_t, create_time);
     return err;
@@ -366,6 +367,7 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
     entry->entry_version = 0x1234;
     finefs_flush_buffer(entry, size, 0);
     *new_tail = curr_p + size;
+    sih->valid_bytes += size;
     sih->last_link_change = curr_p;
 
     FINEFS_END_TIMING(append_link_change_t, append_time);
@@ -485,8 +487,8 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
     struct super_block *sb = dir->i_sb;
     struct inode *inode;
     struct finefs_inode *pidir, *pi;
-    struct finefs_inode_info *si;
-    struct finefs_inode_info_header *sih = NULL;
+    finefs_inode_info_header* p_sih = &FINEFS_I(dir)->header;
+    struct finefs_inode_info_header *child_sih = NULL;
     u64 pi_addr = 0;
     u64 tail = 0;
     u64 ino;
@@ -521,15 +523,14 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
         r_error("finefs_new_vfs_inode fail");
         goto out_err;
     }
+    child_sih = &FINEFS_I(inode)->header;
 
     pi = finefs_get_inode(sb, inode);
     // 为新创建的目录inode，分配log page，并附加两个entry
     finefs_append_dir_init_entries(sb, pi, inode, dir->i_ino);
 
     /* Build the dir tree */
-    si = FINEFS_I(inode);
-    sih = &si->header;
-    finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, sih);
+    finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, child_sih);
 
     pidir = finefs_get_inode(sb, dir);
     dir->i_blocks = pidir->i_blocks;
@@ -587,7 +588,7 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     struct finefs_inode *pi = finefs_get_inode(sb, inode), *pidir;
     u64 pidir_tail = 0, pi_tail = 0;
     struct finefs_inode_info *si = FINEFS_I(inode);
-    struct finefs_inode_info_header *sih = &si->header;
+    struct finefs_inode_info_header *child_sih = &si->header;
     int err = -ENOTEMPTY;
     timing_t rmdir_time;
 
@@ -625,7 +626,7 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
 
     if (dir->i_nlink) drop_nlink(dir);
     // 删除inode内存中对应的索引
-    finefs_delete_dir_tree(sb, sih);
+    finefs_delete_dir_tree(sb, child_sih, true);
     // 孩子中添加unlink的log
     err = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
     if (err) goto end_rmdir;

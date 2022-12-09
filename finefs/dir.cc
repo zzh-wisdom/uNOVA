@@ -106,15 +106,15 @@ static int finefs_remove_dir_radix_tree(struct super_block *sb,
 		// /* No need to flush */
 		// entry->invalid = 1;  // 把旧的entry标记为无效，只是为了方便垃圾回收，不作用与原子性
 		// 不flush是因为恢复时可以根据后面的log得知该entry是否有效
-		log_entry_set_invalid(entry);
+		log_entry_set_invalid(sih, entry);
 	}
 
 	return 0;
 }
 
-// 删除内存radix tree
+// 删除目录的内存radix tree
 void finefs_delete_dir_tree(struct super_block *sb,
-	struct finefs_inode_info_header *sih)
+	struct finefs_inode_info_header *sih, bool delete_nvmm)
 {
 	struct finefs_dentry *direntry;
 	unsigned long pos = 0;
@@ -143,6 +143,9 @@ void finefs_delete_dir_tree(struct super_block *sb,
 					le16_to_cpu(direntry->de_len));
 				if (!ret)
 					rd_info("ret is NULL");
+			}
+			if(delete_nvmm) {
+				log_entry_set_invalid(sih, direntry);
 			}
 		}
 		pos++;
@@ -399,6 +402,7 @@ int finefs_add_dentry(struct dentry *dentry, u64 ino, int inc_link,
 	curr_entry = finefs_append_dir_inode_entry(sb, pidir, dir, ino,
 				dentry,	loglen, tail, inc_link,
 				&curr_tail);
+	sih->valid_bytes += loglen;
 
 	direntry = (struct finefs_dentry *)finefs_get_block(sb, curr_entry);
 	// 将新的dentry插入到目录的radix-tree索引中
@@ -440,6 +444,7 @@ int finefs_remove_dentry(struct dentry *dentry, int dec_link, u64 tail,
 	// ino为0，表示删除
 	curr_entry = finefs_append_dir_inode_entry(sb, pidir, dir, 0,
 				dentry, loglen, tail, dec_link, &curr_tail);
+	sih->valid_bytes += loglen;
 	*new_tail = curr_tail;
 
 	finefs_remove_dir_radix_tree(sb, sih, entry->name, entry->len, 0);
@@ -582,6 +587,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 		finefs_rebuild_dir_time_and_size(sb, pi, entry);
 
 		de_len = le16_to_cpu(entry->de_len);
+		sih->valid_bytes += de_len;
 		curr_p += de_len;
 	}
 

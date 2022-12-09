@@ -58,7 +58,14 @@ TODO: 推荐使用跳表而不是radix tree。后者需要逐个block处理，�
 
 ## 事务流程
 
-### rmdir
+### 创建inode
+
+1. 父母inode log中写一个dentry
+2. journal记录旧的log tail + inode valid标志
+3. 执行事务，更新tail和valid标记
+4. 提交事务
+
+### 删除inode
 
 1. 父母pidir，写删除子inode的log entry，并记录自身的link变化。并将就entry标记为无效
 2. 被删除的dir inode中写LINK_CHANGE log，将links置为0，表示删除
@@ -86,9 +93,9 @@ inode中受到父母影响的状态有：link，valid，和version。因此redo 
 
 ### 导致log失效的操作有
 
-inode删除 rmdir和unlink
-write
-删除文件导致的block回收
+1. inode删除 rmdir和unlink
+2. write
+3. 删除文件导致的block回收
 
 <!-- setattr 不会失效-->
 
@@ -113,11 +120,14 @@ write
 
 ### 遗留问题
 
-1. ftruncate的log需要永远保持有效，避免旧的write log又重新生效。因此当操作多时，比较浪费时间。改进：计算ftruncate总次数，当达到阈值时，后台全部log扫描，回收无用的ftruncate的entry。
+1. ftruncate的log需要永远保持有效，避免旧的write log又重新生效。因此当操作多时，比较浪费时间。改进：计算ftruncate总次数，当达到阈值时，后台全部log扫描，回收无用的ftruncate的entry。(更简单的方法是，ftruncate单独一个log，当log长度超过阈值时，flush全部log的bitmap区域，最后把所有的ftruncate log回收。即可，因为对于log bitmap, finefs保证：如果log entry对应的bit为1则可能有效也可能无效，但如果log entry对应的bit为0，则肯定无效。这个留给后面的工作实现)
 2. 目录的radix-tree依然指向nvm log，这个不是我们工作的重点
 3. 带数据的文件删除，有待优化
 4. 不考虑线程混合，可以看成每个cpu操作的空间和文件都是固定的（除了rename）。而且测试不会测混合操作的情况。如果需要完这个，注意（FIXME: THREASDD）
 5. 不支持ftuncate将文件缩小
+6. 文件名定长，最长大约是27。边长文件名留到以后的工作中实现
+
+所以每个cpu需要三个log（文件写、truncate、和目录操作（包括mkdir、 rmdir、create、unlink、rename等）
 
 ## 一些宏
 
@@ -127,3 +137,50 @@ LOG_HAS_TAIL
 SETATTR_BY_CPY_NT
 
 PMEM_MEM_WRITE
+
+## TODO
+
+后台GC：
+
+1. 删除inode时，后台完成block的回收
+
+
+一致性问题还得再考虑一下：
+
+1. bitmap
+2.
+
+读写过程中需要维护的一些状态
+
+// 需要维护的状态
+// sih->valid_bytes;
+// sih->log_pages;  // ok, fast gc需要完善
+// sih->i_log_tail; // ok
+// pi->log_head;    // ok
+// pi->i_blocks;    // ok
+
+支持的操作：
+
+mkdir rmdir create unlink
+read write truncate
+
+写log的函数 （都会先调用finefs_get_append_head）
+
+finefs_append_file_write_entry (write)
+finefs_add_dentry (对于目录创建，子目录需要预先写两个entry)
+finefs_remove_dentry finefs_append_link_change_entry （删除inode）
+finefs_append_setattr_entry（ftruncate）
+
+导致log失效的操作
+
+inode删除导致的
+finefs_evict_inode
+
+- finefs_delete_file_tree
+- finefs_delete_dir_tree
+- 旧的dentry无效 finefs_remove_dir_radix_tree
+
+写操作导致的
+
+finefs_assign_write_entry
+

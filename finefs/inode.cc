@@ -226,6 +226,7 @@ static inline int finefs_free_contiguous_data_blocks(
 
 // 释放一个用链表连接起来的log page
 // 返回实质释放的page个数
+// sih == null，则no checkout
 static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct finefs_inode *pi,
                                              struct finefs_inode_info_header *sih, u64 head) {
     struct finefs_inode_log_page *curr_page;
@@ -400,13 +401,15 @@ int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_hea
         page_entry_dram = (struct finefs_file_page_entry *)radix_tree_lookup(&sih->tree, pgoff);
         if (page_entry_dram) {
             entry = page_entry_dram->nvm_entry_p;
-            log_entry_set_invalid(entry);
             ret = radix_tree_delete(&sih->tree, pgoff);
             BUG_ON(!ret || ret != page_entry_dram);
-            if (delete_nvmm)
+            if (delete_nvmm) {
+                log_entry_set_invalid(sih, entry);
                 freed += finefs_free_contiguous_data_blocks(sb, sih, pi, entry, pgoff, 1,
                                                             &free_blocknr, &num_free);
+            }
             pgoff++;
+            // 删除内存
             finefs_free_page_entry(page_entry_dram);
         } else {
             /* We are finding a hole. Jump to the next entry. */
@@ -441,8 +444,10 @@ static int finefs_free_dram_resource(struct super_block *sb, struct finefs_inode
     if (S_ISREG(sih->i_mode)) {
         last_blocknr = finefs_get_last_blocknr(sb, sih);
         freed = finefs_delete_file_tree(sb, sih, 0, last_blocknr, false, true);
+        finefs_delete_dir_tree(sb, sih, false);
+        return freed;
     } else {
-        finefs_delete_dir_tree(sb, sih);
+        finefs_delete_dir_tree(sb, sih, false);
         freed = 1;
     }
 
@@ -609,7 +614,7 @@ int finefs_assign_write_entry(struct super_block *sb, struct finefs_inode *pi,
             if (free) {
                 old_nvm_entry->invalid_pages++;
                 if(old_nvm_entry->invalid_pages == old_nvm_entry->num_pages) {
-                    log_entry_set_invalid(old_nvm_entry);
+                    log_entry_set_invalid(sih, old_nvm_entry);
                 }
                 // 立即释放特定的block
                 finefs_free_data_blocks(sb, pi, old_nvmm, 1);
@@ -891,9 +896,9 @@ static int finefs_free_inode(struct inode *inode, struct finefs_inode_info_heade
         // finefs_print_inode_log(sb, inode);
     }
 
-    dlog_assert(finefs_free_inode_log(sb, pi, sih) == sih->log_pages);
-    pi->i_blocks = 0;
+    finefs_free_inode_log(sb, pi, sih);
 
+    pi->i_blocks = 0;
     sih->log_pages = 0;
     sih->i_mode = 0;
     sih->pi_addr = 0;
@@ -1011,16 +1016,18 @@ void finefs_evict_inode(struct inode *inode) {
                 last_blocknr = finefs_get_last_blocknr(sb, sih);
                 rd_info("%s: file ino %lu", __func__, inode->i_ino);
                 freed = finefs_delete_file_tree(sb, sih, 0, last_blocknr, true, true);
+                finefs_delete_dir_tree(sb, sih, false); // 删除内存的radix tree
                 break;
             case S_IFDIR:
                 rd_info("%s: dir ino %lu", __func__, inode->i_ino);
-                finefs_delete_dir_tree(sb, sih);
+                finefs_delete_dir_tree(sb, sih, true);
                 break;
             case S_IFLNK:
                 log_assert(0);
                 /* Log will be freed later */
                 rd_info("%s: symlink ino %lu", __func__, inode->i_ino);
                 freed = finefs_delete_file_tree(sb, sih, 0, 0, true, true);
+                finefs_delete_dir_tree(sb, sih, false); // 删除内存的radix tree
                 break;
             default:
                 rd_info("%s: special ino %lu", __func__, inode->i_ino);
@@ -1030,7 +1037,8 @@ void finefs_evict_inode(struct inode *inode) {
 
         r_info("%s: Freed %d, %0.2lf MB", __func__, freed, ((u64)freed << FINEFS_BLOCK_SHIFT >> 10) / 1024.0);
         dlog_assert(freed == pi->i_blocks - sih->log_pages);
-        /* Then we can free the inode */
+        r_info("%s: valid entrys: %lu", __func__, sih->valid_bytes/CACHELINE_SIZE);
+        /* Then we can free the inode log*/
         err = finefs_free_inode(inode, sih);
         if (err) {
             r_error("%s: free inode %lu failed", __func__, inode->i_ino);
@@ -1042,7 +1050,7 @@ void finefs_evict_inode(struct inode *inode) {
         inode->i_size = 0;
     }
 out:
-    if (destroy == 0) finefs_free_dram_resource(sb, sih);
+    if (destroy == 0) finefs_free_dram_resource(sb, sih); // 如果是文件删除，这个不会执行
 
     /* TODO: Since we don't use page-cache, do we really need the following
      * call? */
@@ -1181,9 +1189,8 @@ struct inode *finefs_new_vfs_inode(enum finefs_new_inode_type type, struct inode
     si = FINEFS_I(inode);
     sih = &si->header;
     finefs_init_header(sb, sih, inode->i_mode);
-    sih->pi_addr = pi_addr;
     sih->ino = ino;
-    sih->i_log_tail = 0;
+    sih->pi_addr = pi_addr;
 
     finefs_update_inode(inode, pi);
 
@@ -1378,7 +1385,6 @@ void finefs_apply_setattr_entry(struct super_block *sb, struct finefs_inode *pi,
     pi->i_mtime = entry->mtime;
 
     if (pi->i_size > entry->size && S_ISREG(pi->i_mode)) {
-        // FIMXE: ftruncate 缩小
         log_assert(0);
         start = entry->size;
         end = pi->i_size;
@@ -1423,6 +1429,7 @@ static u64 finefs_append_setattr_entry(struct super_block *sb, struct finefs_ino
     finefs_update_setattr_entry(inode, entry, attr);
     new_tail = curr_p + size;
     sih->last_setattr = curr_p;
+    sih->valid_bytes += size;
 
     FINEFS_END_TIMING(append_setattr_t, append_time);
     return new_tail;
@@ -1732,37 +1739,37 @@ static bool curr_log_entry_invalid(struct super_block *sb, struct finefs_inode *
 
 // 判断一个log page是不是全部无效
 // 同时统计当前有效的entry的总字节数
-static force_inline bool curr_page_invalid(struct super_block *sb, struct finefs_inode *pi,
-                              struct finefs_inode_info_header *sih, u64 page_head) {
-    // u64 curr_p = page_head;
-    // bool ret = true;
-    // size_t length;
-    // timing_t check_time;
+// static force_inline bool curr_page_invalid(struct super_block *sb, struct finefs_inode *pi,
+//                               struct finefs_inode_info_header *sih, u64 page_head) {
+//     // u64 curr_p = page_head;
+//     // bool ret = true;
+//     // size_t length;
+//     // timing_t check_time;
 
-    // FINEFS_START_TIMING(check_invalid_t, check_time);
-    // while (curr_p < page_head + FINEFS_LOG_LAST_ENTRY) {
-    //     if (curr_p == 0) {
-    //         r_error("File inode %lu log is NULL!", sih->ino);
-    //         BUG();
-    //     }
+//     // FINEFS_START_TIMING(check_invalid_t, check_time);
+//     // while (curr_p < page_head + FINEFS_LOG_LAST_ENTRY) {
+//     //     if (curr_p == 0) {
+//     //         r_error("File inode %lu log is NULL!", sih->ino);
+//     //         BUG();
+//     //     }
 
-    //     length = 0;
-    //     if (!curr_log_entry_invalid(sb, pi, sih, curr_p, &length)) {
-    //         sih->valid_bytes += length;
-    //         ret = false;
-    //     }
+//     //     length = 0;
+//     //     if (!curr_log_entry_invalid(sb, pi, sih, curr_p, &length)) {
+//     //         sih->valid_bytes += length;
+//     //         ret = false;
+//     //     }
 
-    //     curr_p += length;
-    // }
+//     //     curr_p += length;
+//     // }
 
-    // FINEFS_END_TIMING(check_invalid_t, check_time);
-    // return ret;
+//     // FINEFS_END_TIMING(check_invalid_t, check_time);
+//     // return ret;
 
-    dlog_assert(page_head);
-    finefs_inode_log_page* cur_page = (finefs_inode_log_page*)finefs_get_block(sb, page_head);
-    sih->valid_bytes += cur_page->page_tail.valid_num * CACHELINE_SIZE;
-    return cur_page->page_tail.valid_num == 0;
-}
+//     dlog_assert(page_head);
+//     finefs_inode_log_page* cur_page = (finefs_inode_log_page*)finefs_get_block(sb, page_head);
+//     sih->valid_bytes += cur_page->page_tail.valid_num * CACHELINE_SIZE;
+//     return cur_page->page_tail.valid_num == 0;
+// }
 
 // 指示当前log已经结束，最后设置一个flag（一个字节）
 static void finefs_set_next_page_flag(struct super_block *sb, u64 curr_p) {
@@ -2092,7 +2099,7 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     // sih->log_pages;
     // sih->i_log_tail;
     // pi->log_head;
-    // pi->i_blocks += num_pages - freed_pages;
+    // pi->i_blocks;
 
     curr = FINEFS_LOG_BLOCK_OFF(curr_tail);
     curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
@@ -2299,7 +2306,6 @@ u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *
     return curr_p;
 }
 
-// sih == null，则no checkout
 int finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi, struct finefs_inode_info_header *sih) {
     u64 curr_block;
     int freed = 0;
@@ -2314,9 +2320,11 @@ int finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi, struc
     /* The inode is invalid now, no need to call PCOMMIT */
     finefs_log_link_init(&pi->log_head);
     finefs_flush_cacheline(&pi->log_head, 0);
-    rd_info("free inode log %lu", pi->finefs_ino);
 
     freed = finefs_free_contiguous_log_blocks(sb, pi, sih, curr_block);
+
+    rd_info("ino: %lu free inode %d log", pi->finefs_ino, freed);
+    dlog_assert(freed == sih->log_pages);
 
     FINEFS_END_TIMING(free_inode_log_t, free_time);
 

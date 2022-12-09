@@ -473,6 +473,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 			ret = -ENOSPC;
 			goto out;
 		}
+		sih->valid_bytes += sizeof(entry_data);
 
 		rd_info("Write: %p, %lu", kmem, copied);
 		if (copied > 0) {
