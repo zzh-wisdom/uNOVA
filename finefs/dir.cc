@@ -230,9 +230,9 @@ int finefs_append_root_init_entries(struct super_block *sb,
 	u64 curr_p;
 	struct finefs_dentry *de_entry;
 
-	if (pi->log_head) {
+	if (!finefs_log_link_is_end(pi->log_head.next_page_)) {
 		r_error("%s: log head exists @ 0x%lx!",
-				__func__, pi->log_head);
+				__func__, pi->log_head.next_page_);
 		return -EINVAL;
 	}
 
@@ -242,10 +242,11 @@ int finefs_append_root_init_entries(struct super_block *sb,
 		return -ENOMEM;
 	}
 	// pi->log_tail = new_block;
-	pi->log_head = new_block;
 	pi->i_blocks = 1;
-	finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
-	dlog_assert(finefs_log_page_tail_remain_init(sb, (finefs_inode_log_page*)finefs_get_block(sb, pi->log_head)));
+	finefs_link_set_next_page(sb, &pi->log_head, new_block, 0);
+	// pi->log_head = new_block;
+	// finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
+	dlog_assert(finefs_log_page_tail_remain_init(sb, finefs_log_page_addr(sb, pi->log_head.next_page_)));
 
 	de_entry = (struct finefs_dentry *)finefs_get_block(sb, new_block);
 	de_entry->entry_type = DIR_LOG;
@@ -298,9 +299,9 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	struct finefs_inode_info_header *sih = &FINEFS_I(inode)->header;
 	u64 self_ino = inode->i_ino;
 
-	if (pi->log_head) {
+	if (!finefs_log_link_is_end(pi->log_head.next_page_)) {
 		r_error("%s: log head exists @ 0x%lx!",
-				__func__, pi->log_head);
+				__func__, pi->log_head.next_page_);
 		return -EINVAL;
 	}
 
@@ -310,10 +311,11 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 		return -ENOMEM;
 	}
 	// pi->log_tail = new_block;
-	pi->log_head = new_block;
 	pi->i_blocks = 1;
-	finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
-	dlog_assert(finefs_log_page_tail_remain_init(sb, (finefs_inode_log_page*)finefs_get_block(sb, pi->log_head)));
+	finefs_link_set_next_page(sb, &pi->log_head, new_block, 0);
+	// pi->log_head = new_block;
+	// finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
+	dlog_assert(finefs_log_page_tail_remain_init(sb, finefs_log_page_addr(sb, pi->log_head.next_page_)));
 
 	de_entry = (struct finefs_dentry *)finefs_get_block(sb, new_block);
 	de_entry->entry_type = DIR_LOG;
@@ -501,7 +503,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 
 	sih->pi_addr = pi_addr;
 
-	curr_p = pi->log_head;
+	curr_p = pi->log_head.next_page_;
 	if (curr_p == 0) {
 		r_error("Dir %lu log is NULL!", ino);
 		BUG();
@@ -519,7 +521,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 		if(times == 3) break;
 		if (goto_next_page(sb, curr_p)) {
 			sih->log_pages++;
-			curr_p = next_log_page(sb, curr_p);
+			curr_p = finefs_log_next_page(sb, curr_p);
 		}
 
 		if (curr_p == 0) {
@@ -590,7 +592,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 	/* Keep traversing until log ends */
 	curr_p &= FINEFS_LOG_MASK;
 	curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr_p);
-	while ((next = finefs_log_get_next_page(sb, curr_page)) != 0) {
+	while ((next = FINEFS_LOG_NEXT_PAGE(curr_page)) != 0) {
 		sih->log_pages++;
 		curr_p = next;
 		curr_page = (struct finefs_inode_log_page *)
@@ -745,7 +747,7 @@ static u64 finefs_find_next_dentry_addr(struct super_block *sb,
 
 // 	while (curr_p != pidir->log_tail) {
 // 		if (goto_next_page(sb, curr_p)) {
-// 			curr_p = next_log_page(sb, curr_p);
+// 			curr_p = finefs_log_next_page(sb, curr_p);
 // 		}
 
 // 		if (curr_p == 0) {

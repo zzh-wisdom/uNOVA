@@ -271,7 +271,7 @@ int finefs_reassign_file_tree(struct super_block *sb,
 
 	while (curr_p != sih->i_log_tail) {
 		if (is_last_entry(curr_p, entry_size))
-			curr_p = next_log_page(sb, curr_p);
+			curr_p = finefs_log_next_page(sb, curr_p);
 
 		if (curr_p == 0) {
 			r_error("%s: File inode %lu log is NULL!",
@@ -312,7 +312,7 @@ static int finefs_cleanup_incomplete_write(struct super_block *sb,
 
 	while (curr_p != end_tail) {
 		if (is_last_entry(curr_p, entry_size))
-			curr_p = next_log_page(sb, curr_p);
+			curr_p = finefs_log_next_page(sb, curr_p);
 
 		if (curr_p == 0) {
 			r_error("%s: File inode %lu log is NULL!",

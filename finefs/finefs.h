@@ -161,11 +161,6 @@ static inline void *finefs_get_block(struct super_block *sb, u64 block)
 
 /************************* log page ***************************/
 
-struct finefs_log_page_link {
-	__le64	prev_page_;  // 这个不用持久化，只为了方便维护, 指向前一个link
-	__le64	next_page_;  // FINEFS_LOG_LINK_PAGE_OFF 表示null
-} __attribute((__packed__));
-
 struct finefs_inode_page_tail {
 	__le64	paddings[3];
 	__le32  padding;
@@ -201,52 +196,91 @@ struct	finefs_inode_log_page {
 
 #define	EXTEND_THRESHOLD	256
 
-// 根据link全局偏移，得到finefs_log_page_link*
-static force_inline struct finefs_log_page_link*
-finefs_get_log_page_link(struct super_block *sb, u64 next_link) {
-	dlog_assert((next_link & FINEFS_LOG_UMASK) == FINEFS_LOG_LINK_PAGE_OFF);
-	return (struct finefs_log_page_link*)finefs_get_block(sb, next_link);
+static force_inline void finefs_log_link_init(struct finefs_log_page_link *curr_link) {
+	curr_link->prev_page_ = 0;
+	curr_link->next_page_ = 0;
 }
 
+// static force_inline bool finefs_log_is_link(u64 cur_link) {
+// 	return (cur_link & FINEFS_LOG_UMASK) == FINEFS_LOG_LINK_PAGE_OFF;
+// }
+
+static force_inline bool finefs_log_link_is_end(u64 cur_link) {
+	return cur_link == 0;
+}
+
+// 根据link全局偏移，得到finefs_log_page_link*
+static force_inline struct finefs_log_page_link*
+finefs_log_link_addr(struct super_block *sb, u64 cur_page) {
+	// dlog_assert(finefs_log_is_link(next_link));
+	finefs_inode_log_page* curr_page = (finefs_inode_log_page*)finefs_get_block(sb, cur_page);
+	return &curr_page->page_tail.page_link;
+}
+
+static force_inline finefs_inode_log_page* finefs_log_page_addr(struct super_block *sb, u64 cur_page) {
+	return (finefs_inode_log_page*)finefs_get_block(sb, cur_page);
+}
+
+// static force_inline u64 finefs_log_next_link_from_link(struct super_block *sb, u64 cur_link)
+// {
+// 	dlog_assert(!finefs_log_link_is_end(cur_link));
+// 	finefs_log_link_addr(sb, cur_link)->next_page_;
+// }
+
+// static force_inline u64 finefs_log_next_page_from_link(struct super_block *sb, u64 cur_link)
+// {
+// 	// dlog_assert(!finefs_log_link_is_end(cur_link));
+// 	return finefs_log_link_addr(sb, cur_link)->next_page_;
+// }
+
 // 返回下一个log的起始偏移
-static force_inline u64 next_log_page(struct super_block *sb, u64 curr_p)
+static force_inline u64 finefs_log_next_page(struct super_block *sb, u64 curr_p)
 {
-	log_assert(curr_p);
-	return finefs_get_log_page_link(sb, FINEFS_LOG_LINK_NVM_OFF(curr_p))->next_page_
-		- FINEFS_LOG_LINK_PAGE_OFF;
+	u64 cur_page = curr_p & FINEFS_LOG_MASK;
+	return finefs_log_page_addr(sb, cur_page)->page_tail.page_link.next_page_;
 }
 
 // 返回下一个log的link位置
-static force_inline u64 next_log_link(struct super_block *sb, u64 curr_p)
+// static force_inline u64 finefs_log_next_link(struct super_block *sb, u64 curr_p)
+// {
+// 	u64 cur_link = FINEFS_LOG_LINK_NVM_OFF(curr_p);
+// 	return finefs_log_next_link_from_link(sb, cur_link);
+// }
+
+#define FINEFS_LOG_NEXT_PAGE(curr_page) (curr_page->page_tail.page_link.next_page_)
+
+static force_inline u64 finefs_log_get_next_page(struct super_block *sb, u64 cur_page)
 {
-	log_assert(curr_p);
-	return finefs_get_log_page_link(sb, FINEFS_LOG_LINK_NVM_OFF(curr_p))->next_page_;
+	return FINEFS_LOG_NEXT_PAGE(finefs_log_page_addr(sb, cur_page));
 }
 
-static force_inline u64 finefs_next_link_from_link(struct super_block *sb, u64 cur_link)
+/****************************** log tail *********************/
+
+static force_inline void finefs_link_set_next_page(struct super_block *sb,
+	struct finefs_log_page_link *curr_link, u64 next_page, int fence)
 {
-	log_assert(cur_link != FINEFS_LOG_LINK_PAGE_OFF);
-	finefs_get_log_page_link(sb, cur_link)->next_page_;
+	if(next_page) {
+		u64 cur_page = finefs_get_addr_off(sb, curr_link) - FINEFS_LOG_LINK_PAGE_OFF;
+		finefs_log_link_addr(sb, next_page)->prev_page_ = cur_page;
+	}
+	curr_link->next_page_ = next_page;
+	finefs_flush_cacheline(curr_link, fence);
 }
 
-static force_inline u64 finefs_log_get_next_page(struct super_block *sb,
-	struct finefs_inode_log_page *curr_page)
-{
-	return curr_page->page_tail.page_link.next_page_ - FINEFS_LOG_LINK_PAGE_OFF;
+static force_inline void finefs_log_delete(struct super_block *sb, struct finefs_inode_log_page *curr_page) {
+	dlog_assert(!finefs_log_link_is_end(curr_page->page_tail.page_link.prev_page_));
+	finefs_log_page_link* prev_link =
+		finefs_log_link_addr(sb, curr_page->page_tail.page_link.prev_page_);
+	finefs_link_set_next_page(sb, prev_link,
+		curr_page->page_tail.page_link.next_page_, 1);
 }
 
-static inline void finefs_set_next_page_address(struct super_block *sb,
+static inline void finefs_log_set_next_page(struct super_block *sb,
 	struct finefs_inode_log_page *curr_page, u64 next_page, int fence)
 {
 	dlog_assert((next_page & FINEFS_LOG_UMASK) == 0);
-	u64 next_link = next_page + FINEFS_LOG_LINK_PAGE_OFF;
-	if(next_page != FINEFS_LOG_LINK_PAGE_OFF) {
-		u64 cur_link = finefs_get_addr_off(sb, curr_page) + FINEFS_LOG_LINK_PAGE_OFF;
-		finefs_get_log_page_link(sb, next_link)->prev_page_ = cur_link;
-	}
-	curr_page->page_tail.page_link.next_page_ = next_link;
-	finefs_flush_buffer(&curr_page->page_tail,
-				sizeof(struct finefs_inode_page_tail), fence);
+	finefs_link_set_next_page(sb,
+		&(curr_page->page_tail.page_link), next_page, fence);
 }
 
 #define FINEFS_LOG_ENTRY_VALID_NUM_INIT (63)
@@ -256,11 +290,6 @@ static inline void finefs_log_page_tail_init(struct super_block *sb,
 	struct finefs_inode_log_page *curr_page, u64 next_page, bool for_gc, int fence)
 {
 	dlog_assert((next_page & FINEFS_LOG_UMASK) == 0);
-	u64 next_link = next_page + FINEFS_LOG_LINK_PAGE_OFF;
-	if(next_page != FINEFS_LOG_LINK_PAGE_OFF) {
-		u64 cur_link = finefs_get_addr_off(sb, curr_page) + FINEFS_LOG_LINK_PAGE_OFF;
-		finefs_get_log_page_link(sb, next_link)->prev_page_ = cur_link;
-	}
 	curr_page->page_tail.valid_num = FINEFS_LOG_ENTRY_VALID_NUM_INIT;
 	curr_page->page_tail.bitmap = FINEFS_LOG_BITMAP_INIT;
 	if(for_gc) {
@@ -268,9 +297,7 @@ static inline void finefs_log_page_tail_init(struct super_block *sb,
 	} else {
 		curr_page->page_tail.log_version++;
 	}
-	curr_page->page_tail.page_link.next_page_ = next_link;
-	finefs_flush_buffer(&curr_page->page_tail,
-				sizeof(struct finefs_inode_page_tail), fence);
+	finefs_log_set_next_page(sb, curr_page, next_page, fence);
 }
 
 static force_inline bool finefs_log_page_tail_remain_init(struct super_block *sb,
@@ -542,7 +569,6 @@ struct finefs_inode_info_header {
 	struct radix_tree_root tree;	/* Dir name entry tree root 或者文件数据*/
 	// struct radix_tree_root cache_tree;	/* Mmap cache tree root */
 	unsigned short i_mode;		/* Dir or file? */
-	unsigned long log_pages;	/* Num of log pages */
 	unsigned long i_size;
 	// 以上 finefs_init_header 中初始化
 	// 下面两个外部初始化
@@ -553,13 +579,13 @@ struct finefs_inode_info_header {
 	// unsigned long high_dirty;	/* Mmap dirty high range */
 
 	// 下面是统计的信息，不用初始化，随着操作而改变
+	unsigned long log_pages;	/* Num of log pages */
 	unsigned long valid_bytes;	/* For thorough GC, log page中有效entry的总字节数*/
+	__le64	i_log_tail;
+
 	// 随着 GC/op 的进行而修改
 	u64 last_setattr;		/* Last setattr entry ,当前已经应用的setattr log地址*/
 	u64 last_link_change;		/* Last link change entry */
-
-	// TODO:
-	__le64	i_log_tail;
 };
 
 static inline void finefs_update_volatile_tail(struct finefs_inode_info_header *sih, u64 new_tail)

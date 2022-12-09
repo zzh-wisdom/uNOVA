@@ -142,6 +142,11 @@ struct finefs_super_block {
 
 /* ======================= finefs inode ========================= */
 
+struct finefs_log_page_link {
+	__le64	prev_page_;  // 这个不用持久化，只为了方便维护, 指向前一个page
+	__le64	next_page_;  // 0 表示null
+} __attribute((__packed__));
+
 /*
  * Structure of an inode in FINEFS.
  * Keep the inode size to within 120 bytes: We use the last eight bytes
@@ -167,6 +172,7 @@ struct finefs_inode {
 	 * We just make sure it is consistent upon clean umount,
 	 * and it is recovered in DFS recovery if power failure occurs.
 	 * 持有的block个数，包括log page
+	 * TODO: 不要随机访问
 	 */
 	__le64	i_blocks;
 	// __le64	i_xattr;	/* Extended attribute block */
@@ -178,7 +184,8 @@ struct finefs_inode {
 	__le32	padding;
 	__le64	finefs_ino;	/* finefs inode number */
 
-	__le64	log_head;	/* Log head pointer */
+	finefs_log_page_link log_head;
+	// __le64	log_head;	/* Log head pointer */
 	__le64	log_tail;	/* Log tail pointer */
 
 	// struct {
@@ -249,6 +256,12 @@ static inline void PERSISTENT_BARRIER(void)
 	// if (support_pcommit) {
 	// 	/* Do nothing */
 	// }
+}
+
+static force_inline void finefs_flush_cacheline(void *buf, bool fence) {
+	clwb((uintptr_t)buf & CACHELINE_MASK);
+	if (fence)
+		PERSISTENT_BARRIER();
 }
 
 static inline void finefs_flush_buffer(void *buf, uint32_t len, bool fence)

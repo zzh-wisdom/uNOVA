@@ -356,7 +356,7 @@ void finefs_print_finefs_log(struct super_block *sb,
 	if (sih->i_log_tail == 0)
 		return;
 
-	curr = pi->log_head;
+	curr = pi->log_head.next_page_;
 	rd_info("Pi %lu: log head 0x%lx, tail 0x%lx\n",
 			sih->ino, curr, sih->i_log_tail);
 	while (curr != sih->i_log_tail) {
@@ -413,17 +413,16 @@ void finefs_print_finefs_log_pages(struct super_block *sb,
 	u64 curr, next;
 	int count = 1;
 	int used = count;
-
-	if (pi->log_head == 0 || sih->i_log_tail == 0) {
+	if (pi->log_head.next_page_ == 0 || sih->i_log_tail == 0) {
 		rd_info("Pi %lu has no log\n", sih->ino);
 		return;
 	}
 
-	curr = pi->log_head;
+	curr = pi->log_head.next_page_;
 	rd_info("Pi %lu: log head @ 0x%lx, tail @ 0x%lx\n",
 			sih->ino, curr, sih->i_log_tail);
 	curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
-	while ((next = finefs_log_get_next_page(sb, curr_page)) != 0) {
+	while ((next = FINEFS_LOG_NEXT_PAGE(curr_page)) != 0) {
 		rd_info("Current page 0x%lx, next page 0x%lx\n",
 			curr >> FINEFS_LOG_SHIFT, next >> FINEFS_LOG_SHIFT);
 		if (sih->i_log_tail >> FINEFS_LOG_SHIFT == curr >> FINEFS_LOG_SHIFT)

@@ -808,7 +808,7 @@ enum nova_new_inode_type {
 };
 
 // 返回下一个log的指针
-static inline u64 next_log_page(struct super_block *sb, u64 curr_p)
+static inline u64 finefs_log_next_page(struct super_block *sb, u64 curr_p)
 {
 	void *curr_addr = nova_get_block(sb, curr_p);
 	unsigned long page_tail = ((unsigned long)curr_addr & ~INVALID_MASK)

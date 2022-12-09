@@ -1749,7 +1749,7 @@ static int nova_inode_log_thorough_gc(struct super_block *sb, struct nova_inode 
     new_curr = new_head;
     while (curr_p != pi->log_tail) {
         old_curr_p = curr_p;  // 保存被回收log 链表中的最后一个page
-        if (goto_next_page(sb, curr_p)) curr_p = next_log_page(sb, curr_p);
+        if (goto_next_page(sb, curr_p)) curr_p = finefs_log_next_page(sb, curr_p);
 
         if (curr_p >> PAGE_SHIFT == pi->log_tail >> PAGE_SHIFT) {
             /* Don't recycle tail page */
@@ -2013,7 +2013,7 @@ u64 nova_get_append_head(struct super_block *sb, struct nova_inode *pi,
     else
         curr_p = pi->log_tail;
 
-    if (curr_p == 0 || (is_last_entry(curr_p, size) && next_log_page(sb, curr_p) == 0)) {
+    if (curr_p == 0 || (is_last_entry(curr_p, size) && finefs_log_next_page(sb, curr_p) == 0)) {
         if (is_last_entry(curr_p, size)) nova_set_next_page_flag(sb, curr_p);
 
         // 当前log的空间不足，需要分配新的log page
@@ -2032,7 +2032,7 @@ u64 nova_get_append_head(struct super_block *sb, struct nova_inode *pi,
 
     if (is_last_entry(curr_p, size)) {  // 感觉这才是给gc用的
         nova_set_next_page_flag(sb, curr_p);
-        curr_p = next_log_page(sb, curr_p);
+        curr_p = finefs_log_next_page(sb, curr_p);
     }
 
     return curr_p;
@@ -2130,7 +2130,7 @@ int nova_rebuild_file_inode_tree(struct super_block *sb, struct nova_inode *pi, 
     while (curr_p != pi->log_tail) {
         if (goto_next_page(sb, curr_p)) {
             sih->log_pages++;
-            curr_p = next_log_page(sb, curr_p);
+            curr_p = finefs_log_next_page(sb, curr_p);
         }
 
         if (curr_p == 0) {

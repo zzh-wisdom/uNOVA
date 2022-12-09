@@ -434,7 +434,7 @@ int nova_rebuild_dir_inode_tree(struct super_block *sb,
 	while (curr_p != pi->log_tail) {
 		if (goto_next_page(sb, curr_p)) {
 			sih->log_pages++;
-			curr_p = next_log_page(sb, curr_p);
+			curr_p = finefs_log_next_page(sb, curr_p);
 		}
 
 		if (curr_p == 0) {
@@ -659,7 +659,7 @@ static u64 nova_find_next_dentry_addr(struct super_block *sb,
 
 // 	while (curr_p != pidir->log_tail) {
 // 		if (goto_next_page(sb, curr_p)) {
-// 			curr_p = next_log_page(sb, curr_p);
+// 			curr_p = finefs_log_next_page(sb, curr_p);
 // 		}
 
 // 		if (curr_p == 0) {

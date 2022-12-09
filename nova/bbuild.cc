@@ -184,7 +184,7 @@ static void nova_destroy_blocknode_trees(struct super_block *sb) {
 
 //     while (curr_p != pi->log_tail) {
 //         if (is_last_entry(curr_p, size)) {
-//             curr_p = next_log_page(sb, curr_p);
+//             curr_p = finefs_log_next_page(sb, curr_p);
 //         }
 
 //         if (curr_p == 0) {
@@ -255,7 +255,7 @@ static void nova_destroy_blocknode_trees(struct super_block *sb) {
 
 //     while (curr_p != pi->log_tail) {
 //         if (is_last_entry(curr_p, size)) {
-//             curr_p = next_log_page(sb, curr_p);
+//             curr_p = finefs_log_next_page(sb, curr_p);
 //         }
 
 //         if (curr_p == 0) {
@@ -337,12 +337,12 @@ static u64 nova_append_range_node_entry(struct super_block *sb, struct nova_rang
 
     curr_p = tail;
 
-    if (curr_p == 0 || (is_last_entry(curr_p, size) && next_log_page(sb, curr_p) == 0)) {
+    if (curr_p == 0 || (is_last_entry(curr_p, size) && finefs_log_next_page(sb, curr_p) == 0)) {
         rd_info("%s: inode log reaches end?", __func__);
         goto out;
     }
 
-    if (is_last_entry(curr_p, size)) curr_p = next_log_page(sb, curr_p);
+    if (is_last_entry(curr_p, size)) curr_p = finefs_log_next_page(sb, curr_p);
 
     entry = (struct nova_range_node_lowhigh *)nova_get_block(sb, curr_p);
     entry->range_low = cpu_to_le64(curr->range_low);
@@ -896,7 +896,7 @@ again:
 
     while (curr_p != pi->log_tail) {
         if (goto_next_page(sb, curr_p)) {
-            curr_p = next_log_page(sb, curr_p);
+            curr_p = finefs_log_next_page(sb, curr_p);
             if (base == 0) {
                 BUG_ON(curr_p & (PAGE_SIZE - 1));
                 set_bm(curr_p >> PAGE_SHIFT, bm, BM_4K);

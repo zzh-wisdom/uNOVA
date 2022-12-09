@@ -184,7 +184,7 @@ static void finefs_destroy_blocknode_trees(struct super_block *sb) {
 
 //     while (curr_p != pi->log_tail) {
 //         if (is_last_entry(curr_p, size)) {
-//             curr_p = next_log_page(sb, curr_p);
+//             curr_p = finefs_log_next_page(sb, curr_p);
 //         }
 
 //         if (curr_p == 0) {
@@ -255,7 +255,7 @@ static void finefs_destroy_blocknode_trees(struct super_block *sb) {
 
 //     while (curr_p != pi->log_tail) {
 //         if (is_last_entry(curr_p, size)) {
-//             curr_p = next_log_page(sb, curr_p);
+//             curr_p = finefs_log_next_page(sb, curr_p);
 //         }
 
 //         if (curr_p == 0) {
@@ -337,12 +337,12 @@ static u64 finefs_append_range_node_entry(struct super_block *sb, struct finefs_
 
     curr_p = tail;
 
-    if (curr_p == 0 || (is_last_entry(curr_p, size) && next_log_page(sb, curr_p) == 0)) {
+    if (curr_p == 0 || (is_last_entry(curr_p, size) && finefs_log_next_page(sb, curr_p) == 0)) {
         rd_info("%s: inode log reaches end?", __func__);
         goto out;
     }
 
-    if (is_last_entry(curr_p, size)) curr_p = next_log_page(sb, curr_p);
+    if (is_last_entry(curr_p, size)) curr_p = finefs_log_next_page(sb, curr_p);
 
     entry = (struct finefs_range_node_lowhigh *)finefs_get_block(sb, curr_p);
     entry->range_low = cpu_to_le64(curr->range_low);
@@ -411,8 +411,9 @@ void finefs_save_inode_list_to_log(struct super_block *sb) {
         return;
     }
 
-    pi->log_head = new_block;
-    finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
+    finefs_link_set_next_page(sb, &pi->log_head, new_block, 0);
+    // pi->log_head = new_block;
+    // finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
 
     temp_tail = new_block;
     for (i = 0; i < sbi->cpus; i++) {
@@ -422,8 +423,8 @@ void finefs_save_inode_list_to_log(struct super_block *sb) {
 
 	finefs_update_tail(pi, temp_tail);
 
-    rd_info("%s: %lu inode nodes, pi head 0x%lx, tail 0x%lx", __func__, num_nodes,
-             pi->log_head, pi->log_tail);
+    // rd_info("%s: %lu inode nodes, pi head 0x%lx, tail 0x%lx", __func__, num_nodes,
+    //          pi->log_head, pi->log_tail);
 }
 
 // 保存空闲block信息到NVM
@@ -475,8 +476,9 @@ void finefs_save_blocknode_mappings_to_log(struct super_block *sb) {
     finefs_flush_buffer(super, FINEFS_SB_SIZE, 0);
 
     /* Finally update log head and tail */
-    pi->log_head = new_block;
-    finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
+    finefs_link_set_next_page(sb, &pi->log_head, new_block, 0);
+    // pi->log_head = new_block;
+    // finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
 
     temp_tail = new_block;
     for (i = 0; i < sbi->cpus; i++) {
@@ -487,10 +489,10 @@ void finefs_save_blocknode_mappings_to_log(struct super_block *sb) {
 
 	finefs_update_tail(pi, temp_tail);
 
-    rd_info(
-        "%s: %lu blocknodes, %lu log pages, pi head 0x%lx, "
-        "tail 0x%lx",
-        __func__, num_blocknode, num_pages, pi->log_head, pi->log_tail);
+    // rd_info(
+    //     "%s: %lu blocknodes, %lu log pages, pi head 0x%lx, "
+    //     "tail 0x%lx",
+    //     __func__, num_blocknode, num_pages, pi->log_head, pi->log_tail);
 }
 
 #if 0
@@ -738,10 +740,10 @@ int finefs_rebuild_inode(struct super_block *sb, struct finefs_inode_info *si, u
 
     finefs_ino = pi->finefs_ino;
 
-    rdv_proc(
-        "%s: inode %lu, addr 0x%lx, valid %d, "
-        "head 0x%lx, tail 0x%lx",
-        __func__, finefs_ino, pi_addr, pi->valid, pi->log_head, pi->log_tail);
+    // rdv_proc(
+    //     "%s: inode %lu, addr 0x%lx, valid %d, "
+    //     "head 0x%lx, tail 0x%lx",
+    //     __func__, finefs_ino, pi_addr, pi->valid, pi->log_head, pi->log_tail);
 
     finefs_init_header(sb, sih, le16_to_cpu(pi->i_mode));
     sih->ino = finefs_ino;
@@ -761,7 +763,7 @@ int finefs_rebuild_inode(struct super_block *sb, struct finefs_inode_info *si, u
         default:
             log_assert(0);
             /* In case of special inode, walk the log */
-            if (pi->log_head) finefs_rebuild_file_inode_tree(sb, pi, pi_addr, sih);
+            // if (pi->log_head) finefs_rebuild_file_inode_tree(sb, pi, pi_addr, sih);
             break;
     }
 
@@ -898,7 +900,7 @@ again:
 
     while (curr_p != pi->log_tail) {
         if (goto_next_page(sb, curr_p)) {
-            curr_p = next_log_page(sb, curr_p);
+            curr_p = finefs_log_next_page(sb, curr_p);
             if (base == 0) {
                 BUG_ON(curr_p & (PAGE_SIZE - 1));
                 set_bm(curr_p >> PAGE_SHIFT, bm, BM_4K);

@@ -79,26 +79,26 @@
 // 	return readlink_copy(buffer, buflen, blockp);
 // }
 
-static char *nova_get_link(struct dentry *dentry, struct inode *inode, void **cookie)
-{
-	struct nova_file_write_entry *entry;
-	struct super_block *sb = inode->i_sb;
-	struct nova_inode *pi = nova_get_inode(sb, inode);
-	char *blockp;
+// static char *nova_get_link(struct dentry *dentry, struct inode *inode, void **cookie)
+// {
+// 	struct nova_file_write_entry *entry;
+// 	struct super_block *sb = inode->i_sb;
+// 	struct nova_inode *pi = nova_get_inode(sb, inode);
+// 	char *blockp;
 
-	entry = (struct nova_file_write_entry *)nova_get_block(sb,
-							pi->log_head);
-	blockp = (char *)nova_get_block(sb, BLOCK_OFF(entry->block));
+// 	entry = (struct nova_file_write_entry *)nova_get_block(sb,
+// 							pi->log_head);
+// 	blockp = (char *)nova_get_block(sb, BLOCK_OFF(entry->block));
 
-	return blockp;
-}
+// 	return blockp;
+// }
 
 // #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
-static void *nova_follow_link(struct dentry *dentry, void **cookie)
-{
-	struct inode *inode = dentry->d_inode;
-	return nova_get_link(dentry, inode, cookie);
-}
+// static void *nova_follow_link(struct dentry *dentry, void **cookie)
+// {
+// 	struct inode *inode = dentry->d_inode;
+// 	return nova_get_link(dentry, inode, cookie);
+// }
 // #endif
 
 const struct inode_operations nova_symlink_inode_operations = {
