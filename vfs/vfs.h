@@ -1198,10 +1198,10 @@ void vfs_cfg_print(struct vfs_cfg* cfg);
 static force_inline void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->numa_socket = 1;
 	cfg->cpu_num = 0;
-	for(int i = 22; i < 40; ++i) {
+	for(int i = 25; i < 40; ++i) {
 		cfg->cpu_ids[cfg->cpu_num++] = i;
 	}
-	for(int i = 60; i < 74; ++i) {
+	for(int i = 60; i < 77; ++i) {
 		cfg->cpu_ids[cfg->cpu_num++] = i;
 	}
 	cfg->bg_thread_cpu_id = 79;

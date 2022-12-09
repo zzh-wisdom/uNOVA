@@ -792,11 +792,16 @@ static force_inline bool log_entry_is_set_valid(void* entry) {
 }
 
 // FIXME: THREADS
-static force_inline void log_entry_set_invalid(struct finefs_inode_info_header *sih, void* entry) {
+static force_inline void log_entry_set_invalid(struct super_block *sb, struct finefs_inode_info_header *sih, void* entry) {
 	finefs_inode_page_tail* page_tail = (finefs_inode_page_tail*)FINEFS_LOG_TAIL((uintptr_t)entry);
 	int entry_nr = FINEFS_LOG_ENTRY_NR(entry);
 	dlog_assert((page_tail->bitmap >> (entry_nr)) & 1);
 	--page_tail->valid_num;
+	if(page_tail->valid_num == 0) {
+		finefs_inode_log_page* curr_page = (finefs_inode_log_page*)((uintptr_t)entry & FINEFS_LOG_MASK);
+		rd_info("Delete log page: %lu", finefs_get_addr_off(sb, curr_page) >> FINEFS_LOG_SHIFT);
+		finefs_log_delete(sb, curr_page);
+	}
 	// bitmap_clear_bit_atomic
 	bitmap_clear_bit(entry_nr, (unsigned long *)&(page_tail->bitmap));
 	dlog_assert(((page_tail->bitmap >> (entry_nr)) & 1) == 0);

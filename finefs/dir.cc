@@ -106,7 +106,7 @@ static int finefs_remove_dir_radix_tree(struct super_block *sb,
 		// /* No need to flush */
 		// entry->invalid = 1;  // 把旧的entry标记为无效，只是为了方便垃圾回收，不作用与原子性
 		// 不flush是因为恢复时可以根据后面的log得知该entry是否有效
-		log_entry_set_invalid(sih, entry);
+		log_entry_set_invalid(sb, sih, entry);
 	}
 
 	return 0;
@@ -145,7 +145,7 @@ void finefs_delete_dir_tree(struct super_block *sb,
 					rd_info("ret is NULL");
 			}
 			if(delete_nvmm) {
-				log_entry_set_invalid(sih, direntry);
+				log_entry_set_invalid(sb, sih, direntry);
 			}
 		}
 		pos++;

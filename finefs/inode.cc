@@ -404,7 +404,7 @@ int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_hea
             ret = radix_tree_delete(&sih->tree, pgoff);
             BUG_ON(!ret || ret != page_entry_dram);
             if (delete_nvmm) {
-                log_entry_set_invalid(sih, entry);
+                log_entry_set_invalid(sb, sih, entry);
                 freed += finefs_free_contiguous_data_blocks(sb, sih, pi, entry, pgoff, 1,
                                                             &free_blocknr, &num_free);
             }
@@ -614,7 +614,7 @@ int finefs_assign_write_entry(struct super_block *sb, struct finefs_inode *pi,
             if (free) {
                 old_nvm_entry->invalid_pages++;
                 if(old_nvm_entry->invalid_pages == old_nvm_entry->num_pages) {
-                    log_entry_set_invalid(sih, old_nvm_entry);
+                    log_entry_set_invalid(sb, sih, old_nvm_entry);
                 }
                 // 立即释放特定的block
                 finefs_free_data_blocks(sb, pi, old_nvmm, 1);
@@ -1035,9 +1035,9 @@ void finefs_evict_inode(struct inode *inode) {
                 break;
         }
 
-        r_info("%s: Freed %d, %0.2lf MB", __func__, freed, ((u64)freed << FINEFS_BLOCK_SHIFT >> 10) / 1024.0);
+        rd_info("%s: Freed %d, %0.2lf MB", __func__, freed, ((u64)freed << FINEFS_BLOCK_SHIFT >> 10) / 1024.0);
         dlog_assert(freed == pi->i_blocks - sih->log_pages);
-        r_info("%s: valid entrys: %lu", __func__, sih->valid_bytes/CACHELINE_SIZE);
+        rd_info("%s: valid entrys: %lu", __func__, sih->valid_bytes/CACHELINE_SIZE);
         /* Then we can free the inode log*/
         err = finefs_free_inode(inode, sih);
         if (err) {
