@@ -196,8 +196,6 @@ struct	finefs_inode_log_page {
 	struct finefs_inode_page_tail page_tail;
 } __attribute((__packed__));
 
-#define	EXTEND_THRESHOLD	256
-
 static force_inline void finefs_log_link_init(struct finefs_log_page_link *curr_link) {
 	curr_link->prev_page_ = 0;
 	curr_link->next_page_ = 0;
@@ -323,44 +321,84 @@ static inline bool is_last_entry(u64 curr_p, size_t size)
 /***************************** log entry *******************************/
 
 /* Inode entry in the log */
+// 占8bits
 enum finefs_entry_type {
-	FILE_WRITE = 1,
-	// TODO:
-	FILE_WRITE_BEGIN,
-	FILE_WRITE_MIDDLE,
-	FILE_WRITE_END,
+	// TODO: 暂时实现write的事务，其他的有待实现
+	FILE_PAGES_WRITE = 1,
+	FILE_SMALL_WRITE,
 	DIR_LOG,  // 新建一个dir
 	SET_ATTR,
 	LINK_CHANGE,
 	NEXT_PAGE,
+	// 具体操作类型，占6bit，最多支持 1<<6=64 种log
+	LOG_ENTRY_TYPE_MASK = (1 << 6) - 1,
+	// 最后2bit表示事务的起始
+	TX_BEGIN  = 1 << 6,
+	TX_END    = 1 << 7,
+	TX_ATOMIC = TX_BEGIN | TX_END,
+
+	TX_BEGIN_FILE_PAGES_WRITE = TX_BEGIN | FILE_PAGES_WRITE,
+	TX_END_FILE_PAGES_WRITE = TX_END | FILE_PAGES_WRITE,
+
+	TX_BEGIN_FILE_SMALL_WRITE = TX_BEGIN | FILE_SMALL_WRITE,
+	TX_END_FILE_SMALL_WRITE = TX_END | FILE_SMALL_WRITE,
+
+	TX_ATOMIC_FILE_PAGES_WRITE = TX_ATOMIC | FILE_PAGES_WRITE,
+	TX_ATOMIC_FILE_SMALL_WRITE = TX_ATOMIC | FILE_SMALL_WRITE,
 };
 
-struct finefs_file_write_entry;
+struct finefs_file_pages_write_entry;
+struct finefs_file_small_write_entry;
+
+struct finefs_file_small_entry
+{
+	u32 bytes;
+	u64 file_off;
+	const char *nvm_data;
+	finefs_file_small_write_entry* nvm_entry_p;
+	list_head entry;
+};
+
+// TODO: use jemalloc
 struct finefs_file_page_entry {
-	finefs_file_write_entry* nvm_entry_p;
+	finefs_file_pages_write_entry* nvm_entry_p;
+	list_head small_write_head;
+	int       num_small_write;
+	// TODO: page cache for small write
+	// cache page in dram befor write
 	__le64 file_pgoff;   // page 偏移
 	void* nvm_block_p;
 };
+
 void finefs_page_write_entry_set(finefs_file_page_entry* entry,
-	finefs_file_write_entry* nvm_entry_p, u64 file_pgoff, void* nvm_block_p);
+	finefs_file_pages_write_entry* nvm_entry_p, u64 file_pgoff, void* nvm_block_p);
 bool finefs_page_entry_is_right(super_block* sb, finefs_file_page_entry* page_entry);
 
-extern struct kmem_cache *finefs_file_entry_cachep;
+extern struct kmem_cache *finefs_file_page_entry_cachep;
 static inline struct finefs_file_page_entry *finefs_alloc_page_entry(struct super_block *sb) {
     struct finefs_file_page_entry *p;
-    p = (struct finefs_file_page_entry *)kmem_cache_alloc(finefs_file_entry_cachep);
+    p = (struct finefs_file_page_entry *)kmem_cache_alloc(finefs_file_page_entry_cachep);
     return p;
 }
 static inline void finefs_free_page_entry(struct finefs_file_page_entry *node) {
-    kmem_cache_free(finefs_file_entry_cachep, node);
+    kmem_cache_free(finefs_file_page_entry_cachep, node);
+}
+
+extern struct kmem_cache *finefs_file_small_entry_cachep;
+static inline struct finefs_file_small_entry *finefs_alloc_small_entry(struct super_block *sb) {
+    struct finefs_file_small_entry *p;
+    p = (struct finefs_file_small_entry *)kmem_cache_alloc(finefs_file_small_entry_cachep);
+    return p;
+}
+static inline void finefs_free_small_entry(struct finefs_file_small_entry *node) {
+    kmem_cache_free(finefs_file_small_entry_cachep, node);
 }
 
 #define LOG_ENTRY_SIZE 64
 
 #if LOG_ENTRY_SIZE==64
 
-// TODO: 添加一个中新的log，用于小写，这个改名为大写即可
-struct finefs_file_write_entry {
+struct finefs_file_pages_write_entry {
 	/* ret of find_nvmm_block, the lowest byte is entry type */
 	__le64	block;   // 起始block的NVM偏移地址
 	__le64	pgoff;   // page 偏移(编号)
@@ -377,7 +415,7 @@ struct finefs_file_write_entry {
 
 #else
 // 40B
-struct finefs_file_write_entry {
+struct finefs_file_pages_write_entry {
 	/* ret of find_nvmm_block, the lowest byte is entry type */
 	__le64	block;   // 起始block的NVM偏移地址
 	__le64	pgoff;   // page 偏移
@@ -391,12 +429,30 @@ struct finefs_file_write_entry {
 
 #endif
 
-static inline u8 finefs_get_entry_type(void *p)
+struct finefs_file_small_write_entry {
+	u8 entry_type;
+	u8 slab_bits;       // 从slab_off总空间大小
+	__le16  bytes;      // 从slab_off开始的有效字节数
+	/* For both ctime and mtime */
+	__le32	mtime;
+	__le64	slab_off;   // NVM偏移地址
+	__le64	file_off;   // 文件的便宜
+	__le64	size;    // 文件的大小, 不要移动定义位置
+	u8      padding2[24];
+	__le64 entry_version;
+} __attribute((__packed__));
+
+static force_inline u8 finefs_get_entry_type(void *p)
 {
 	return *(u8 *)p;
 }
 
-static inline void finefs_set_entry_type(void *p, enum finefs_entry_type type)
+static force_inline u8 finefs_get_entry_type_except_tx(void *p)
+{
+	return (*(u8 *)p) & LOG_ENTRY_TYPE_MASK;
+}
+
+static force_inline void finefs_set_entry_type(void *p, enum finefs_entry_type type)
 {
 	*(u8 *)p = type;
 }
@@ -693,10 +749,6 @@ static inline void finefs_free_slab_page(struct slab_page *node) {
     kmem_cache_free(finefs_slab_page_cachep, node);
 }
 
-#define SLAB_PAGE_BATCH_EXTEND_THRESHOLD 16
-// 一个slab free list最多可以持有的page个数
-#define SLAB_PAGE_KEEP_THRESHOLD  32
-
 struct slab_free_list {
 	u32      	slab_bits;
 	u32 		next_alloc_pages; // 下一次分配的pages个数
@@ -739,20 +791,19 @@ struct slab_heap {
 };
 
 // 	返回slab bits
-static force_inline int finefs_get_slab_size(size_t size, size_t* actual_size) {
+static force_inline int finefs_get_slab_size(size_t size) {
 	int size_bits = 0;
 	size_bits = __fls(size);
 	if((1ul << size_bits) < size) {
 		++size_bits;
 	}
 	size_bits = (size_bits >= SLAB_MIN_BITS) ? size_bits : SLAB_MIN_BITS;
-	*actual_size = 1ul << size_bits;
 	return size_bits;
 }
 
 // 返回nvm off, actual_size实际分配的2的幂大小
 // size不能为0
-u64 finefs_slab_alloc(super_block* sb, size_t size, size_t* actual_size);
+u64 finefs_slab_alloc(super_block* sb, size_t size, int *s_bits);
 void finefs_slab_free(super_block* sb, u64 nvm_off, size_t size);
 
 /*
@@ -1077,14 +1128,14 @@ static inline void memset_nt(void *dest, uint32_t dword, size_t length)
 		: "=D"(dummy1), "=d" (dummy2) : "D" (dest), "a" (qword), "d" (length) : "memory", "rcx");
 }
 
-// static inline struct finefs_file_write_entry *
+// static inline struct finefs_file_pages_write_entry *
 // finefs_get_write_entry(struct super_block *sb,
 // 	struct finefs_inode_info *si, unsigned long blocknr)
 // {
 // 	struct finefs_inode_info_header *sih = &si->header;
-// 	struct finefs_file_write_entry *entry;
+// 	struct finefs_file_pages_write_entry *entry;
 
-// 	entry = (struct finefs_file_write_entry *)radix_tree_lookup(&sih->tree, blocknr);
+// 	entry = (struct finefs_file_pages_write_entry *)radix_tree_lookup(&sih->tree, blocknr);
 
 // 	return entry;
 // }
@@ -1112,7 +1163,7 @@ void finefs_print_finefs_log_pages(struct super_block *sb,
 // 获取偏移 pgoff 对应的块号
 static inline unsigned long get_nvmm(struct super_block *sb,
 	struct finefs_inode_info_header *sih,
-	struct finefs_file_write_entry *data, unsigned long pgoff)
+	struct finefs_file_pages_write_entry *data, unsigned long pgoff)
 {
 	if (data->pgoff > pgoff || (unsigned long)data->pgoff +
 			(unsigned long)data->num_pages <= pgoff) {
@@ -1154,7 +1205,7 @@ static inline unsigned long get_blocknr_from_page_entry(struct super_block *sb,
 	// 	finefs_print_finefs_log(sb, sih, pi);
 	// 	log_assert(0);
 	// }
-	finefs_file_write_entry* nvm_write_entry = data->nvm_entry_p;
+	finefs_file_pages_write_entry* nvm_write_entry = data->nvm_entry_p;
 	dlog_assert(data->file_pgoff == pgoff);
 	dlog_assert(nvm_write_entry->pgoff <= pgoff &&
 		nvm_write_entry->pgoff + nvm_write_entry->num_pages > pgoff);
@@ -1305,9 +1356,8 @@ int finefs_find_free_slot(struct finefs_sb_info *sbi,
 // 0 分配失败
 static force_inline u64
 finefs_less_page_alloc(struct super_block *sb, struct finefs_inode *pi,
-	size_t *size_p, unsigned long start_blk, int zero, int cow)
+	size_t size, int *s_bits, unsigned long start_blk, int zero, int cow)
 {
-	size_t size = *size_p;
 	dlog_assert(size < FINEFS_BLOCK_SIZE);
 	dlog_assert(pi->i_blk_type == FINEFS_DEFAULT_DATA_BLOCK_TYPE);
 	if(size > (FINEFS_BLOCK_SIZE >> 1)) {
@@ -1315,10 +1365,10 @@ finefs_less_page_alloc(struct super_block *sb, struct finefs_inode *pi,
 		finefs_new_data_blocks(sb, pi, &blocknr, 1, start_blk, zero, cow);
 		u64 page_off = finefs_get_block_off(sb, blocknr, pi->i_blk_type);
 		r_info("%s: size: %lu, one page: %lu", __func__, size, page_off);
-		*size_p = FINEFS_BLOCK_SIZE;
+		*s_bits = FINEFS_BLOCK_SHIFT;
 		return page_off;
 	} else {
-		u64 slab_off = finefs_slab_alloc(sb, size, size_p);
+		u64 slab_off = finefs_slab_alloc(sb, size, s_bits);
 		return slab_off;
 	}
 }
@@ -1387,7 +1437,7 @@ int finefs_get_inode_address(struct super_block *sb, u64 ino,
 	u64 *pi_addr, int extendable);
 int finefs_set_blocksize_hint(struct super_block *sb, struct inode *inode,
 	struct finefs_inode *pi, loff_t new_size);
-// struct finefs_file_write_entry *finefs_find_next_entry(struct super_block *sb,
+// struct finefs_file_pages_write_entry *finefs_find_next_entry(struct super_block *sb,
 // 	struct finefs_inode_info_header *sih, pgoff_t pgoff);
 struct finefs_file_page_entry *finefs_find_next_page_entry(struct super_block *sb,
 	struct finefs_inode_info_header *sih, pgoff_t pgoff);
@@ -1416,7 +1466,7 @@ u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
 	struct finefs_inode_info_header *sih, u64 tail, size_t size,
 	int *extended, bool for_gc);
 u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *pi,
-	struct inode *inode, struct finefs_file_write_entry *data, u64 tail);
+	struct inode *inode, struct finefs_file_pages_write_entry *data, u64 tail);
 int finefs_rebuild_file_inode_tree(struct super_block *sb,
 	struct finefs_inode *pi, u64 pi_addr,
 	struct finefs_inode_info_header *sih);
@@ -1427,7 +1477,7 @@ extern struct inode *finefs_new_vfs_inode(enum finefs_new_inode_type,
 int finefs_assign_write_entry(struct super_block *sb,
 	struct finefs_inode *pi,
 	struct finefs_inode_info_header *sih,
-	struct finefs_file_write_entry *entry,
+	struct finefs_file_pages_write_entry *entry,
 	bool free);
 
 /* ioctl.c */

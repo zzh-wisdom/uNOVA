@@ -199,7 +199,7 @@ int finefs_get_inode_address(struct super_block *sb, u64 ino, u64 *pi_addr, int 
 // TODO: 这里还可以优化
 static inline int finefs_free_contiguous_data_blocks(
     struct super_block *sb, struct finefs_inode_info_header *sih, struct finefs_inode *pi,
-    struct finefs_file_write_entry *entry, unsigned long pgoff, unsigned long num_pages,
+    struct finefs_file_pages_write_entry *entry, unsigned long pgoff, unsigned long num_pages,
     unsigned long *start_blocknr, unsigned long *num_free) {
     int freed = 0;
     unsigned long nvmm;
@@ -267,7 +267,7 @@ static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct fine
                 for_each_set_bit(entry_nr, (const unsigned long *)&curr_page->page_tail.bitmap, nr) {
                     void* entry = finefs_get_block(sb, (tail & FINEFS_LOG_MASK) + entry_nr*CACHELINE_SIZE);
                     u8 entry_type = finefs_get_entry_type(entry);
-                    dlog_assert(entry_type != FILE_WRITE);
+                    dlog_assert(entry_type != FILE_PAGES_WRITE);
                     ++num;
                 }
                 dlog_assert(curr_page->page_tail.valid_num == num + BITS_PER_TYPE(curr_page->page_tail.bitmap) - nr - 1);
@@ -290,7 +290,7 @@ static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct fine
                     int entry_nr = __ffs(curr_page->page_tail.bitmap);
                     void* entry = finefs_get_block(sb, curr_block+entry_nr*CACHELINE_SIZE);
                     u8 entry_type = finefs_get_entry_type(entry);
-                    dlog_assert(entry_type != LINK_CHANGE && entry_type != FILE_WRITE);
+                    dlog_assert(entry_type != LINK_CHANGE && entry_type != FILE_PAGES_WRITE);
                     check = false;
                 } else {
                     dlog_assert(curr_page->page_tail.valid_num == 0);
@@ -386,7 +386,7 @@ static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct fine
 int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_header *sih,
                             unsigned long start_blocknr, unsigned long last_blocknr,
                             bool delete_nvmm, bool delete_mmap) {
-    struct finefs_file_write_entry *entry;
+    struct finefs_file_pages_write_entry *entry;
     struct finefs_file_page_entry *page_entry_dram;
     struct finefs_inode *pi;
     unsigned long free_blocknr = 0, num_free = 0;
@@ -503,11 +503,11 @@ static void finefs_truncate_file_blocks(struct inode *inode, loff_t start, loff_
     return;
 }
 
-// struct finefs_file_write_entry *finefs_find_next_entry(struct super_block *sb,
+// struct finefs_file_pages_write_entry *finefs_find_next_entry(struct super_block *sb,
 //                                                        struct finefs_inode_info_header *sih,
 //                                                        pgoff_t pgoff) {
-//     struct finefs_file_write_entry *entry = NULL;
-//     struct finefs_file_write_entry *entries[1];
+//     struct finefs_file_pages_write_entry *entry = NULL;
+//     struct finefs_file_pages_write_entry *entries[1];
 //     int nr_entries;
 
 //     nr_entries = radix_tree_gang_lookup(&sih->tree, (void **)entries, pgoff, 1);
@@ -542,7 +542,7 @@ struct finefs_file_page_entry *finefs_find_next_page_entry(struct super_block *s
 // 	unsigned long first_blocknr, unsigned long last_blocknr,
 // 	int *data_found, int *hole_found, int hole)
 // {
-// 	struct finefs_file_write_entry *entry;
+// 	struct finefs_file_pages_write_entry *entry;
 // 	unsigned long blocks = 0;
 // 	unsigned long pgoff, old_pgoff;
 
@@ -575,14 +575,14 @@ struct finefs_file_page_entry *finefs_find_next_page_entry(struct super_block *s
 // }
 
 void finefs_page_write_entry_set(finefs_file_page_entry* entry,
-	finefs_file_write_entry* nvm_entry_p, u64 file_pgoff, void* nvm_block_p) {
+	finefs_file_pages_write_entry* nvm_entry_p, u64 file_pgoff, void* nvm_block_p) {
     entry->nvm_entry_p = nvm_entry_p;
     entry->file_pgoff = file_pgoff;
     entry->nvm_block_p = nvm_block_p;
 }
 
 bool finefs_page_entry_is_right(super_block* sb, finefs_file_page_entry* page_entry) {
-    finefs_file_write_entry* write_entry = page_entry->nvm_entry_p;
+    finefs_file_pages_write_entry* write_entry = page_entry->nvm_entry_p;
     u64 pgoff = page_entry->file_pgoff;
 
 	dlog_assert(write_entry->pgoff <= pgoff &&
@@ -600,8 +600,8 @@ bool finefs_page_entry_is_right(super_block* sb, finefs_file_page_entry* page_en
 // file 写操作时，更新radix tree
 int finefs_assign_write_entry(struct super_block *sb, struct finefs_inode *pi,
                               struct finefs_inode_info_header *sih,
-                              struct finefs_file_write_entry *entry, bool free) {
-    struct finefs_file_write_entry *old_nvm_entry;
+                              struct finefs_file_pages_write_entry *entry, bool free) {
+    struct finefs_file_pages_write_entry *old_nvm_entry;
     finefs_file_page_entry* old_dram_entry;
     void **pentry;
     unsigned long old_nvmm;
@@ -1701,7 +1701,7 @@ static bool curr_log_entry_invalid(struct super_block *sb, struct finefs_inode *
                                    struct finefs_inode_info_header *sih, u64 curr_p,
                                    size_t *length) {
     struct finefs_setattr_logentry *setattr_entry;
-    struct finefs_file_write_entry *entry;
+    struct finefs_file_pages_write_entry *entry;
     struct finefs_dentry *dentry;
     void *addr;
     u8 type;
@@ -1722,10 +1722,10 @@ static bool curr_log_entry_invalid(struct super_block *sb, struct finefs_inode *
             if (sih->last_link_change == curr_p) ret = false;
             *length = sizeof(struct finefs_link_change_entry);
             break;
-        case FILE_WRITE:
-            entry = (struct finefs_file_write_entry *)addr;
+        case FILE_PAGES_WRITE:
+            entry = (struct finefs_file_pages_write_entry *)addr;
             if (entry->num_pages != entry->invalid_pages) ret = false;
-            *length = sizeof(struct finefs_file_write_entry);
+            *length = sizeof(struct finefs_file_pages_write_entry);
             break;
         case DIR_LOG:
             dentry = (struct finefs_dentry *)addr;
@@ -1810,8 +1810,8 @@ static void free_curr_page(struct super_block *sb, struct finefs_inode *pi,
 }
 
 int finefs_gc_assign_file_entry(struct super_block *sb, struct finefs_inode_info_header *sih,
-                                struct finefs_file_write_entry *old_entry,
-                                struct finefs_file_write_entry *new_entry) {
+                                struct finefs_file_pages_write_entry *old_entry,
+                                struct finefs_file_pages_write_entry *new_entry) {
     struct finefs_file_page_entry *temp;
     void **pentry;
     unsigned long start_pgoff = old_entry->pgoff;
@@ -1861,7 +1861,7 @@ static int finefs_gc_assign_dentry(struct super_block *sb, struct finefs_inode_i
 static int finefs_gc_assign_new_entry(struct super_block *sb, struct finefs_inode *pi,
                                       struct finefs_inode_info_header *sih, u64 curr_p,
                                       u64 new_curr) {
-    struct finefs_file_write_entry *old_entry, *new_entry;
+    struct finefs_file_pages_write_entry *old_entry, *new_entry;
     struct finefs_dentry *old_dentry, *new_dentry;
     void *addr, *new_addr;
     u8 type;
@@ -1876,10 +1876,10 @@ static int finefs_gc_assign_new_entry(struct super_block *sb, struct finefs_inod
         case LINK_CHANGE:
             sih->last_link_change = new_curr;
             break;
-        case FILE_WRITE:
+        case FILE_PAGES_WRITE:
             new_addr = (void *)finefs_get_block(sb, new_curr);
-            old_entry = (struct finefs_file_write_entry *)addr;
-            new_entry = (struct finefs_file_write_entry *)new_addr;
+            old_entry = (struct finefs_file_pages_write_entry *)addr;
+            new_entry = (struct finefs_file_pages_write_entry *)new_addr;
             // 修改文件数据的dram radix tree 索引
             ret = finefs_gc_assign_file_entry(sb, sih, old_entry, new_entry);
             break;
@@ -2180,7 +2180,7 @@ static u64 finefs_extend_inode_log(struct super_block *sb, struct finefs_inode *
         // pi->log_head = new_block;
         // finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 1);
     } else {  // 按倍数分配新page，直到256后，每次只256个log page
-        num_pages = sih->log_pages >= EXTEND_THRESHOLD ? EXTEND_THRESHOLD : sih->log_pages;
+        num_pages = sih->log_pages >= LOG_EXTEND_THRESHOLD ? LOG_EXTEND_THRESHOLD : sih->log_pages;
         //		finefs_dbg("Before append log pages:");
         //		finefs_print_inode_log_page(sb, inode);
         allocated = finefs_allocate_inode_log_pages(sb, pi, num_pages, &new_block, for_gc);
@@ -2277,21 +2277,21 @@ u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
 }
 
 /*
- * Append a finefs_file_write_entry to the current finefs_inode_log_page.
+ * Append a finefs_file_pages_write_entry to the current finefs_inode_log_page.
  * blocknr and start_blk are pgoff.
  * We cannot update pi->log_tail here because a transaction may contain
  * multiple entries.
  * 返回当前entry写入的地址
  */
 u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *pi,
-                                   struct inode *inode, struct finefs_file_write_entry *data,
+                                   struct inode *inode, struct finefs_file_pages_write_entry *data,
                                    u64 tail) {
     struct finefs_inode_info *si = FINEFS_I(inode);
     struct finefs_inode_info_header *sih = &si->header;
-    struct finefs_file_write_entry *entry;
+    struct finefs_file_pages_write_entry *entry;
     u64 curr_p;
     int extended = 0;
-    size_t size = sizeof(struct finefs_file_write_entry);
+    size_t size = sizeof(struct finefs_file_pages_write_entry);
     timing_t append_time;
 
     FINEFS_START_TIMING(append_file_entry_t, append_time);
@@ -2299,13 +2299,14 @@ u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *
     curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended, false);
     if (curr_p == 0) return curr_p;
 
-    entry = (struct finefs_file_write_entry *)finefs_get_block(sb, curr_p);
+    entry = (struct finefs_file_pages_write_entry *)finefs_get_block(sb, curr_p);
 #if LOG_ENTRY_SIZE == 64
-    memcpy(entry, data, offsetof(struct finefs_file_write_entry, size));
+    memcpy(entry, data, offsetof(struct finefs_file_pages_write_entry, size));
     barrier();
     entry->entry_version = 0x1234;
+    finefs_flush_buffer(entry, sizeof(struct finefs_file_pages_write_entry), 0);
 #else
-    memcpy_to_pmem_nocache(entry, data, sizeof(struct finefs_file_write_entry));
+    memcpy_to_pmem_nocache(entry, data, sizeof(struct finefs_file_pages_write_entry));
 #endif
     rdv_proc(
         "file %lu entry @ 0x%lx: pgoff %lu, num %u, "
@@ -2315,6 +2316,8 @@ u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *
     /* entry->invalid is set to 0 */
 
     FINEFS_END_TIMING(append_file_entry_t, append_time);
+
+    sih->valid_bytes += size;
     return curr_p;
 }
 
@@ -2345,7 +2348,7 @@ int finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi, struc
 
 static inline void finefs_rebuild_file_time_and_size(struct super_block *sb,
                                                      struct finefs_inode *pi,
-                                                     struct finefs_file_write_entry *entry) {
+                                                     struct finefs_file_pages_write_entry *entry) {
     if (!entry || !pi) return;
 
     pi->i_ctime = cpu_to_le32(entry->mtime);
@@ -2355,7 +2358,7 @@ static inline void finefs_rebuild_file_time_and_size(struct super_block *sb,
 
 int finefs_rebuild_file_inode_tree(struct super_block *sb, struct finefs_inode *pi, u64 pi_addr,
                                    struct finefs_inode_info_header *sih) {
-    struct finefs_file_write_entry *entry = NULL;
+    struct finefs_file_pages_write_entry *entry = NULL;
     struct finefs_setattr_logentry *attr_entry = NULL;
     struct finefs_link_change_entry *link_change_entry = NULL;
     struct finefs_inode_log_page *curr_page;
@@ -2407,16 +2410,16 @@ int finefs_rebuild_file_inode_tree(struct super_block *sb, struct finefs_inode *
                 sih->last_link_change = curr_p;
                 curr_p += sizeof(struct finefs_link_change_entry);
                 continue;
-            case FILE_WRITE:
+            case FILE_PAGES_WRITE:
                 break;
             default:
                 r_error("unknown type %d, 0x%lx", type, curr_p);
                 log_assert(0);
-                curr_p += sizeof(struct finefs_file_write_entry);
+                curr_p += sizeof(struct finefs_file_pages_write_entry);
                 continue;
         }
 
-        entry = (struct finefs_file_write_entry *)addr;
+        entry = (struct finefs_file_pages_write_entry *)addr;
         if (entry->num_pages != entry->invalid_pages) {
             dlog_assert(log_entry_is_set_valid(entry));
             /*
@@ -2429,7 +2432,7 @@ int finefs_rebuild_file_inode_tree(struct super_block *sb, struct finefs_inode *
         finefs_rebuild_file_time_and_size(sb, pi, entry);
         /* Update sih->i_size for setattr apply operations */
         // sih->i_size = le64_to_cpu(pi->i_size);
-        curr_p += sizeof(struct finefs_file_write_entry);
+        curr_p += sizeof(struct finefs_file_pages_write_entry);
     }
 
     sih->i_size = le64_to_cpu(pi->i_size);

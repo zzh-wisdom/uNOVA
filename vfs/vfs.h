@@ -232,7 +232,12 @@ static force_inline struct kmem_cache *kmem_cache_create(int slab_size, int alig
     return cache;
 }
 
-inline void kmem_cache_destroy(struct kmem_cache *cache) { FREE(cache); }
+inline void kmem_cache_destroy(struct kmem_cache **cache) {
+    if(*cache) {
+        FREE(*cache);
+        *cache = nullptr;
+    }
+}
 
 inline void *kmem_cache_alloc(struct kmem_cache *cache) { return MALLOC(cache->slab_size); }
 

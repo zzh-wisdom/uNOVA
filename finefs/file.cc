@@ -279,7 +279,7 @@ int finefs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	// struct super_block *sb = inode->i_sb;
 	// struct finefs_inode_info *si = FINEFS_I(inode);
 	// struct finefs_inode_info_header *sih = &si->header;
-	// struct finefs_file_write_entry *entry;
+	// struct finefs_file_pages_write_entry *entry;
 	int ret = 0;
 	// loff_t isize;
 	// timing_t fsync_time;

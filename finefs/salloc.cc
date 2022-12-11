@@ -113,7 +113,7 @@ static inline int finefs_batch_extend_slab_page(super_block* sb, slab_free_list*
             if(slab_list->cur_page == nullptr) {
                 slab_list->cur_page = page;
                 slab_list->next_slab_idx = 0;
-                r_info("%s: cur_page block_off: %lu, next_slab_idx: %u",
+                rd_info("%s: cur_page block_off: %lu, next_slab_idx: %u",
                     __func__, block_off, slab_list->next_slab_idx);
             }
             finefs_insert_slab_page(slab_list, block_off, page);
@@ -128,7 +128,7 @@ static inline int finefs_batch_extend_slab_page(super_block* sb, slab_free_list*
     if(slab_list->next_alloc_pages > SLAB_PAGE_BATCH_EXTEND_THRESHOLD) {
         slab_list->next_alloc_pages = SLAB_PAGE_BATCH_EXTEND_THRESHOLD;
     }
-    r_info("%s: allocated page: %d, now page_num: %u, next_alloc_pages: %u",
+    rd_info("%s: allocated page: %d, now page_num: %u, next_alloc_pages: %u",
         __func__, allocated, slab_list->page_num, slab_list->next_alloc_pages);
 
     return allocated;
@@ -145,7 +145,7 @@ static inline void finefs_free_or_goto_next_page(slab_free_list* slab_list, slab
         (!is_free && page->num_free_slab != 0));
 
     if(is_free) {
-        r_info("%s: free page_off %lu, slab_bits: %u, num_free_slab: %u", __func__,
+        rd_info("%s: free page_off %lu, slab_bits: %u, num_free_slab: %u", __func__,
         page->block_off, page->slab_bits, page->num_free_slab);
         slab_list->page_off_2_slab_page.erase(it);
         finefs_free_slab_page(page);
@@ -165,7 +165,7 @@ static inline void finefs_free_or_goto_next_page(slab_free_list* slab_list, slab
         slab_list->cur_page = nullptr;
         slab_list->next_slab_idx = 0;
     }
-    r_info("%s: page_num: %u, cur_page_off: %lu, next_slab_idx:%u", __func__, slab_list->page_num,
+    rd_info("%s: page_num: %u, cur_page_off: %lu, next_slab_idx:%u", __func__, slab_list->page_num,
         slab_list->cur_page ? slab_list->cur_page->block_off : 0,
         slab_list->next_slab_idx);
 }
@@ -183,14 +183,15 @@ static force_inline void finefs_goto_next_slab(slab_free_list* slab_list) {
         dlog_assert(cur_idx > slab_list->next_slab_idx);
         slab_list->next_slab_idx = cur_idx;
     }
-    r_info("%s: next_slab_idx: %u", __func__, slab_list->next_slab_idx);
+    rd_info("%s: next_slab_idx: %u", __func__, slab_list->next_slab_idx);
 }
 
-u64 finefs_slab_alloc(super_block* sb, size_t size, size_t *actual_size) {
+u64 finefs_slab_alloc(super_block* sb, size_t size, int *s_bits) {
 	dlog_assert(size);
     int cpuid = get_processor_id();
     struct slab_heap *slab_heap = finefs_get_slab_heap(sb, cpuid);
-	int size_bits = finefs_get_slab_size(size, actual_size);
+	int size_bits = finefs_get_slab_size(size);
+    *s_bits = size_bits;
     dlog_assert(size_bits <= SLAB_MAX_BITS);
     slab_free_list *slab_list = &slab_heap->slab_lists[size_bits - SLAB_MIN_BITS];
     slab_page* cur_page = nullptr;
@@ -216,7 +217,7 @@ u64 finefs_slab_alloc(super_block* sb, size_t size, size_t *actual_size) {
     }
     spin_unlock(&slab_heap->slab_lock);
 
-    r_info("%s: slab_off: %lu", __func__, slab_off);
+    rd_info("%s: slab_off: %lu", __func__, slab_off);
     return slab_off;
 }
 
@@ -242,13 +243,13 @@ void finefs_slab_free(super_block* sb, u64 nvm_off, size_t size) {
         finefs_slab_page_init_full(page, block_off, size_bits);
         finefs_insert_slab_page(slab_list, block_off, page);
         ++slab_list->page_num;
-        r_info("%s: new page_off: %lu, page_num:%u", block_off, slab_list->page_num);
+        rd_info("%s: new page_off: %lu, page_num:%u", block_off, slab_list->page_num);
     }
     dlog_assert(page);
-    r_info("%s: free page_off %lu, slab_idx: %u", block_off, slab_idx);
+    rd_info("%s: free page_off %lu, slab_idx: %u", block_off, slab_idx);
     ret = finefs_slab_page_set_free(page, slab_idx);
     if(ret && slab_list->page_num > SLAB_PAGE_KEEP_THRESHOLD) {
-        r_info("%s: page_num: %u > %u, free page_off: %lu", __func__,
+        rd_info("%s: page_num: %u > %u, free page_off: %lu", __func__,
             slab_list->page_num, SLAB_PAGE_KEEP_THRESHOLD, page->block_off);
         finefs_free_or_goto_next_page(slab_list, page, true);
     }

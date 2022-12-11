@@ -1732,7 +1732,7 @@ static int nova_inode_log_thorough_gc(struct super_block *sb, struct nova_inode 
     curr_p = pi->log_head;
     old_curr_p = curr_p;
     old_head = pi->log_head;
-    rv_proc("%s Log head 0x%lx, tail 0x%lx", __func__, curr_p, pi->log_tail);
+    rdv_proc("%s Log head 0x%lx, tail 0x%lx", __func__, curr_p, pi->log_tail);
     if (curr_p == 0 && pi->log_tail == 0) goto out;
 
     if (curr_p >> PAGE_SHIFT == pi->log_tail >> PAGE_SHIFT) goto out;

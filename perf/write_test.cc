@@ -104,21 +104,21 @@ int main(int argc, char* argv[]) {
            OP * (bs) / 1024.0 / 1024 / interval_s, OP / 1000.0 / interval_s);
 
     // read
-    void* read_buf = malloc(bs);
-    start_us = GetTsUsec();
-    for(int i = 0; i < OP; ++i) {
-        if(i % bs_num == 0) {
-            ret = lseek(fd, 0, SEEK_SET);
-            assert(ret == 0);
-        }
-        ret = read(fd, read_buf, bs);
-        assert(ret == bs);
-        assert(memcmp(read_buf, buf, bs) == 0);
-    }
-    end_us = GetTsUsec();
-    interval_s = (double)(end_us - start_us) / 1000 / 1000;
-    printf("read bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops\n",
-           OP * (bs) / 1024.0 / 1024 / interval_s, OP / 1000.0 / interval_s);
+    // void* read_buf = malloc(bs);
+    // start_us = GetTsUsec();
+    // for(int i = 0; i < OP; ++i) {
+    //     if(i % bs_num == 0) {
+    //         ret = lseek(fd, 0, SEEK_SET);
+    //         assert(ret == 0);
+    //     }
+    //     ret = read(fd, read_buf, bs);
+    //     assert(ret == bs);
+    //     assert(memcmp(read_buf, buf, bs) == 0);
+    // }
+    // end_us = GetTsUsec();
+    // interval_s = (double)(end_us - start_us) / 1000 / 1000;
+    // printf("read bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops\n",
+    //        OP * (bs) / 1024.0 / 1024 / interval_s, OP / 1000.0 / interval_s);
 
     close(fd);
     ret = unlink(dir1_file.c_str());

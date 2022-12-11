@@ -25,7 +25,7 @@
 // 	struct inode *inode, u64 log_block,
 // 	unsigned long name_blocknr, const char *symname, int len)
 // {
-// 	struct finefs_file_write_entry *entry;
+// 	struct finefs_file_pages_write_entry *entry;
 // 	struct finefs_inode_info *si = FINEFS_I(inode);
 // 	struct finefs_inode_info_header *sih = &si->header;
 // 	u64 block;
@@ -43,7 +43,7 @@
 
 // 	/* Apply a write entry to the start of log page */
 // 	block = log_block;
-// 	entry = (struct finefs_file_write_entry *)finefs_get_block(sb, block);
+// 	entry = (struct finefs_file_pages_write_entry *)finefs_get_block(sb, block);
 
 // 	entry->pgoff = 0;
 // 	entry->num_pages = cpu_to_le32(1);
@@ -53,26 +53,26 @@
 // 	time = CURRENT_TIME_SEC.tv_sec;
 // 	entry->mtime = cpu_to_le32(time);
 // 	/* Set entry type after set block */
-// 	finefs_set_entry_type(entry, FILE_WRITE);
+// 	finefs_set_entry_type(entry, FILE_PAGES_WRITE);
 // 	entry->size = cpu_to_le64(len + 1);
 // 	finefs_flush_buffer(entry, CACHELINE_SIZE, 0);
 
 // 	sih->log_pages = 1;
 // 	pi->log_head = block;
-// 	finefs_update_tail(pi, block + sizeof(struct finefs_file_write_entry));
+// 	finefs_update_tail(pi, block + sizeof(struct finefs_file_pages_write_entry));
 
 // 	return 0;
 // }
 
 // static int finefs_readlink(struct dentry *dentry, char *buffer, int buflen)
 // {
-// 	struct finefs_file_write_entry *entry;
+// 	struct finefs_file_pages_write_entry *entry;
 // 	struct inode *inode = dentry->d_inode;
 // 	struct super_block *sb = inode->i_sb;
 // 	struct finefs_inode *pi = finefs_get_inode(sb, inode);
 // 	char *blockp;
 
-// 	entry = (struct finefs_file_write_entry *)finefs_get_block(sb,
+// 	entry = (struct finefs_file_pages_write_entry *)finefs_get_block(sb,
 // 							pi->log_head);
 // 	blockp = (char *)finefs_get_block(sb, FINEFS_BLOCK_OFF(entry->block));
 
@@ -81,12 +81,12 @@
 
 // static char *finefs_get_link(struct dentry *dentry, struct inode *inode, void **cookie)
 // {
-// 	struct finefs_file_write_entry *entry;
+// 	struct finefs_file_pages_write_entry *entry;
 // 	struct super_block *sb = inode->i_sb;
 // 	struct finefs_inode *pi = finefs_get_inode(sb, inode);
 // 	char *blockp;
 
-// 	entry = (struct finefs_file_write_entry *)finefs_get_block(sb,
+// 	entry = (struct finefs_file_pages_write_entry *)finefs_get_block(sb,
 // 							pi->log_head);
 // 	blockp = (char *)finefs_get_block(sb, FINEFS_BLOCK_OFF(entry->block));
 

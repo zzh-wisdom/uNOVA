@@ -691,8 +691,8 @@ static u64 finefs_find_next_dentry_addr(struct super_block *sb,
 	struct finefs_inode_info_header *sih, u64 pos)
 {
 	struct finefs_sb_info *sbi = FINEFS_SB(sb);
-	struct finefs_file_write_entry *entry = NULL;
-	struct finefs_file_write_entry *entries[1];
+	struct finefs_file_pages_write_entry *entry = NULL;
+	struct finefs_file_pages_write_entry *entries[1];
 	int nr_entries;
 	u64 addr = 0;
 

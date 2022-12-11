@@ -250,7 +250,7 @@ const char *finefs_Timingstring[TIMING_NUM] =
 // }
 
 static inline void finefs_print_file_write_entry(struct super_block *sb,
-	u64 curr, struct finefs_file_write_entry *entry)
+	u64 curr, struct finefs_file_pages_write_entry *entry)
 {
 	rd_info("file write entry @ 0x%lx: paoff %lu, pages %u, "
 			"blocknr %lu, invalid count %u, size %lu\n",
@@ -301,9 +301,9 @@ static u64 finefs_print_log_entry(struct super_block *sb, u64 curr)
 			finefs_print_link_change_entry(sb, curr, (struct finefs_link_change_entry *)addr);
 			curr += sizeof(struct finefs_link_change_entry);
 			break;
-		case FILE_WRITE:
-			finefs_print_file_write_entry(sb, curr, (struct finefs_file_write_entry *)addr);
-			curr += sizeof(struct finefs_file_write_entry);
+		case FILE_PAGES_WRITE:
+			finefs_print_file_write_entry(sb, curr, (struct finefs_file_pages_write_entry *)addr);
+			curr += sizeof(struct finefs_file_pages_write_entry);
 			break;
 		case DIR_LOG:
 			size = finefs_print_dentry(sb, curr, (struct finefs_dentry *)addr);
@@ -311,7 +311,7 @@ static u64 finefs_print_log_entry(struct super_block *sb, u64 curr)
 			if (size == 0) {
 				rd_info("%s: dentry with size 0 @ 0x%lx\n",
 						__func__, curr);
-				curr += sizeof(struct finefs_file_write_entry);
+				curr += sizeof(struct finefs_file_pages_write_entry);
 				log_assert(0);
 			}
 			break;
@@ -323,7 +323,7 @@ static u64 finefs_print_log_entry(struct super_block *sb, u64 curr)
 		default:
 			rd_info("%s: unknown type %d, 0x%lx\n",
 						__func__, type, curr);
-			curr += sizeof(struct finefs_file_write_entry);
+			curr += sizeof(struct finefs_file_pages_write_entry);
 			log_assert(0);
 			break;
 	}

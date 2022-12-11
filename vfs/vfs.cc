@@ -22,7 +22,7 @@ static force_inline int init_dentry_cache(void) {
 
 static force_inline void destroy_dentry_cache(void) {
     r_warning("TODO: 优化 kmem_cache");
-    kmem_cache_destroy(dentry_cache);
+    kmem_cache_destroy(&dentry_cache);
 }
 
 static force_inline int init_file_cache(void) {
@@ -31,7 +31,7 @@ static force_inline int init_file_cache(void) {
     return 0;
 }
 
-static force_inline void destroy_file_cache(void) { kmem_cache_destroy(file_cache); }
+static force_inline void destroy_file_cache(void) { kmem_cache_destroy(&file_cache); }
 
 static force_inline file *file_alloc(int fd, int flags, dentry *dentry) {
     file *f = (struct file *)kmem_cache_alloc(file_cache);

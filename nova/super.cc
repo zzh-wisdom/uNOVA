@@ -54,7 +54,7 @@ int init_rangenode_cache(void) {
 
 void destroy_rangenode_cache(void) {
     r_warning("TODO: 优化 kmem_cache");
-    kmem_cache_destroy(nova_range_node_cachep);
+    kmem_cache_destroy(&nova_range_node_cachep);
 }
 
 static void nova_set_blocksize(struct super_block *sb, unsigned long size) {
@@ -578,7 +578,7 @@ static int init_inodecache() {
     return 0;
 }
 
-static void destroy_inodecache(void) { kmem_cache_destroy(nova_inode_cachep); }
+static void destroy_inodecache(void) { kmem_cache_destroy(&nova_inode_cachep); }
 
 // static struct dentry *nova_mount(struct file_system_type *fs_type, int flags, const char
 // *dev_name,

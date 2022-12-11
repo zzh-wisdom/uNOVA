@@ -38,10 +38,11 @@
 // int support_pcommit = 0;
 
 // static const struct export_operations finefs_export_ops;
-static struct kmem_cache *finefs_inode_cachep;
-static struct kmem_cache *finefs_range_node_cachep;
-struct kmem_cache *finefs_file_entry_cachep;
-struct kmem_cache *finefs_slab_page_cachep;
+static struct kmem_cache *finefs_inode_cachep = nullptr;
+static struct kmem_cache *finefs_range_node_cachep = nullptr;
+struct kmem_cache *finefs_file_page_entry_cachep = nullptr;
+struct kmem_cache *finefs_slab_page_cachep = nullptr;
+struct kmem_cache *finefs_file_small_entry_cachep = nullptr;
 
 static int init_slab_page_cache() {
     finefs_slab_page_cachep =
@@ -50,17 +51,25 @@ static int init_slab_page_cache() {
     return 0;
 }
 
-static void destroy_slab_page_cache(void) { kmem_cache_destroy(finefs_slab_page_cachep); }
+static void destroy_slab_page_cache(void) { kmem_cache_destroy(&finefs_slab_page_cachep); }
 
-
-static int init_file_entry_cache() {
-    finefs_file_entry_cachep =
+static int init_file_page_entry_cache() {
+    finefs_file_page_entry_cachep =
         kmem_cache_create(sizeof(finefs_file_page_entry), sizeof(finefs_file_page_entry));
-    if (finefs_file_entry_cachep == NULL) return -ENOMEM;
+    if (finefs_file_page_entry_cachep == NULL) return -ENOMEM;
     return 0;
 }
 
-static void destroy_file_entry_cache(void) { kmem_cache_destroy(finefs_file_entry_cachep); }
+static void destroy_file_page_entry_cache(void) { kmem_cache_destroy(&finefs_file_page_entry_cachep); }
+
+static int init_file_small_entry_cache() {
+    finefs_file_small_entry_cachep =
+        kmem_cache_create(sizeof(finefs_file_page_entry), sizeof(finefs_file_page_entry));
+    if (finefs_file_small_entry_cachep == NULL) return -ENOMEM;
+    return 0;
+}
+
+static void destroy_file_small_entry_cache(void) { kmem_cache_destroy(&finefs_file_small_entry_cachep); }
 
 static int init_inode_cache() {
     finefs_inode_cachep =
@@ -69,7 +78,7 @@ static int init_inode_cache() {
     return 0;
 }
 
-static void destroy_inode_cache(void) { kmem_cache_destroy(finefs_inode_cachep); }
+static void destroy_inode_cache(void) { kmem_cache_destroy(&finefs_inode_cachep); }
 
 static struct inode *finefs_alloc_inode(struct super_block *sb) {
     rdv_proc("%s", __func__);
@@ -100,7 +109,7 @@ int finefs_init_rangenode_cache(void) {
 }
 void finefs_destroy_rangenode_cache(void) {
     r_warning("TODO: 优化 kmem_cache");
-    kmem_cache_destroy(finefs_range_node_cachep);
+    kmem_cache_destroy(&finefs_range_node_cachep);
 }
 static inline struct finefs_range_node *finefs_alloc_range_node(struct super_block *sb) {
     struct finefs_range_node *p;
@@ -683,7 +692,8 @@ static void finefs_put_super(struct super_block *sb) {
     sb->s_fs_info = NULL;
 
     destroy_inode_cache();
-    destroy_file_entry_cache();
+    destroy_file_page_entry_cache();
+    destroy_file_small_entry_cache();
     destroy_slab_page_cache();
     finefs_destroy_rangenode_cache();
 }
@@ -936,17 +946,21 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
 
     r_info(
         "Data structure size: inode %lu, log_page %lu, "
-        "file_write_entry %lu, dentry %lu, "
+        "file_pages_write_entry %lu, "
+        "file_small_write_entry %lu, dentry %lu, "
         "setattr_entry %lu, link_change_entry %lu, "
         "inode_page_tail %lu",
         sizeof(struct finefs_inode), sizeof(struct finefs_inode_log_page),
-        sizeof(struct finefs_file_write_entry), sizeof(struct finefs_dentry),
+        sizeof(struct finefs_file_pages_write_entry), sizeof(struct finefs_file_small_write_entry),
+        sizeof(struct finefs_dentry),
         sizeof(struct finefs_setattr_logentry), sizeof(struct finefs_link_change_entry),
         sizeof(struct finefs_inode_page_tail));
 
     log_assert(sizeof(struct finefs_inode_log_page) == FINEFS_LOG_SIZE);
+    log_assert(NEXT_PAGE <= LOG_ENTRY_TYPE_MASK);
+
 #if LOG_ENTRY_SIZE==64
-    log_assert(sizeof(struct finefs_file_write_entry) == CACHELINE_SIZE);
+    log_assert(sizeof(struct finefs_file_pages_write_entry) == CACHELINE_SIZE);
 #endif
     log_assert(sizeof(struct finefs_dentry) == CACHELINE_SIZE);
     log_assert(sizeof(struct finefs_dentry) == FINEFS_DIR_LOG_REC_LEN(FINEFS_NAME_LEN));
@@ -960,15 +974,16 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
     assert(sizeof(struct finefs_inode) <= FINEFS_INODE_SIZE);
 
     rc = finefs_init_rangenode_cache();
-    if (rc) {
-        goto out0;
-    }
+    if (rc) goto out;
 
     rc = init_inode_cache();
-    if (rc) goto out1;
+    if (rc) goto out;
 
-    rc = init_file_entry_cache();
-    if (rc) goto out2;
+    rc = init_file_page_entry_cache();
+    if (rc) goto out;
+
+    rc = init_file_small_entry_cache();
+    if (rc) goto out;
 
     rc = init_slab_page_cache();
     log_assert(rc == 0);
@@ -981,20 +996,17 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
     rc = finefs_fill_super(sb, cfg->format);
     if (rc) {
         r_error("%s fail.\n", "finefs_fill_super");
-        goto out3;
+        goto out;
     }
 
     FINEFS_END_TIMING(init_t, init_time);
     return 0;
 
-out3:
-    destroy_file_entry_cache();
-
-out2:
+out:
+    destroy_file_page_entry_cache();
+    destroy_file_small_entry_cache();
     destroy_inode_cache();
-out1:
     finefs_destroy_rangenode_cache();
-out0:
     FINEFS_END_TIMING(init_t, init_time);
     return rc;
 }

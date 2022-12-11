@@ -793,7 +793,7 @@ static int finefs_traverse_dir_inode_log(struct super_block *sb, struct finefs_i
 }
 
 static int finefs_set_ring_array(struct super_block *sb, struct finefs_inode_info_header *sih,
-                               struct finefs_file_write_entry *entry, struct task_ring *ring,
+                               struct finefs_file_pages_write_entry *entry, struct task_ring *ring,
                                unsigned long base) {
     unsigned long start, end;
     unsigned long pgoff;
@@ -864,7 +864,7 @@ out:
 static int finefs_traverse_file_inode_log(struct super_block *sb, struct finefs_inode *pi,
                                         struct finefs_inode_info_header *sih, struct task_ring *ring,
                                         struct scan_bitmap *bm) {
-    struct finefs_file_write_entry *entry = NULL;
+    struct finefs_file_pages_write_entry *entry = NULL;
     struct finefs_setattr_logentry *attr_entry = NULL;
     struct finefs_inode_log_page *curr_page;
     unsigned long base = 0;
@@ -916,14 +916,14 @@ again:
             case LINK_CHANGE:
                 curr_p += sizeof(struct finefs_link_change_entry);
                 continue;
-            case FILE_WRITE:
+            case FILE_PAGES_WRITE:
                 break;
             default:
                 finefs_dbg("%s: unknown type %d, 0x%lx", __func__, type, curr_p);
                 FINEFS_ASSERT(0);
         }
 
-        entry = (struct finefs_file_write_entry *)addr;
+        entry = (struct finefs_file_pages_write_entry *)addr;
         sih->i_size = entry->size;
 
         if (entry->num_pages != entry->invalid_pages) {
@@ -931,7 +931,7 @@ again:
                 finefs_set_ring_array(sb, sih, entry, ring, base);
         }
 
-        curr_p += sizeof(struct finefs_file_write_entry);
+        curr_p += sizeof(struct finefs_file_pages_write_entry);
     }
 
     if (base == 0) {
