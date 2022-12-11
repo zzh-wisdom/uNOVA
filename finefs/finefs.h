@@ -18,6 +18,7 @@
 #define __FINEFS_H
 
 #include <stdlib.h>
+#include <map>
 
 #include "vfs/fs_cfg.h"
 #include "finefs/journal.h"
@@ -32,6 +33,7 @@
 #include "util/rbtree.h"
 #include "util/log.h"
 #include "util/radix-tree.h"
+#include "util/list.h"
 
 #define PAGE_SHIFT_2M 21
 #define PAGE_SHIFT_1G 30
@@ -626,6 +628,133 @@ struct free_list {
 	u64		padding[8];	/* Cache line break */
 };
 
+#define SLAB_MIN_BITS CACHELINE_SHIFT
+#define SLAB_MIN_SIZE (1 << SLAB_MIN_BITS)
+#define SLAB_MAX_BITS (FINEFS_BLOCK_SHIFT - 1)
+#define SLAB_MAX_SIZE (1 << SLAB_MAX_BITS)
+#define SLAB_LEVELS   (SLAB_MAX_SIZE - SLAB_MIN_SIZE + 1)
+
+struct slab_page {
+	unsigned long 	block_off;      // page 不能跨线程
+	unsigned long 	bitmap;    		// 标志哪一个slab是空闲的
+	u32            	num_free_slab; 	// 空闲的slab个数
+	u32      		slab_bits;
+	struct list_head 		entry;
+};
+
+static inline u32 finefs_get_num_slab_for_page(slab_page* page) {
+	return 1 << (FINEFS_BLOCK_SHIFT - (page->slab_bits));
+}
+
+static inline void finefs_slab_page_init_full(slab_page* page, u64 block_off, u32 slab_bits) {
+	unsigned long slab_num = 1 << (FINEFS_BLOCK_SHIFT - slab_bits);
+
+	page->block_off = block_off;
+	page->bitmap = 0;
+	page->num_free_slab = 0;
+	page->slab_bits = slab_bits;
+	INIT_LIST_HEAD(&page->entry);
+}
+
+static inline void finefs_slab_page_init_empty(slab_page* page, u64 block_off, u32 slab_bits) {
+	unsigned long slab_num = 1 << (FINEFS_BLOCK_SHIFT - slab_bits);
+	page->block_off = block_off;
+	page->bitmap = (~0ul) >> (BITS_PER_TYPE(page->bitmap) - slab_num);
+	page->num_free_slab = slab_num;
+	page->slab_bits = slab_bits;
+	INIT_LIST_HEAD(&page->entry);
+}
+
+// 整个page是否满, 分配完成
+static inline bool finefs_slab_page_set_alloc(slab_page* page, u32 slab_idx) {
+	dlog_assert(arch_test_bit(slab_idx, &page->bitmap));
+	bitmap_clear_bit(slab_idx, &page->bitmap);
+	dlog_assert(page->num_free_slab > 0);
+	--page->num_free_slab;
+	return page->num_free_slab == 0;
+}
+
+// 整个page是否为free
+static inline bool finefs_slab_page_set_free(slab_page* page, u32 slab_idx) {
+	dlog_assert(!arch_test_bit(slab_idx, &page->bitmap));
+	bitmap_set_bit(slab_idx, &page->bitmap);
+	++page->num_free_slab;
+	dlog_assert(page->num_free_slab <= (1 << (FINEFS_BLOCK_SHIFT - page->slab_bits)));
+	return page->num_free_slab == (1 << (FINEFS_BLOCK_SHIFT - page->slab_bits));
+}
+
+extern struct kmem_cache *finefs_slab_page_cachep;
+static inline struct slab_page *finefs_alloc_slab_page(struct super_block *sb) {
+    struct slab_page *p;
+    p = (struct slab_page *)kmem_cache_alloc(finefs_slab_page_cachep);
+    return p;
+}
+static inline void finefs_free_slab_page(struct slab_page *node) {
+    kmem_cache_free(finefs_slab_page_cachep, node);
+}
+
+#define SLAB_PAGE_BATCH_EXTEND_THRESHOLD 16
+// 一个slab free list最多可以持有的page个数
+#define SLAB_PAGE_KEEP_THRESHOLD  32
+
+struct slab_free_list {
+	u32      	slab_bits;
+	u32 		next_alloc_pages; // 下一次分配的pages个数
+	u32 		page_num;
+	u32         next_slab_idx;  // 下一次分配的page内slab序号
+	slab_page*  cur_page;
+	struct list_head 	page_head;
+	std::map<u64, slab_page*> page_off_2_slab_page;
+
+	slab_free_list() {
+        page_num = 0;
+        next_slab_idx = 0;
+        next_alloc_pages = 1;
+        cur_page = nullptr;
+        INIT_LIST_HEAD(&page_head);
+	}
+	~slab_free_list() {
+        log_assert(page_num && cur_page || !page_num && !cur_page);
+		slab_page *cur;
+		for(auto p: page_off_2_slab_page) {
+			cur = p.second;
+			finefs_free_slab_page(cur);
+			--page_num;
+		}
+        log_assert(page_num == 0);
+	}
+};
+
+struct slab_heap {
+	spinlock_t slab_lock;
+	slab_free_list slab_lists[SLAB_LEVELS];
+
+	slab_heap() {
+		spin_lock_init(&slab_lock);
+		for(int i = 0; i < SLAB_LEVELS; ++i) {
+			u32 slab_bits = i + SLAB_MIN_BITS;
+			slab_lists[i].slab_bits = slab_bits;
+		}
+	}
+};
+
+// 	返回slab bits
+static force_inline int finefs_get_slab_size(size_t size, size_t* actual_size) {
+	int size_bits = 0;
+	size_bits = __fls(size);
+	if((1ul << size_bits) < size) {
+		++size_bits;
+	}
+	size_bits = (size_bits >= SLAB_MIN_BITS) ? size_bits : SLAB_MIN_BITS;
+	*actual_size = 1ul << size_bits;
+	return size_bits;
+}
+
+// 返回nvm off, actual_size实际分配的2的幂大小
+// size不能为0
+u64 finefs_slab_alloc(super_block* sb, size_t size, size_t* actual_size);
+void finefs_slab_free(super_block* sb, u64 nvm_off, size_t size);
+
 /*
  * The first block contains super blocks and reserved inodes;
  * The second block contains pointers to journal pages.
@@ -700,6 +829,7 @@ struct finefs_sb_info {
 
 	/* Per-CPU free block list */
 	struct free_list *free_lists;
+	struct slab_heap *slab_heaps;
 
 	/* Shared free block list */
 	unsigned long per_list_blocks;  // 每个cpu的block个数 sbi->num_blocks / sbi->cpus;
@@ -714,6 +844,16 @@ static inline struct finefs_sb_info *FINEFS_SB(struct super_block *sb)
 static inline struct finefs_inode_info *FINEFS_I(struct inode *inode)
 {
 	return container_of(inode, struct finefs_inode_info, vfs_inode);
+}
+
+static force_inline int get_cpuid(struct finefs_sb_info *sbi, unsigned long blocknr) {
+    int cpuid;
+
+    cpuid = blocknr / sbi->per_list_blocks;
+
+    if (cpuid >= sbi->cpus) cpuid = SHARED_CPU;
+
+    return cpuid;
 }
 
 /* If this is part of a read-modify-write of the super block,
@@ -765,6 +905,20 @@ struct free_list *finefs_get_free_list(struct super_block *sb, int cpu)
 	else {
 		rdv_verb("%s: cpu:%d, sbi->cpus:%d", __func__, cpu, sbi->cpus);
 		return &sbi->shared_free_list;
+	}
+}
+
+static inline
+struct slab_heap *finefs_get_slab_heap(struct super_block *sb, int cpu)
+{
+	struct finefs_sb_info *sbi = FINEFS_SB(sb);
+
+	if (cpu < sbi->cpus)
+		return &sbi->slab_heaps[cpu];
+	else {
+		r_error("%s: cpu:%d, sbi->cpus:%d", __func__, cpu, sbi->cpus);
+		log_assert(0);
+		return nullptr;
 	}
 }
 
@@ -1112,6 +1266,10 @@ static inline int is_dir_init_entry(struct super_block *sb,
 /* Function Prototypes */
 extern void finefs_error_mng(struct super_block *sb, const char *fmt, ...);
 
+/* salloc.c */
+int finefs_alloc_slab_heaps(struct super_block *sb);
+void finefs_delete_slab_heaps(struct super_block *sb);
+
 /* balloc.c */
 int finefs_alloc_block_free_lists(struct super_block *sb);
 void finefs_delete_free_lists(struct super_block *sb);
@@ -1143,6 +1301,27 @@ int finefs_find_free_slot(struct finefs_sb_info *sbi,
 	struct rb_root *tree, unsigned long range_low,
 	unsigned long range_high, struct finefs_range_node **prev,
 	struct finefs_range_node **next);
+
+// 0 分配失败
+static force_inline u64
+finefs_less_page_alloc(struct super_block *sb, struct finefs_inode *pi,
+	size_t *size_p, unsigned long start_blk, int zero, int cow)
+{
+	size_t size = *size_p;
+	dlog_assert(size < FINEFS_BLOCK_SIZE);
+	dlog_assert(pi->i_blk_type == FINEFS_DEFAULT_DATA_BLOCK_TYPE);
+	if(size > (FINEFS_BLOCK_SIZE >> 1)) {
+		unsigned long blocknr = 0;
+		finefs_new_data_blocks(sb, pi, &blocknr, 1, start_blk, zero, cow);
+		u64 page_off = finefs_get_block_off(sb, blocknr, pi->i_blk_type);
+		r_info("%s: size: %lu, one page: %lu", __func__, size, page_off);
+		*size_p = FINEFS_BLOCK_SIZE;
+		return page_off;
+	} else {
+		u64 slab_off = finefs_slab_alloc(sb, size, size_p);
+		return slab_off;
+	}
+}
 
 /* bbuild.c */
 inline void set_bm(unsigned long bit, struct scan_bitmap *bm,
@@ -1201,6 +1380,7 @@ int finefs_fsync(struct file *file, loff_t start, loff_t end, int datasync);
 // extern const struct address_space_operations finefs_aops_dax;
 int finefs_init_inode_inuse_list(struct super_block *sb);
 extern int finefs_init_inode_table(struct super_block *sb);
+extern int finefs_init_slab_page_inode(struct super_block *sb);
 unsigned long finefs_get_last_blocknr(struct super_block *sb,
 	struct finefs_inode_info_header *sih);
 int finefs_get_inode_address(struct super_block *sb, u64 ino,

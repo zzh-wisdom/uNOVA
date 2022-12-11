@@ -118,6 +118,19 @@ int finefs_init_inode_table(struct super_block *sb) {
     return 0;
 }
 
+int finefs_init_slab_page_inode(struct super_block *sb) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    struct finefs_inode *pi = finefs_get_inode_by_ino(sb, FINEFS_SLAB_PAGE_INO);
+
+    pi->i_links_count = cpu_to_le16(1);
+    pi->finefs_ino = FINEFS_INODETABLE_INO;
+    pi->i_blk_type = FINEFS_DEFAULT_DATA_BLOCK_TYPE;
+    pi->log_tail = 0;
+
+    finefs_flush_buffer(pi, sizeof(finefs_inode), 1);
+    return 0;
+}
+
 // 需要读取nvm中的结构索引来找到对应inode在nvm中的资质
 // 索引信息能否搬迁到dram
 // extendable 为1时表示，当查到超过最后一个block返回时，是否分配新的block进行扩展
@@ -274,8 +287,7 @@ static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct fine
                 check = false;
             } else {
                 if(curr_page->page_tail.bitmap != 0) {
-                    int entry_nr = find_first_bit((const unsigned long*)&(curr_page->page_tail.bitmap),
-                        BITS_PER_TYPE(curr_page->page_tail.bitmap));
+                    int entry_nr = __ffs(curr_page->page_tail.bitmap);
                     void* entry = finefs_get_block(sb, curr_block+entry_nr*CACHELINE_SIZE);
                     u8 entry_type = finefs_get_entry_type(entry);
                     dlog_assert(entry_type != LINK_CHANGE && entry_type != FILE_WRITE);

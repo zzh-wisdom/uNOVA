@@ -126,6 +126,7 @@ inode中受到父母影响的状态有：link，valid，和version。因此redo 
 4. 不考虑线程混合，可以看成每个cpu操作的空间和文件都是固定的（除了rename）。而且测试不会测混合操作的情况。如果需要完这个，注意（FIXME: THREASDD）
 5. 不支持ftuncate将文件缩小
 6. 文件名定长，最长大约是27。边长文件名留到以后的工作中实现
+7. 目前log_heap和data_heap不能相互转化，减少工作量
 
 所以每个cpu需要三个log（文件写、truncate、和目录操作（包括mkdir、 rmdir、create、unlink、rename等）
 
@@ -143,7 +144,7 @@ PMEM_MEM_WRITE
 后台GC：
 
 1. 删除inode时，后台完成block的回收
-
+2. 搞一个现成的内存分配器
 
 一致性问题还得再考虑一下：
 

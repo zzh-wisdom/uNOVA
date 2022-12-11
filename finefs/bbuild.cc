@@ -51,16 +51,6 @@
 //     }
 // }
 
-static int get_cpuid(struct finefs_sb_info *sbi, unsigned long blocknr) {
-    int cpuid;
-
-    cpuid = blocknr / sbi->per_list_blocks;
-
-    if (cpuid >= sbi->cpus) cpuid = SHARED_CPU;
-
-    return cpuid;
-}
-
 // static int finefs_failure_insert_inodetree(struct super_block *sb, unsigned long ino_low,
 //                                          unsigned long ino_high) {
 //     struct finefs_sb_info *sbi = FINEFS_SB(sb);

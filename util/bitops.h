@@ -51,6 +51,18 @@ static force_inline int is_pow2(uint64_t v) { return v && !(v & (v - 1)); }
 
 /********* bitmap *********/
 
+/*
+ * Macros to generate condition code outputs from inline assembly,
+ * The output operand must be type "bool".
+ */
+#ifdef __GCC_ASM_FLAG_OUTPUTS__
+# define CC_SET(c) "\n\t/* output condition code " #c "*/\n"
+# define CC_OUT(c) "=@cc" #c
+#else
+# define CC_SET(c) "\n\tset" #c " %[_cc_" #c "]\n"
+# define CC_OUT(c) [_cc_ ## c] "=qm"
+#endif
+
 //-----------------------------
 #ifdef __ASSEMBLY__
 # define __ASM_FORM(x, ...)		x,## __VA_ARGS__
@@ -108,6 +120,36 @@ static force_inline int is_pow2(uint64_t v) { return v && !(v & (v - 1)); }
 #define BITS_PER_BYTE		8
 #define BITS_PER_TYPE(type)	(sizeof(type) * BITS_PER_BYTE)
 #define BITS_TO_LONGS(nr)	__KERNEL_DIV_ROUND_UP(nr, BITS_PER_TYPE(long))
+
+const int BITS_PER_LONG = sizeof(unsigned long)*BITS_PER_BYTE;
+const int _BITOPS_LONG_SHIFT = BITS_PER_LONG == 32 ? 5 : 6;
+
+static __always_inline bool constant_test_bit(long nr, const volatile unsigned long *addr)
+{
+	return ((1UL << (nr & (BITS_PER_LONG-1))) &
+		(addr[nr >> _BITOPS_LONG_SHIFT])) != 0;
+}
+
+static __always_inline bool variable_test_bit(long nr, volatile const unsigned long *addr)
+{
+	bool oldbit;
+
+	asm volatile(__ASM_SIZE(bt) " %2,%1"
+		     CC_SET(c)
+		     : CC_OUT(c) (oldbit)
+		     : "m" (*(unsigned long *)addr), "Ir" (nr) : "memory");
+
+	return oldbit;
+}
+
+/**
+ * @brief 返回addr的第nr位值
+ *
+ */
+#define arch_test_bit(nr, addr)			\
+	(__builtin_constant_p((nr))		\
+	 ? constant_test_bit((nr), (addr))	\
+	 : variable_test_bit((nr), (addr)))
 
 static force_inline void
 bitmap_set_bit_atomic(long nr, volatile unsigned long *addr)

@@ -197,6 +197,8 @@ static inline int finefs_copy_partial_block(struct super_block *sb,
  * Fill the new start/end block from original blocks.
  * Do nothing if fully covered; copy if original blocks present;
  * Fill zero otherwise.
+ *
+ * 只用处理这部分小写
  */
 static void finefs_handle_head_tail_blocks(struct super_block *sb,
 	struct finefs_inode *pi, struct inode *inode, loff_t pos, size_t count,
@@ -359,13 +361,14 @@ ssize_t finefs_cow_file_write(struct file *filp,
 	int allocated = 0;
 	void* kmem;
 	u64 curr_entry;
-	size_t bytes;
+	size_t bytes, sub_bytes;
 	long status = 0;
 	timing_t cow_write_time, memcpy_time;
 	unsigned long step = 0;
 	// begin_tail第一个write entry的起始地址
 	u64 temp_tail = 0, begin_tail = 0;
 	u32 time;
+	struct timespec cur_time;
 
 	if (len == 0)
 		return 0;
@@ -396,18 +399,43 @@ ssize_t finefs_cow_file_write(struct file *filp,
 	count = len;
 
 	pi = finefs_get_inode(sb, inode);
-
 	// 块内偏移
 	offset = pos & (sb->s_blocksize - 1);
-	num_blocks = ((count + offset - 1) >> sb->s_blocksize_bits) + 1;
+
+	// 处理头部不对齐的数据
+	if(offset) {
+		sub_bytes = sb->s_blocksize - offset;
+		if(sub_bytes > count) sub_bytes = count;
+		size_t actual_size = sub_bytes;
+		u64 slab_off = finefs_less_page_alloc(sb, pi, &actual_size, pos, 0, 1);
+		ret = -ENOSPC;
+		if(slab_off == 0) goto out;
+		kmem = finefs_get_block(sb, slab_off);
+		// TODO: 最后一个提交log前，才需要sfence
+		// TODO: 多个写log的事务
+		pmem_memcpy_nt_nodrain(kmem, buf, sub_bytes);
+		copied = sub_bytes;
+
+		// TODO: 写 log
+
+		offset = 0;
+		written += copied;
+		pos += copied;
+		buf += copied;
+		count -= copied;
+	}
+
+	num_blocks = (count & FINEFS_BLOCK_MASK) >> sb->s_blocksize_bits;
 	total_blocks = num_blocks;
+	log_assert(num_blocks == 0);
+
 	/* offset in the actual block size block */
 
 	// ret = file_remove_privs(filp);
 	// if (ret) {
 	// 	goto out;
 	// }
-	struct timespec cur_time = get_cur_time_spec();
+	cur_time = get_cur_time_spec();
 	inode->i_ctime = inode->i_mtime = cur_time;
 	time = cur_time.tv_sec;
 
@@ -499,6 +527,28 @@ ssize_t finefs_cow_file_write(struct file *filp,
 
 		// TODO: 目前暂不支持写跨不连续的block
 		log_assert(num_blocks == 0);
+	}
+
+	// 处理尾部不对齐的数据
+	if(count) {
+		sub_bytes = count;
+		size_t actual_size = sub_bytes;
+		u64 slab_off = finefs_less_page_alloc(sb, pi, &actual_size, pos, 0, 1);
+		ret = -ENOSPC;
+		if(slab_off == 0) goto out;
+		kmem = finefs_get_block(sb, slab_off);
+		// TODO: 最后一个提交log前，才需要sfence
+		// TODO: 多个写log的事务
+		pmem_memcpy_nt_nodrain(kmem, buf, sub_bytes);
+		copied = sub_bytes;
+
+		// TODO: 写 log
+
+		offset = 0;
+		written += copied;
+		pos += copied;
+		buf += copied;
+		count -= copied;
 	}
 
 	finefs_memunlock_inode(sb, pi);

@@ -41,6 +41,17 @@
 static struct kmem_cache *finefs_inode_cachep;
 static struct kmem_cache *finefs_range_node_cachep;
 struct kmem_cache *finefs_file_entry_cachep;
+struct kmem_cache *finefs_slab_page_cachep;
+
+static int init_slab_page_cache() {
+    finefs_slab_page_cachep =
+        kmem_cache_create(sizeof(slab_page), sizeof(slab_page));
+    if (finefs_slab_page_cachep == NULL) return -ENOMEM;
+    return 0;
+}
+
+static void destroy_slab_page_cache(void) { kmem_cache_destroy(finefs_slab_page_cachep); }
+
 
 static int init_file_entry_cache() {
     finefs_file_entry_cachep =
@@ -345,13 +356,10 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
 
     // 分配每个cpu的NVM inode table
     if (finefs_init_inode_table(sb) < 0) return nullptr;
+    if (finefs_init_slab_page_inode(sb) < 0) return nullptr;
 
     pi = finefs_get_inode_by_ino(sb, FINEFS_BLOCKNODE_INO);
     pi->finefs_ino = FINEFS_BLOCKNODE_INO;
-    finefs_flush_buffer(pi, CACHELINE_SIZE, 1);
-
-    pi = finefs_get_inode_by_ino(sb, FINEFS_INODELIST_INO);
-    pi->finefs_ino = FINEFS_INODELIST_INO;
     finefs_flush_buffer(pi, CACHELINE_SIZE, 1);
 
     finefs_memunlock_range(sb, super, FINEFS_SB_SIZE * 2);
@@ -654,10 +662,12 @@ static void finefs_put_super(struct super_block *sb) {
     }
 
     finefs_delete_free_lists(sb);
+    finefs_delete_slab_heaps(sb);
 
     // FREE(sbi->zeroed_page);
     finefs_dbgmask = 0;
     FREE(sbi->free_lists);
+    FREE(sbi->slab_heaps);
     FREE(sbi->journal_locks);
 
     for (i = 0; i < sbi->cpus; i++) {
@@ -674,6 +684,7 @@ static void finefs_put_super(struct super_block *sb) {
 
     destroy_inode_cache();
     destroy_file_entry_cache();
+    destroy_slab_page_cache();
     finefs_destroy_rangenode_cache();
 }
 
@@ -772,6 +783,11 @@ static int finefs_fill_super(struct super_block *sb, bool format) {
 
     // init 每个cpu的block free list
     if (finefs_alloc_block_free_lists(sb)) {
+        retval = -ENOMEM;
+        goto out;
+    }
+
+    if (finefs_alloc_slab_heaps(sb)) {
         retval = -ENOMEM;
         goto out;
     }
@@ -880,6 +896,11 @@ out:
         sbi->free_lists = NULL;
     }
 
+    if (sbi->slab_heaps) {
+        FREE(sbi->slab_heaps);
+        sbi->slab_heaps = NULL;
+    }
+
     if (sbi->journal_locks) {
         FREE(sbi->journal_locks);
         sbi->journal_locks = NULL;
@@ -948,6 +969,9 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
 
     rc = init_file_entry_cache();
     if (rc) goto out2;
+
+    rc = init_slab_page_cache();
+    log_assert(rc == 0);
 
     //
     // rc = register_filesystem(&finefs_fs_type);

@@ -63,6 +63,7 @@
         "fstream": "cpp",
         "iosfwd": "cpp",
         "sstream": "cpp",
-        "numbers": "cpp"
+        "numbers": "cpp",
+        "map": "cpp"
     }
 }
