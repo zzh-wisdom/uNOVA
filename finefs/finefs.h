@@ -681,9 +681,13 @@ struct finefs_file_page_entry {
 	finefs_file_pages_write_entry* nvm_entry_p;
 };
 
-static force_inline void finefs_page_write_entry_init(finefs_file_page_entry* page_entry) {
-	memset(page_entry, 0, sizeof(finefs_file_page_entry));
+static force_inline void finefs_page_write_entry_init(finefs_file_page_entry* page_entry, u64 pgoff) {
+	page_entry->num_small_write = 0;
 	INIT_LIST_HEAD(&page_entry->small_write_head);
+
+	page_entry->file_pgoff = pgoff;
+	page_entry->nvm_block_p = nullptr;
+	page_entry->nvm_entry_p = nullptr;
 }
 
 void finefs_page_write_entry_set(finefs_file_page_entry* entry,

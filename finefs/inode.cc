@@ -896,7 +896,7 @@ int finefs_assign_write_entry(struct super_block *sb, struct finefs_inode *pi,
         if(!pentry) {
             dram_entry = finefs_alloc_page_entry(sb);
             log_assert(dram_entry);
-            finefs_page_write_entry_init(dram_entry);
+            finefs_page_write_entry_init(dram_entry, curr_pgoff);
             ret = radix_tree_insert(&sih->tree, curr_pgoff, dram_entry);
             if (ret) {
                 rd_info("%s: ERROR %d", __func__, ret);
