@@ -172,9 +172,11 @@ struct finefs_inode {
 	 * We just make sure it is consistent upon clean umount,
 	 * and it is recovered in DFS recovery if power failure occurs.
 	 * 持有的block个数，包括log page
-	 * TODO: 不要随机访问
+	 * TODO: 不要随机访问，只有正常退出/或者或者恢复的时候才更新
 	 */
 	__le64	i_blocks;
+	__le64	i_slabs;
+	__le64	i_slab_bytes;
 	// __le64	i_xattr;	/* Extended attribute block */
 
 	/* second 48 bytes */

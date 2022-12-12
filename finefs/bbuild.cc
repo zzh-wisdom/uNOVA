@@ -712,8 +712,13 @@ void finefs_init_header(struct super_block *sb, struct finefs_inode_info_header 
     // sih->low_dirty = ULONG_MAX;
     // sih->high_dirty = 0;
     sih->log_pages = 0;
-    sih->valid_bytes = 0;
-    sih->i_log_tail = 0;
+    sih->log_valid_bytes = 0;
+    sih->h_log_tail = 0;
+
+    sih->h_blocks = 0;
+    sih->h_slabs = 0;
+    sih->h_slab_bytes = 0;
+
     sih->last_setattr = 0;
     sih->last_link_change = 0;
     // INIT_RADIX_TREE(&sih->cache_tree, GFP_ATOMIC);

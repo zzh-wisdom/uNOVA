@@ -863,6 +863,9 @@ setup_sb:
         goto out;
     }
     sih = &FINEFS_I(root_i)->header;
+    sih->h_blocks = 1;
+    sih->log_pages = 1;
+    sih->log_valid_bytes = log_tail - root_pi->log_head.next_page_;
     finefs_update_volatile_tail(sih, log_tail);
 
     sb->s_root = d_make_root(root_i);

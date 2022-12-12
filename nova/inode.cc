@@ -1593,7 +1593,7 @@ static bool curr_page_invalid(struct super_block *sb, struct nova_inode *pi,
 
         length = 0;
         if (!curr_log_entry_invalid(sb, pi, sih, curr_p, &length)) {
-            sih->valid_bytes += length;
+            sih->log_valid_bytes += length;
             ret = false;
         }
 
@@ -1847,7 +1847,7 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
 
     NOVA_START_TIMING(fast_gc_t, gc_time);
     curr = pi->log_head;
-    sih->valid_bytes = 0;
+    sih->log_valid_bytes = 0;
 
     rd_info("%s: log head 0x%lx, tail 0x%lx", __func__, curr, curr_tail);
     while (1) {
@@ -1910,8 +1910,8 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
         nova_free_log_blocks(sb, pi, nova_get_blocknr(sb, curr, btype), 1);
     }
 
-    blocks = sih->valid_bytes / LAST_ENTRY;
-    if (sih->valid_bytes % LAST_ENTRY) blocks++;
+    blocks = sih->log_valid_bytes / LAST_ENTRY;
+    if (sih->log_valid_bytes % LAST_ENTRY) blocks++;
 
     NOVA_END_TIMING(fast_gc_t, gc_time);
 

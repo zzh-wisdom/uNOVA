@@ -245,7 +245,6 @@ int finefs_append_root_init_entries(struct super_block *sb,
 		return -ENOMEM;
 	}
 	// pi->log_tail = new_block;
-	pi->i_blocks = 1;
 	finefs_link_set_next_page(sb, &pi->log_head, new_block, 0);
 	// pi->log_head = new_block;
 	// finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
@@ -314,7 +313,8 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 		return -ENOMEM;
 	}
 	// pi->log_tail = new_block;
-	pi->i_blocks = 1;
+	sih->h_blocks = 1;
+	sih->log_pages = 1;
 	finefs_link_set_next_page(sb, &pi->log_head, new_block, 0);
 	// pi->log_head = new_block;
 	// finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
@@ -332,6 +332,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	strncpy(de_entry->name, ".\0", 2);
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(1), 0);
 	dlog_assert(log_entry_is_set_valid(de_entry));
+	sih->log_valid_bytes += FINEFS_DIR_LOG_REC_LEN(1);
 
 	curr_p = new_block + FINEFS_DIR_LOG_REC_LEN(1);
 
@@ -348,6 +349,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	strncpy(de_entry->name, "..\0", 3);
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(2), 0);
 	dlog_assert(log_entry_is_set_valid(de_entry));
+	sih->log_valid_bytes += FINEFS_DIR_LOG_REC_LEN(2);
 
 	curr_p += FINEFS_DIR_LOG_REC_LEN(2);
 	// finefs_update_tail(pi, curr_p);
@@ -402,7 +404,7 @@ int finefs_add_dentry(struct dentry *dentry, u64 ino, int inc_link,
 	curr_entry = finefs_append_dir_inode_entry(sb, pidir, dir, ino,
 				dentry,	loglen, tail, inc_link,
 				&curr_tail);
-	sih->valid_bytes += loglen;
+	sih->log_valid_bytes += loglen;
 
 	direntry = (struct finefs_dentry *)finefs_get_block(sb, curr_entry);
 	// 将新的dentry插入到目录的radix-tree索引中
@@ -444,7 +446,7 @@ int finefs_remove_dentry(struct dentry *dentry, int dec_link, u64 tail,
 	// ino为0，表示删除
 	curr_entry = finefs_append_dir_inode_entry(sb, pidir, dir, 0,
 				dentry, loglen, tail, dec_link, &curr_tail);
-	sih->valid_bytes += loglen;
+	sih->log_valid_bytes += loglen;
 	*new_tail = curr_tail;
 
 	finefs_remove_dir_radix_tree(sb, sih, entry->name, entry->len, 0);
@@ -587,7 +589,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 		finefs_rebuild_dir_time_and_size(sb, pi, entry);
 
 		de_len = le16_to_cpu(entry->de_len);
-		sih->valid_bytes += de_len;
+		sih->log_valid_bytes += de_len;
 		curr_p += de_len;
 	}
 

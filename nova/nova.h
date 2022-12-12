@@ -315,7 +315,7 @@ struct nova_inode_info_header {
 	// unsigned long high_dirty;	/* Mmap dirty high range */
 
 	// 下面是统计的信息，不用初始化，随着操作而改变
-	unsigned long valid_bytes;	/* For thorough GC, log page中有效entry的总字节数*/
+	unsigned long log_valid_bytes;	/* For thorough GC, log page中有效entry的总字节数*/
 	// 随着 GC/op 的进行而修改
 	u64 last_setattr;		/* Last setattr entry ,当前已经应用的setattr log地址*/
 	u64 last_link_change;		/* Last link change entry */

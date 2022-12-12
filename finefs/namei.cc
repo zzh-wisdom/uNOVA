@@ -160,7 +160,7 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 
     pi = (struct finefs_inode *)finefs_get_block(sb, pi_addr);
     finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
-    p_sih->i_log_tail = tail;
+    p_sih->h_log_tail = tail;
     inode_unref(inode);
     FINEFS_END_TIMING(create_t, create_time);
     return err;
@@ -355,7 +355,8 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
     rdv_proc("%s: inode %lu attr change", __func__, inode->i_ino);
 
     curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended, false);
-    inode->i_blocks = pi->i_blocks;
+    // inode->i_blocks = pi->i_blocks;
+    inode->i_blocks = sih->h_blocks;
     if (curr_p == 0) return -ENOMEM;
 
     entry = (struct finefs_link_change_entry *)finefs_get_block(sb, curr_p);
@@ -367,7 +368,7 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
     entry->entry_version = 0x1234;
     finefs_flush_buffer(entry, size, 0);
     *new_tail = curr_p + size;
-    sih->valid_bytes += size;
+    sih->log_valid_bytes += size;
     sih->last_link_change = curr_p;
 
     FINEFS_END_TIMING(append_link_change_t, append_time);
@@ -472,8 +473,8 @@ static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
     if (retval) goto out;
 
     finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, invalidate);
-    FINEFS_I(dir)->header.i_log_tail = pidir_tail;
-    FINEFS_I(inode)->header.i_log_tail = pi_tail;
+    FINEFS_I(dir)->header.h_log_tail = pidir_tail;
+    FINEFS_I(inode)->header.h_log_tail = pi_tail;
 
     FINEFS_END_TIMING(unlink_t, unlink_time);
     return 0;
@@ -539,7 +540,7 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
     // unlock_new_inode(inode);
 
     finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
-    FINEFS_I(dir)->header.i_log_tail = tail;
+    FINEFS_I(dir)->header.h_log_tail = tail;
     inode_unref(inode);
 out:
     FINEFS_END_TIMING(mkdir_t, mkdir_time);
@@ -632,8 +633,8 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     if (err) goto end_rmdir;
 
     finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, 1);
-    FINEFS_I(dir)->header.i_log_tail = pidir_tail;
-    FINEFS_I(inode)->header.i_log_tail = pi_tail;
+    FINEFS_I(dir)->header.h_log_tail = pidir_tail;
+    FINEFS_I(inode)->header.h_log_tail = pi_tail;
 
     FINEFS_END_TIMING(rmdir_t, rmdir_time);
     return err;

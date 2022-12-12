@@ -154,9 +154,9 @@ PMEM_MEM_WRITE
 读写过程中需要维护的一些状态
 
 // 需要维护的状态
-// sih->valid_bytes;
+// sih->log_valid_bytes;
 // sih->log_pages;  // ok, fast gc需要完善
-// sih->i_log_tail; // ok
+// sih->h_log_tail; // ok
 // pi->log_head;    // ok
 // pi->i_blocks;    // ok
 

@@ -36,4 +36,7 @@
 #define WARN_ON_ONCE(condition) WARN_ON(condition)
 #endif
 
+#define MASK_FOR_BITS(bits) ((~0ul) << bits)
+#define UMASK_FOR_BITS(bits) (((1ul) << bits) - 1)
+
 #endif

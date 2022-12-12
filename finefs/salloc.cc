@@ -230,7 +230,7 @@ void finefs_slab_free(super_block* sb, u64 nvm_off, size_t size) {
     struct slab_heap *slab_heap = finefs_get_slab_heap(sb, cpuid);
     int size_bits = fls(size) - 1;
     dlog_assert((1 << size_bits) == size);
-    slab_free_list *slab_list = &slab_heap->slab_lists[size_bits];
+    slab_free_list *slab_list = &slab_heap->slab_lists[size_bits - SLAB_MIN_BITS];
     slab_page* page = nullptr;
     u32 slab_idx = (nvm_off & FINEFS_BLOCK_UMASK) >> size_bits;
     bool ret;
@@ -243,10 +243,10 @@ void finefs_slab_free(super_block* sb, u64 nvm_off, size_t size) {
         finefs_slab_page_init_full(page, block_off, size_bits);
         finefs_insert_slab_page(slab_list, block_off, page);
         ++slab_list->page_num;
-        rd_info("%s: new page_off: %lu, page_num:%u", block_off, slab_list->page_num);
+        rd_info("%s: new page_off: %lu, page_num:%u", __func__, block_off, slab_list->page_num);
     }
     dlog_assert(page);
-    rd_info("%s: free page_off %lu, slab_idx: %u", block_off, slab_idx);
+    rd_info("%s: free page_off %lu, slab_idx: %u", __func__, block_off, slab_idx);
     ret = finefs_slab_page_set_free(page, slab_idx);
     if(ret && slab_list->page_num > SLAB_PAGE_KEEP_THRESHOLD) {
         rd_info("%s: page_num: %u > %u, free page_off: %lu", __func__,
