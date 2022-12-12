@@ -81,8 +81,9 @@ int main(int argc, char* argv[]) {
     }
     end_us = GetTsUsec();
     interval_s = (double)(end_us - start_us) / 1000 / 1000;
-    printf("mkdir bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops\n",
-           files * (64*2 + 128 + 64) / 1024.0 / 1024 / interval_s, files / 1000.0 / interval_s);
+    printf("mkdir bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
+           files * (64*2 + 128 + 64) / 1024.0 / 1024 / interval_s,
+           files / 1000.0 / interval_s, (end_us - start_us)*1.0 / files);
 
     start_us = GetTsUsec();
     for(int i = 0; i < files; ++i) {
@@ -93,8 +94,9 @@ int main(int argc, char* argv[]) {
     }
     end_us = GetTsUsec();
     interval_s = (double)(end_us - start_us) / 1000 / 1000;
-    printf("rmdir bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops\n",
-           files * (64*2 + 128 + 64) / 1024.0 / 1024 / interval_s, files / 1000.0 / interval_s);
+    printf("rmdir bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
+           files * (64*2 + 128 + 64) / 1024.0 / 1024 / interval_s,
+           files / 1000.0 / interval_s, (end_us - start_us)*1.0 / files);
 
     printf("Test pass\n");
 }

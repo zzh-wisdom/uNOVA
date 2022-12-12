@@ -78,7 +78,7 @@ int main(int argc, char* argv[]) {
     // printf("open %s, fd = %d\n", dir1_f1.c_str(), fd);
 
     uint64_t file_len = 0;
-    uint64_t start_ns = GetTsUsec();
+    uint64_t start_us = GetTsUsec();
     barrier();
     for (uint64_t i = 0; i < TOTAL_OPS; ++i) {
         ret = ftruncate(fds[i%files], file_len);
@@ -86,10 +86,11 @@ int main(int argc, char* argv[]) {
         file_len += 64;
     }
     barrier();
-    uint64_t end_ns = GetTsUsec();
-    double interval_s = (double)(end_ns - start_ns) / 1000 / 1000;
-    printf("bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops\n",
-           TOTAL_OPS * 64.0 / 1024 / 1024 / interval_s, TOTAL_OPS / 1000.0 / interval_s);
+    uint64_t end_us = GetTsUsec();
+    double interval_s = (double)(end_us - start_us) / 1000 / 1000;
+    printf("bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
+           TOTAL_OPS * 64.0 / 1024 / 1024 / interval_s,
+           TOTAL_OPS / 1000.0 / interval_s, (end_us - start_us)*1.0 / TOTAL_OPS);
 
     for(int i = 0; i < files; ++i) {
         close(fds[i]);
