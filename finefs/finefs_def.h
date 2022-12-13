@@ -301,4 +301,6 @@ static inline void finefs_flush_buffer(void *buf, uint32_t len, bool fence)
 #define SMALL_ENTRY_FLUSH_THRESHOLD_FOR_READ 4
 #define SMALL_ENTRY_FLUSH_THRESHOLD_FOR_WRITE 64
 
+#define FINEFS_SMALL_ENTRY_USE_LIST
+
 #endif /* _LINUX_FINEFS_DEF_H */

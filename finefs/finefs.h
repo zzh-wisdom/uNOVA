@@ -666,24 +666,34 @@ struct finefs_file_small_entry
 	u64 file_off;
 	const char *nvm_data;
 	finefs_file_small_write_entry* nvm_entry_p;
+#ifdef FINEFS_SMALL_ENTRY_USE_LIST
 	list_head entry;
+#endif
 };
 
 // TODO: use jemalloc
 struct finefs_file_page_entry {
 	int       num_small_write;
+#ifdef FINEFS_SMALL_ENTRY_USE_LIST
 	list_head small_write_head;
+#else
+	std::map<u64, finefs_file_small_entry*> file_off_2_small;
+#endif
 
 	// TODO: page cache for small write
 	// cache page in dram befor write
-	__le64 file_pgoff;   // page 偏移（编号）
+	u64 file_pgoff;   // page 偏移（编号）
 	void* nvm_block_p;
 	finefs_file_pages_write_entry* nvm_entry_p;
 };
 
 static force_inline void finefs_page_write_entry_init(finefs_file_page_entry* page_entry, u64 pgoff) {
 	page_entry->num_small_write = 0;
+#ifdef FINEFS_SMALL_ENTRY_USE_LIST
 	INIT_LIST_HEAD(&page_entry->small_write_head);
+#else
+	new (&page_entry->file_off_2_small) std::map<u64, finefs_file_small_entry*>();
+#endif
 
 	page_entry->file_pgoff = pgoff;
 	page_entry->nvm_block_p = nullptr;
@@ -719,15 +729,16 @@ static inline void finefs_free_small_entry(struct finefs_file_small_entry *node)
 #if LOG_ENTRY_SIZE==64
 
 struct finefs_file_pages_write_entry {
-	/* ret of find_nvmm_block, the lowest byte is entry type */
+	u8 entry_type;
+	u8 is_dirty;
+	__le16	padding;
+	/* For both ctime and mtime */
+	__le32	mtime;
 	__le64	block;   // 起始block的NVM偏移地址
 	__le64	pgoff;   // page 偏移(编号)
 	__le32	num_pages;  // 写的page个数
 	// TODO： invalid_pages字段是否可以丢弃
 	__le32	invalid_pages; // 为什么这两个不相等就是有效的，其他原因导致无效的page个数？
-	/* For both ctime and mtime */
-	__le32	mtime;
-	__le32	padding;
 	__le64	size;    // 文件的大小, 不要移动定义位置
 	u8      paddings[16];
 	__le64 entry_version;
@@ -756,7 +767,7 @@ struct finefs_file_small_write_entry {
 	/* For both ctime and mtime */
 	__le32	mtime;
 	__le64	slab_off;   // NVM偏移地址
-	__le64	file_off;   // 文件的便宜
+	__le64	file_off;   // 文件的偏移
 	__le64	size;    // 文件的大小, 不要移动定义位置
 	u8      padding2[24];
 	__le64 entry_version;
@@ -1211,11 +1222,11 @@ static inline unsigned long get_blocknr_from_page_entry(struct super_block *sb,
 	dlog_assert(data->file_pgoff == pgoff);
 	dlog_assert(nvm_write_entry->pgoff <= pgoff &&
 		nvm_write_entry->pgoff + nvm_write_entry->num_pages > pgoff);
-	u64 block_off = (unsigned long)((uintptr_t)(data->nvm_block_p) -
-		(uintptr_t)finefs_get_super(sb));
+	u64 block_off = finefs_get_addr_off(sb, data->nvm_block_p);
 	u64 write_entry_block = nvm_write_entry->block & FINEFS_BLOCK_MASK;
 	dlog_assert(write_entry_block <= block_off &&
-		write_entry_block + nvm_write_entry->num_pages > block_off);
+		write_entry_block +
+		(nvm_write_entry->num_pages << FINEFS_BLOCK_SHIFT) > block_off);
 	return block_off >> FINEFS_BLOCK_SHIFT;
 }
 

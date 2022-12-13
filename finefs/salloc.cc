@@ -153,7 +153,7 @@ static inline void finefs_free_or_goto_next_page(slab_free_list* slab_list, slab
     }
     if(slab_list->cur_page != page) return;
 
-    if(it_next != slab_list->page_off_2_slab_page.end()) {
+    if(it_next == slab_list->page_off_2_slab_page.end()) {
         it_next = slab_list->page_off_2_slab_page.begin();
     }
     if(it_next != slab_list->page_off_2_slab_page.end()) {
@@ -209,6 +209,7 @@ u64 finefs_slab_alloc(super_block* sb, size_t size, int *s_bits) {
     cur_page = slab_list->cur_page;
     dlog_assert(cur_page);
     slab_off = cur_page->block_off + (slab_list->next_slab_idx << slab_list->slab_bits);
+    rd_info("%s: slab_off: %lu, slab_idx: %u", __func__, slab_off, slab_list->next_slab_idx);
     is_full = finefs_slab_page_set_alloc(cur_page, slab_list->next_slab_idx);
     if(is_full) {
         finefs_free_or_goto_next_page(slab_list, cur_page, is_full);
@@ -217,7 +218,6 @@ u64 finefs_slab_alloc(super_block* sb, size_t size, int *s_bits) {
     }
     spin_unlock(&slab_heap->slab_lock);
 
-    rd_info("%s: slab_off: %lu", __func__, slab_off);
     return slab_off;
 }
 

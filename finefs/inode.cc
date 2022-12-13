@@ -409,6 +409,7 @@ static void finefs_file_page_entry_clear(struct super_block *sb,
     finefs_file_page_entry* dram_page_entry, bool just_del_small, bool nvm_delete)
 {
     finefs_file_small_entry *cur, *next;
+#ifdef FINEFS_SMALL_ENTRY_USE_LIST
     list_for_each_entry_safe(cur, next, &dram_page_entry->small_write_head, entry) {
         dlog_assert(cur->nvm_data);
         dlog_assert(cur->nvm_entry_p);
@@ -417,8 +418,25 @@ static void finefs_file_page_entry_clear(struct super_block *sb,
         }
         list_del(&cur->entry);
         finefs_free_small_entry(cur);
+        dram_page_entry->num_small_write--;
     }
+#else
+    for(auto p: dram_page_entry->file_off_2_small) {
+        cur = p.second;
+        dlog_assert(cur->nvm_data);
+        dlog_assert(cur->nvm_entry_p);
+        if(nvm_delete) {
+            finefs_small_entry_remove(sb, pi, sih, cur);
+        }
+        finefs_free_small_entry(cur);
+        dram_page_entry->num_small_write--;
+    }
+    dram_page_entry->file_off_2_small.clear();
+#endif
+
+    dlog_assert(dram_page_entry->num_small_write == 0);
     if(just_del_small) return; // for file delete
+
     if(nvm_delete && dram_page_entry->nvm_entry_p) {
         dlog_assert(dram_page_entry->nvm_block_p);
         finefs_file_pages_write_entry  *old_nvm_entry = dram_page_entry->nvm_entry_p;
@@ -638,7 +656,11 @@ void finefs_page_write_entry_set(finefs_file_page_entry* entry,
     entry->nvm_block_p = nvm_block_p;
 
     entry->num_small_write = 0;
+#ifdef FINEFS_SMALL_ENTRY_USE_LIST
     INIT_LIST_HEAD(&entry->small_write_head);
+#else
+    new (&entry->file_off_2_small) std::map<u64, finefs_file_small_entry*>();
+#endif
 }
 
 bool finefs_page_entry_is_right(super_block* sb, finefs_file_page_entry* page_entry) {
@@ -656,6 +678,7 @@ bool finefs_page_entry_is_right(super_block* sb, finefs_file_page_entry* page_en
     return true;
 }
 
+// 听过东西可以写的
 static int finefs_file_page_entry_flush_slab(struct super_block *sb,
     struct finefs_inode *pi, struct finefs_inode_info_header *sih,
     finefs_file_page_entry* dram_page_entry, u64 *tail)
@@ -667,7 +690,6 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
     finefs_file_small_entry *cur, *next;
     finefs_file_pages_write_entry* pages_write_entry = dram_page_entry->nvm_entry_p;
 
-    dlog_assert(dram_page_entry->file_pgoff);
     if(pages_write_entry) {
         is_new_page = false;
         page_data = dram_page_entry->nvm_block_p;
@@ -680,12 +702,12 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
             r_error("%s: new block fail. ENOSPC", __func__);
             return -ENOSPC;
         }
-        r_info("%s: new block %lu", blocknr);
+        rd_info("%s: new block %lu", __func__ ,blocknr);
         u64 block_off = finefs_get_block_off(sb, blocknr, pi->i_blk_type);
         page_data = finefs_get_block(sb, block_off);
 
     }
-    r_info("%s: num_small_write %d, file_pgoff %lu, nvm_entry_p %p", __func__, dram_page_entry->num_small_write,
+    rd_info("%s: num_small_write %d, file_pgoff %lu, nvm_entry_p %p", __func__, dram_page_entry->num_small_write,
         dram_page_entry->file_pgoff, dram_page_entry->nvm_entry_p);
 
     // 先拷贝数据
@@ -695,15 +717,19 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
     u32 file_size = 0;
 
     dlog_assert(dram_page_entry->num_small_write);
+    u64 bytes;
+
+#ifdef FINEFS_SMALL_ENTRY_USE_LIST
     list_for_each_entry_safe(cur, next, &dram_page_entry->small_write_head, entry) {
         dlog_assert(cur->nvm_data);
         dlog_assert(cur->nvm_entry_p);
-        if(is_new_page && last_pos < cur->file_off) {
-            pmem_memset(cur_ptr, 0, cur->file_off - last_pos, false);
+        bytes = cur->file_off - last_pos;
+        if(is_new_page && bytes) {
+            pmem_memset(cur_ptr, 0, bytes, false);
         }
-        dlog_assert(last_pos <= cur->file_off);
-        cur_ptr += (cur->file_off - last_pos);
-        last_pos = cur->file_off;
+        cur_ptr += bytes;
+        last_pos += bytes;
+        dlog_assert(last_pos == cur->file_off);
         pmem_memcpy(cur_ptr, cur->nvm_data, cur->bytes, false);
         cur_ptr += cur->bytes;
         last_pos += cur->bytes;
@@ -711,8 +737,27 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
         mtime = cur->nvm_entry_p->mtime > mtime  ? cur->nvm_entry_p->mtime : mtime;
         file_size = cur->nvm_entry_p->size > file_size ? cur->nvm_entry_p->size : file_size;
     }
+#else
+    for(auto p : dram_page_entry->file_off_2_small) {
+        cur = p.second;
+        bytes = cur->file_off - last_pos;
+        if(is_new_page && bytes) {
+            pmem_memset(cur_ptr, 0, bytes, false);
+            cur_ptr += bytes;
+            last_pos += bytes;
+        }
+        dlog_assert(last_pos == cur->file_off);
+        pmem_memcpy(cur_ptr, cur->nvm_data, cur->bytes, false);
+        cur_ptr += cur->bytes;
+        last_pos += cur->bytes;
+
+        mtime = cur->nvm_entry_p->mtime > mtime  ? cur->nvm_entry_p->mtime : mtime;
+        file_size = cur->nvm_entry_p->size > file_size ? cur->nvm_entry_p->size : file_size;
+    }
+#endif
+
     u64 end_pos = ((dram_page_entry->file_pgoff + 1) << FINEFS_BLOCK_SHIFT);
-    if(last_pos != end_pos) {
+    if(last_pos != end_pos && is_new_page) {
         dlog_assert(last_pos < end_pos);
         pmem_memset(cur_ptr, 0, end_pos - last_pos, false);
     }
@@ -721,6 +766,7 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
     finefs_file_pages_write_entry page_entry_data;
 
     // 提交log
+    page_entry_data.is_dirty = 0;
     page_entry_data.pgoff = cpu_to_le64(dram_page_entry->file_pgoff);
 	page_entry_data.num_pages = cpu_to_le32(1);
 	page_entry_data.invalid_pages = 0;
@@ -739,25 +785,27 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
 		ret = -ENOSPC;
 		goto out;
 	}
-    dlog_assert(curr_entry == cur_tail);
-    cur_tail += sizeof(struct finefs_file_pages_write_entry);
+    // dlog_assert(curr_entry == cur_tail);
+    cur_tail = curr_entry + sizeof(struct finefs_file_pages_write_entry);
     *tail = cur_tail;
     PERSISTENT_BARRIER();  // 确保落盘
 
-    // 删除旧的small_write log
-    list_for_each_entry_safe(cur, next, &dram_page_entry->small_write_head, entry) {
-        finefs_small_entry_remove(sb, pi, sih, cur);
-        list_del(&cur->entry);
-        finefs_free_small_entry(cur);
-        dram_page_entry->num_small_write--;
+    // 删除旧的small_write entry
+    finefs_file_page_entry_clear(sb, pi, sih, dram_page_entry, true, true);
+    // 删除 page write entry
+    if(pages_write_entry) {
+        pages_write_entry->invalid_pages++;
+        if(pages_write_entry->invalid_pages == pages_write_entry->num_pages) {
+            log_entry_set_invalid(sb, sih, pages_write_entry);
+        }
     }
-    dlog_assert(dram_page_entry->num_small_write == 0);
 
-    if(is_new_page) {
-        dram_page_entry->nvm_entry_p = (finefs_file_pages_write_entry*)finefs_get_block(sb, curr_entry);
-        dram_page_entry->nvm_block_p = finefs_get_block(sb,
-            dram_page_entry->nvm_entry_p->block & FINEFS_BLOCK_MASK);
-    }
+    dram_page_entry->nvm_entry_p = (finefs_file_pages_write_entry*)finefs_get_block(sb, curr_entry);
+    dram_page_entry->nvm_block_p = finefs_get_block(sb,
+        finefs_get_block_off(sb, blocknr, pi->i_blk_type));
+
+    if(!is_new_page)
+        sih->h_blocks--;
 
 out:
     if(ret < 0) {
@@ -777,7 +825,7 @@ out:
 static inline int finefs_file_page_entry_apply_slab(struct super_block *sb,
     struct finefs_inode *pi, struct finefs_inode_info_header *sih,
     finefs_file_page_entry* dram_page_entry,
-    finefs_file_small_entry *dram_small_entry, u64 *tail, bool nvm_delete)
+    finefs_file_small_write_entry *small_write_entry, u64 *tail, bool nvm_delete)
 {
     int ret = 0;
     if(dram_page_entry->num_small_write > SMALL_ENTRY_FLUSH_THRESHOLD_FOR_WRITE) {
@@ -786,8 +834,10 @@ static inline int finefs_file_page_entry_apply_slab(struct super_block *sb,
     }
     finefs_file_small_entry *last = nullptr;
     finefs_file_small_entry *cur, *next;
-    u64 start = dram_small_entry->file_off;
-    u64 end = dram_small_entry->file_off + dram_small_entry->bytes;
+    u64 start = small_write_entry->file_off;
+    u64 end = small_write_entry->file_off + small_write_entry->bytes;
+
+#ifdef FINEFS_SMALL_ENTRY_USE_LIST
     list_for_each_entry_safe(cur, next, &dram_page_entry->small_write_head, entry) {
         // 不覆盖，大于
         if(start >= cur->file_off + cur->bytes) {
@@ -825,12 +875,39 @@ static inline int finefs_file_page_entry_apply_slab(struct super_block *sb,
             r_fatal("TODO: small write entry split");
         }
     }
+    cur = finefs_alloc_small_entry(sb);
+    finefs_file_small_entry_set(sb, cur, small_write_entry);
     if(last == nullptr) {
-        list_add(&dram_small_entry->entry, &dram_page_entry->small_write_head);
+        list_add(&cur->entry, &dram_page_entry->small_write_head);
         ++dram_page_entry->num_small_write;
     } else {
-        list_add(&dram_small_entry->entry, &last->entry);
+        list_add(&cur->entry, &last->entry);
         ++dram_page_entry->num_small_write;
+    }
+#else
+    auto it = dram_page_entry->file_off_2_small.lower_bound(start);
+    if(it == dram_page_entry->file_off_2_small.end()) {
+        cur = finefs_alloc_small_entry(sb);
+        finefs_file_small_entry_set(sb, cur, small_write_entry);
+        dram_page_entry->file_off_2_small[start] = cur;
+        dram_page_entry->num_small_write++;
+    } else if (it->second->file_off <= end) {
+        cur = it->second;
+        // 其他部分覆盖的情况暂不处理
+        log_assert(cur->file_off == start &&
+            cur->file_off + cur->bytes == end);
+        finefs_small_entry_remove(sb, pi, sih, cur);
+        finefs_file_small_entry_set(sb, cur, small_write_entry);
+    } else {
+        cur = finefs_alloc_small_entry(sb);
+        finefs_file_small_entry_set(sb, cur, small_write_entry);
+        dram_page_entry->file_off_2_small[start] = cur;
+        dram_page_entry->num_small_write++;
+    }
+#endif
+
+    if(dram_page_entry->nvm_entry_p) {
+        dram_page_entry->nvm_entry_p->is_dirty = 1;
     }
     return 0;
 }
@@ -851,12 +928,7 @@ static inline int finefs_apply_for_one_page(struct super_block *sb, struct finef
     } else {
         // 小写
         finefs_file_small_write_entry *small_write_entry = (finefs_file_small_write_entry*)entry;
-        finefs_file_small_entry* dram_small_entry = finefs_alloc_small_entry(sb);
-        finefs_file_small_entry_set(sb, dram_small_entry, small_write_entry);
-        int ret = finefs_file_page_entry_apply_slab(sb, pi, sih, dram_page_entry, dram_small_entry, tail, nvm_delete);
-        if(ret) {
-            finefs_free_small_entry(dram_small_entry);
-        }
+        int ret = finefs_file_page_entry_apply_slab(sb, pi, sih, dram_page_entry, small_write_entry, tail, nvm_delete);
         return ret;
     }
 }

@@ -18,12 +18,13 @@
 
 #include "util/cpu.h"
 
-static force_inline void finefs_page_write_entry_read(finefs_file_page_entry* page_entry,
+static force_inline size_t finefs_page_write_entry_read(finefs_file_page_entry* page_entry,
 	char* buf, size_t nr, u64 pos)
 {
+	u64 bytes = FINEFS_BLOCK_SIZE;
 	if(page_entry == nullptr) {
-		__clear_user(buf, nr);
-		return;
+		__clear_user(buf, bytes);
+		return bytes;
 	}
 	dlog_assert((pos >> FINEFS_BLOCK_SHIFT) == page_entry->file_pgoff);
 	const char* page_data = (const char*)page_entry->nvm_block_p;
@@ -31,7 +32,8 @@ static force_inline void finefs_page_write_entry_read(finefs_file_page_entry* pa
 	page_data += pos & FINEFS_BLOCK_UMASK;
 
 	finefs_file_small_entry *cur;
-	u64 bytes;
+	size_t written = 0;
+#ifdef FINEFS_SMALL_ENTRY_USE_LIST
 	list_for_each_entry(cur, &page_entry->small_write_head, entry) {
 		if(cur->file_off + cur->bytes <= pos)
 			continue;
@@ -47,6 +49,7 @@ static force_inline void finefs_page_write_entry_read(finefs_file_page_entry* pa
 			page_data += bytes;
 			pos += bytes;
 			nr -= bytes;
+			written += bytes;
 			if(!nr) break;
 		}
 		dlog_assert(pos == cur->file_off);
@@ -57,17 +60,62 @@ static force_inline void finefs_page_write_entry_read(finefs_file_page_entry* pa
 		page_data += bytes;
 		pos += bytes;
 		nr -= bytes;
+		written += bytes;
 		if(!nr) break;
 	}
+#else
+	auto it = page_entry->file_off_2_small.lower_bound(pos);
+	while(it != page_entry->file_off_2_small.end()) {
+		cur = it->second;
+		if(pos < cur->file_off) {
+			bytes = cur->file_off - pos;
+			if(bytes > nr) bytes = nr;
+			if(has_page) {
+				__copy_to_user(buf, page_data, bytes);
+			} else {
+				__clear_user(buf, bytes);
+			}
+			buf += bytes;
+			page_data += bytes;
+			pos += bytes;
+			nr -= bytes;
+			written += bytes;
+			if(!nr) break;
+		}
+		dlog_assert(pos == cur->file_off);
+		bytes = cur->bytes;
+		if(bytes > nr) bytes = nr;
+		__copy_to_user(buf, cur->nvm_data, bytes);
+		buf += bytes;
+		page_data += bytes;
+		pos += bytes;
+		nr -= bytes;
+		written += bytes;
+		if(!nr) break;
+
+		++it;
+	}
+#endif
 
 	if(nr) {
-		bytes = nr;
 		if(has_page) {
+			if(page_entry->nvm_entry_p->is_dirty == 0) {
+				bytes = page_entry->nvm_entry_p->num_pages << FINEFS_BLOCK_SHIFT;
+				if(unlikely(bytes > nr)) bytes = nr;
+			} else {
+				bytes = FINEFS_BLOCK_SIZE;
+				if(unlikely(bytes > nr)) bytes = nr;
+			}
 			__copy_to_user(buf, page_data, bytes);
 		} else {
+			bytes = FINEFS_BLOCK_SIZE;
+			if(unlikely(bytes > nr)) bytes = nr;
 			__clear_user(buf, bytes);
 		}
+		written += bytes;
 	}
+
+	return written;
 }
 
 // ppos带回实际拷贝到的偏移
@@ -116,7 +164,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 
 	end_index = (isize - 1) >> FINEFS_BLOCK_SHIFT;
 	while (len) {
-		unsigned long nr; // left;
+		unsigned long nr;  // 实际读的字节数
 		// unsigned long nvmm;
 		// void *dax_mem = NULL;
 		// int zero = 0;
@@ -130,12 +178,8 @@ do_dax_mapping_read(struct file *filp, char *buf,
 		// 		goto out;
 		// 	}
 		// }
-
-		nr = FINEFS_BLOCK_SIZE - offset;
-		if (nr > len)
-			nr = len;
 		page_entry = finefs_get_page_entry(sb, si, index);
-		finefs_page_write_entry_read(page_entry, buf, nr, pos);
+		nr = finefs_page_write_entry_read(page_entry, buf, len, pos);
 
 		// if (unlikely(page_entry == NULL)) {
 		// 	// 一个空洞的页
@@ -635,6 +679,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 		pmem_memcpy(kmem, buf, bytes, false);
 		FINEFS_END_TIMING(memcpy_w_nvmm_t, memcpy_time);
 
+		page_entry_data.is_dirty = 0;
 		page_entry_data.pgoff = cpu_to_le64(start_blk);
 		page_entry_data.num_pages = cpu_to_le32(allocated);
 		page_entry_data.invalid_pages = 0;
