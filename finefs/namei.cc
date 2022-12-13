@@ -355,7 +355,6 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
     rdv_proc("%s: inode %lu attr change", __func__, inode->i_ino);
 
     curr_p = finefs_get_append_head(sb, pi, sih, tail, size, &extended, false);
-    // inode->i_blocks = pi->i_blocks;
     inode->i_blocks = sih->h_blocks;
     if (curr_p == 0) return -ENOMEM;
 
@@ -534,7 +533,7 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
     finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, child_sih);
 
     pidir = finefs_get_inode(sb, dir);
-    dir->i_blocks = pidir->i_blocks;
+    dir->i_blocks = p_sih->h_blocks;
     inc_nlink(dir);
     d_instantiate(dentry, inode);
     // unlock_new_inode(inode);

@@ -703,7 +703,10 @@ int *finished;
 
 #endif
 
-void finefs_init_header(struct super_block *sb, struct finefs_inode_info_header *sih, u16 i_mode) {
+void finefs_init_header(struct super_block *sb,
+    struct finefs_inode_info_header *sih, struct finefs_inode *pi,
+    u16 i_mode)
+{
     INIT_RADIX_TREE(&sih->tree, GFP_ATOMIC);
     sih->i_mode = i_mode;
     sih->i_size = 0;
@@ -715,9 +718,17 @@ void finefs_init_header(struct super_block *sb, struct finefs_inode_info_header 
     sih->log_valid_bytes = 0;
     sih->h_log_tail = 0;
 
-    sih->h_blocks = 0;
-    sih->h_slabs = 0;
-    sih->h_slab_bytes = 0;
+    if(pi) {
+        sih->h_blocks = pi->i_blocks;
+        sih->h_slabs = pi->i_slabs;
+        sih->h_slab_bytes = pi->i_slab_bytes;
+        sih->h_ts = pi->i_ts;
+    } else {
+        sih->h_blocks = 0;
+        sih->h_slabs = 0;
+        sih->h_slab_bytes = 0;
+        sih->h_ts = 1;
+    }
 
     sih->last_setattr = 0;
     sih->last_link_change = 0;
@@ -743,7 +754,7 @@ int finefs_rebuild_inode(struct super_block *sb, struct finefs_inode_info *si, u
     //     "head 0x%lx, tail 0x%lx",
     //     __func__, finefs_ino, pi_addr, pi->valid, pi->log_head, pi->log_tail);
 
-    finefs_init_header(sb, sih, le16_to_cpu(pi->i_mode));
+    finefs_init_header(sb, sih, pi, le16_to_cpu(pi->i_mode));
     sih->ino = finefs_ino;
     sih->pi_addr = pi_addr;
 

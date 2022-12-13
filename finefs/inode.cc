@@ -570,8 +570,8 @@ static void finefs_truncate_file_blocks(struct inode *inode, loff_t start, loff_
 
     inode->i_blocks -= (freed * (1 << (data_bits - sb->s_blocksize_bits)));
 
-    pi->i_blocks = cpu_to_le64(inode->i_blocks);
-    sih->h_blocks = cpu_to_le64(inode->i_blocks);
+    dlog_assert(inode->i_blocks == sih->h_blocks);
+    // sih->h_blocks = cpu_to_le64(inode->i_blocks);
     /* Check for the flag EOFBLOCKS is still valid after the set size */
     check_eof_blocks(sb, sih, pi, inode->i_size);
 
@@ -930,6 +930,7 @@ static inline int finefs_apply_for_one_page(struct super_block *sb, struct finef
         finefs_file_small_write_entry *small_write_entry = (finefs_file_small_write_entry*)entry;
         int ret = finefs_file_page_entry_apply_slab(sb, pi, sih, dram_page_entry, small_write_entry, tail, nvm_delete);
         return ret;
+        return 0;
     }
 }
 
@@ -1024,6 +1025,7 @@ out:
 }
 
 // 根据NVM的信息，初始化内存inode
+// 只用于root inode 的初始化
 static int finefs_read_inode(struct super_block *sb, struct inode *inode, u64 pi_addr) {
     struct finefs_inode_info *si = FINEFS_I(inode);
     struct finefs_inode *pi;
@@ -1049,7 +1051,8 @@ static int finefs_read_inode(struct super_block *sb, struct inode *inode, u64 pi
         goto bad_inode;
     }
 
-    inode->i_blocks = le64_to_cpu(pi->i_blocks);
+    // inode->i_blocks = le64_to_cpu(pi->i_blocks);
+    inode->i_blocks = sih->h_blocks;
     // inode->i_mapping->a_ops = &finefs_aops_dax;
 
     switch (inode->i_mode & S_IFMT) {
@@ -1277,12 +1280,6 @@ static int finefs_free_inode(struct inode *inode, struct finefs_inode_info_heade
 
     finefs_free_inode_log(sb, pi, sih);
 
-    pi->i_blocks = 0;
-    sih->log_pages = 0;
-    sih->i_mode = 0;
-    sih->pi_addr = 0;
-    sih->i_size = 0;
-
     err = finefs_free_inuse_inode(sb, pi->finefs_ino);
 
     FINEFS_END_TIMING(free_inode_t, free_time);
@@ -1362,6 +1359,17 @@ unsigned long finefs_get_last_blocknr(struct super_block *sb,
     return last_blocknr;
 }
 
+static force_inline void finefs_inode_statistic_dump(struct finefs_inode *pi,
+    struct finefs_inode_info_header *sih)
+{
+    pi->i_blocks = cpu_to_le64(sih->h_blocks);
+    pi->i_slabs =  cpu_to_le32(sih->h_slabs);
+    pi->i_slab_bytes = cpu_to_le32(sih->h_slab_bytes);
+    pi->i_ts = cpu_to_le64(sih->h_ts);
+
+    finefs_flush_buffer(pi, sizeof(finefs_inode), 1);
+}
+
 // TODO: 将删除inode的过程放到后台执行
 void finefs_evict_inode(struct inode *inode) {
     struct super_block *sb = inode->i_sb;
@@ -1432,7 +1440,10 @@ void finefs_evict_inode(struct inode *inode) {
         inode->i_size = 0;
     }
 out:
-    if (destroy == 0) finefs_free_dram_resource(sb, sih); // 如果是文件删除，这个不会执行
+    if (destroy == 0) {
+        finefs_inode_statistic_dump(pi, sih);
+        finefs_free_dram_resource(sb, sih); // 如果是文件删除，这个不会执行
+    }
 
     /* TODO: Since we don't use page-cache, do we really need the following
      * call? */
@@ -1563,6 +1574,12 @@ struct inode *finefs_new_vfs_inode(enum finefs_new_inode_type type, struct inode
     finefs_memunlock_inode(sb, pi);
     pi->i_blk_type = FINEFS_LOG_BLOCK_TYPE;
     pi->i_flags = finefs_mask_flags(mode, diri->i_flags);
+
+    pi->i_blocks = 0;
+    pi->i_slabs = 0;
+    pi->i_slab_bytes = 0;
+    pi->i_ts = cpu_to_le64(1);
+
     finefs_log_link_init(&pi->log_head);
     pi->log_tail = 0;
     pi->finefs_ino = ino;
@@ -1570,7 +1587,7 @@ struct inode *finefs_new_vfs_inode(enum finefs_new_inode_type type, struct inode
 
     si = FINEFS_I(inode);
     sih = &si->header;
-    finefs_init_header(sb, sih, inode->i_mode);
+    finefs_init_header(sb, sih, pi, inode->i_mode);
     sih->ino = ino;
     sih->pi_addr = pi_addr;
 

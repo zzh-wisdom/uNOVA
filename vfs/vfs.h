@@ -471,7 +471,7 @@ struct inode {
 
     mutex_t i_mutex;  // 对文件操作需要上锁。简单的读写互斥，保护下面字段
 
-    loff_t i_size;  // 文件大小, 初始化是0
+    loff_t i_size;     // 文件大小, 初始化是0
     struct timespec i_atime;
     struct timespec i_mtime;
     struct timespec i_ctime;

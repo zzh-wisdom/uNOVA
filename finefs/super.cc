@@ -388,7 +388,12 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     root_i->i_links_count = cpu_to_le16(2);
     root_i->i_blk_type = FINEFS_BLOCK_TYPE_4K;
     root_i->i_flags = 0;
+
     root_i->i_blocks = cpu_to_le64(1);
+    root_i->i_slabs = 0;
+    root_i->i_slab_bytes = 0;
+    root_i->i_ts = cpu_to_le64(1);
+
     root_i->i_size = cpu_to_le64(sb->s_blocksize);
     root_i->i_atime = root_i->i_mtime = root_i->i_ctime = cpu_to_le32(GetTsSec());
     root_i->finefs_ino = FINEFS_ROOT_INO;
@@ -863,7 +868,7 @@ setup_sb:
         goto out;
     }
     sih = &FINEFS_I(root_i)->header;
-    sih->h_blocks = 1;
+    dlog_assert(sih->h_blocks = 1);
     sih->log_pages = 1;
     sih->log_valid_bytes = log_tail - root_pi->log_head.next_page_;
     finefs_update_volatile_tail(sih, log_tail);
@@ -974,7 +979,7 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
     log_assert(sizeof(struct finefs_inode_page_tail) == CACHELINE_SIZE);
 
     assert(sizeof(struct finefs_super_block) <= FINEFS_SB_SIZE);
-    assert(sizeof(struct finefs_inode) <= FINEFS_INODE_SIZE);
+    assert(sizeof(struct finefs_inode) <= FINEFS_INODE_SIZE - FINEFS_INODE_LEFT_SIZE);
 
     rc = finefs_init_rangenode_cache();
     if (rc) goto out;

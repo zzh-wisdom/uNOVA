@@ -25,6 +25,22 @@ rename操作，每个dentry log的version依旧取自它们所属的新inode。�
 
 > 先把所有的log entry操作和bitmap做适配，提交后，再改变gc方式
 
+一共5种 entry，以及它们的写入地方
+
+- finefs_file_small_write_entry
+  - finefs_dump_small_write_entry
+- finefs_file_pages_write_entry
+  - finefs_append_file_write_entry
+- finefs_dentry
+  - finefs_append_dir_inode_entry
+  - finefs_append_root_init_entries
+- finefs_setattr_logentry
+  - finefs_append_link_change_entry
+- finefs_link_change_entry
+  - finefs_append_setattr_entry LINK_CHANGE，需要在内存中保存最新的索引，关闭时，flush entry
+
+有两类操作会影响inode的link个数：建立/删除硬链接、创建和删除inode（文件或者目录），它们分别用finefs_link_change_entry和finefs_dentry来记录操作。finefs_link_change_entry只有元数据变化的信息，因此我们可以在后台gc时立即应用，并将entry回收。然而如果此时发生崩溃，在恢复时我们无法知道inode中的link值和finefs_dentry中的link值那个时最新的，因此需要在inode中记录一个link_ts，记录当前inode应用的所有finefs_link_change_entry中的最大时间戳ts，所以时间戳比link_ts小的finefs_dentry，都将忽略其link值，大于或者等于才会应用。
+
 ## 小写slab分配器
 
 分成若干个page链表。不要伙伴算法了，简单的slab

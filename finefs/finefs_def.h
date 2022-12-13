@@ -33,9 +33,10 @@
 #define FINEFS_LINK_MAX          32000
 
 #define FINEFS_INODE_SIZE 128    /* must be power of two */
+#define FINEFS_INODE_LEFT_SIZE 8  /* inode末尾需要预留的字节数，用来保存next指针 */
 #define FINEFS_INODE_BITS   7
 
-#define FINEFS_NAME_LEN 27
+#define FINEFS_NAME_LEN 23
 
 /* ======================= size config ========================= */
 
@@ -158,7 +159,9 @@ struct finefs_inode {
 	/* first 48 bytes */
 	__le16	i_rsvd;		/* reserved. used to be checksum */
 	u8	valid;		/* Is this inode valid? 新建inode时和父母tail一起journal方式写*/
+	// finefs_update_inode 中初始化
 	u8	i_blk_type;	/* data block size this inode uses ,是一个枚举值。修改：data page固定4KB，这个枚举用来控制log大小*/
+
 	__le32	i_flags;	/* Inode flags */
 	__le64	i_size;		/* Size of data in bytes */
 	__le32	i_ctime;	/* Inode modification time */
@@ -166,6 +169,20 @@ struct finefs_inode {
 	__le32	i_atime;	/* Access time */
 	__le16	i_mode;		/* File mode 文件类型*/
 	__le16	i_links_count;	/* Links count */
+	__le32	i_uid;		/* Owner Uid */
+	__le32	i_gid;		/* Group Id */
+	__le32	i_generation;	/* File version (for NFS) */
+	__le32  i_padding;
+	__le64  i_links_ts;    /* 记录inode应用的link值的最大时间戳*/
+
+	u8      first_cacheline_bar__[0];
+	/*以上56B，处于一个cacheline，都属于会改变的信息，不要挪用，便于只用flush一个cacheline*/
+
+	// 主要是因为entry的空间不够了，删除了version，
+	// 因此在inode删除时，也需要将bitmap flush+fence
+	// 这种情况可以和ftruncate一起说，它们属于同一类，都会影响其他多个entry
+	// __le64 i_ver;
+	__le64	finefs_ino;	/* finefs inode number */
 
 	/*
 	 * Blocks count. This field is updated in-place;
@@ -173,18 +190,30 @@ struct finefs_inode {
 	 * and it is recovered in DFS recovery if power failure occurs.
 	 * 持有的block个数，包括log page
 	 * TODO: 不要随机访问，只有正常退出/或者或者恢复的时候才更新
+	 * 初始化地方：
+	 * 1. finefs_init
+	 * 2. finefs_new_vfs_inode
+	 *
+	 * 赋值的地方：
+	 * finefs_inode_statistic_dump
 	 */
 	__le64	i_blocks;
-	__le64	i_slabs;
-	__le64	i_slab_bytes;
-	// __le64	i_xattr;	/* Extended attribute block */
+	__le32	i_slabs;
+	__le32	i_slab_bytes;
+	__le64 	i_ts;
 
-	/* second 48 bytes */
-	__le32	i_uid;		/* Owner Uid */
-	__le32	i_gid;		/* Group Id */
-	__le32	i_generation;	/* File version (for NFS) */
-	__le32	padding;
-	__le64	finefs_ino;	/* finefs inode number */
+	/*
+	 * 用于文件的删除
+	 * 当inode 的link = 0时需要将所有的数据块回收，但log entry不是立即回收的，
+	 * 因此需要通过i_ver来标志entry的有效性。
+	 * 实际上log entry的删除也可以通过log的bitmap来标志无效，但需要立即的flush
+	 * 会产生大量的随机小写，而且不能做到后台进行删除
+	 *
+	 * 去除，entry没有这么多的空间放这个字段，
+	 * 做成后台：其实可以等到后台回收所有的log entry和block，
+	 * 并将log entry的bitmap flush完成后，才将ino编号回收。
+	 */
+	// __le64	i_xattr;	/* Extended attribute block */
 
 	finefs_log_page_link log_head;
 	// __le64	log_head;	/* Log head pointer */
@@ -196,6 +225,8 @@ struct finefs_inode {
 
 	/* Leave 8 bytes for inode table tail pointer */
 } __attribute((__packed__));
+
+const int a = sizeof(finefs_inode);
 
 // 实际上为了方便空间管理，空间管理器只实现了按照inode来分配空间的接口。
 // 为了分配其他类型的空间，这里预留了几个ino

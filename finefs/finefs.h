@@ -321,17 +321,51 @@ struct finefs_inode_info_header {
 	// TODO: 额外添加全局的统计的数据，每个线程的已分配的log个数、有效的entry_bytes等等
 	// 每个线程的slab 分配器也需要添加统计数据
 	// 每个线程log时，下面的三个都需要去除
-	unsigned long log_pages;	/* Num of log pages */
+	unsigned int log_pages;	/* Num of log pages */
 	unsigned long log_valid_bytes;	/* For thorough GC, log page中有效entry的总字节数*/
 	unsigned long h_log_tail;
 
+	// finefs_init_header 中初始化
 	unsigned long h_blocks;
-	unsigned long h_slabs;
-	unsigned long h_slab_bytes;
+	unsigned int  h_slabs;
+	unsigned int  h_slab_bytes;
+	unsigned long h_ts;
 
-	// 随着 GC/op 的进行而修改
-	u64 last_setattr;		/* Last setattr entry ,当前已经应用的setattr log地址*/
+	// TODO: gc need lock，所以目前后台只负责删除inode的回收、log page的垃圾回收
+	//
+	// TODO:快速gc其实也可以放后台，用每个线程的set，标志当前线程导致失效的log page有哪些，
+	// 然后由后台线程统一回收，但我感觉没有太大的必要。
+
+	/*
+	 * 后台gc时也会修改下面两个值，因此需要一个lock互斥
+	 */
+
+	// 搞成batch的形式，16或者32batch，减少inode元数据的写入次数
+	// 应用时需要按照时间戳顺序，将setattr和link_change都应用。算了，简化后这个没必要
+
+	// 随着操作的进行而修改
+	// 系统关闭时需要将last_link_change应用到pi
+	// 注意，ftruncate时，如果设置的size比当前文件的大小要大，
+	// 那么应用后，是可以直接丢弃该entry的，因为它不影响任何的write entry
+	u64 last_setattr;		/* Last setattr entry  额外保存一个size/是否可以丢弃的标志 */
+	// 由于setattr和link_change公用一个元数据时间戳，因此，需要在前台操作时直接应用
+	// 但只是flush，不fence
+	// 后一个操作来时，正常执行事务，应用并flush，在更新last_link_change之前，
+	// 将旧的entry置为无效，而last_setattr不能，原因是size会导致某些write_entry复活。
 	u64 last_link_change;		/* Last link change entry */
+
+	// 更新：
+	// 为了简化操作，last_setattr entry操作立即前台应用，并用set记录需要flush的cacheline
+	// 最后统一flush，然后再加fence，这时就可以将当前的log置为无效，但如果没有导致write entry
+	// 失效，那么就是单纯的写log。
+	// 1. 写setattr entry，flush+fence
+	// 2. 应用entry，set记录，flush+fence.
+	// 3. 放到batch队列。batch的方式减少对finefs inode的写入
+
+	// 对于last_link_change，也要batch
+	// 1. 写log，
+	// 2. 放到batch队列
+	// 3. batch达到一定长度后，应用到finefs。可以让后台线程负责应用
 };
 
 struct finefs_inode_info {
@@ -740,7 +774,8 @@ struct finefs_file_pages_write_entry {
 	// TODO： invalid_pages字段是否可以丢弃
 	__le32	invalid_pages; // 为什么这两个不相等就是有效的，其他原因导致无效的page个数？
 	__le64	size;    // 文件的大小, 不要移动定义位置
-	u8      paddings[16];
+	__le64	finefs_ino; // 所属于的ino
+	__le64  entry_ts;
 	__le64 entry_version;
 } __attribute((__packed__));
 
@@ -769,7 +804,9 @@ struct finefs_file_small_write_entry {
 	__le64	slab_off;   // NVM偏移地址
 	__le64	file_off;   // 文件的偏移
 	__le64	size;    // 文件的大小, 不要移动定义位置
-	u8      padding2[24];
+	__le64	finefs_ino; // 所属于的ino
+	__le64  entry_ts;
+	u8      padding2[8];
 	__le64 entry_version;
 } __attribute((__packed__));
 
@@ -795,19 +832,19 @@ static force_inline void finefs_set_entry_type(void *p, enum finefs_entry_type t
 struct finefs_dentry {
 	u8	entry_type;
 	u8	name_len;               /* length of the dentry name */
-	u8	file_type;              /* file type 没有作用，entry_type已经足够*/
-	// u8	invalid;		        /* Invalid now? 恢复时，不应该依赖于该标志， TODO: 删除*/
-	u8  padding;
-	__le16	de_len;                 /* length of this dentry 即log entry大小*/
 	__le16	links_count;		// 自身的link count
-	__le64	ino;                    /* inode no pointed to by this entry */
-	__le64	size;             // 这个是什么大小？文件吗
 	__le32	mtime;			/* For both mtime and ctime */
-	char	name[FINEFS_NAME_LEN + 1];	/* File name */
+	union {
+		__le64  name_off__;  // TODO: 变长文件名
+		char	name[FINEFS_NAME_LEN + 1];	/* File name */
+	} __attribute((__packed__));
+	__le64	ino;              /* inode no pointed to by this entry, 0表示该dentry被删除*/
+	__le64	finefs_ino;       // 所属于的ino
+	__le64  entry_ts;
+	// __le64	size;             // 目录不需要大小，去除
 	__le64 entry_version;
 } __attribute((__packed__));
 
-const int s = sizeof(finefs_dentry);
 
 #define FINEFS_DIR_PAD			8	/* Align to 8 bytes boundary */
 #define FINEFS_DIR_ROUND			(FINEFS_DIR_PAD - 1)
@@ -819,7 +856,7 @@ const int s = sizeof(finefs_dentry);
 
 struct finefs_setattr_logentry {
 	u8	entry_type;
-	u8	attr;
+	u8	attr;   // 表示哪些属性有效
 	__le16	mode;
 	__le32	uid;
 	__le32	gid;
@@ -1409,7 +1446,7 @@ int finefs_rebuild_inode(struct super_block *sb, struct finefs_inode_info *si,
 void finefs_save_blocknode_mappings_to_log(struct super_block *sb);
 void finefs_save_inode_list_to_log(struct super_block *sb);
 void finefs_init_header(struct super_block *sb,
-	struct finefs_inode_info_header *sih, u16 i_mode);
+	struct finefs_inode_info_header *sih, struct finefs_inode *pi, u16 i_mode);
 int finefs_recovery(struct super_block *sb);
 
 /*

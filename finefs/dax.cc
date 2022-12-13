@@ -462,39 +462,6 @@ static int finefs_cleanup_incomplete_write(struct super_block *sb,
 	return 0;
 }
 
-static force_inline void
-finefs_dump_small_write_entry(super_block* sb, struct inode *inode,
-	finefs_file_small_write_entry* entry,
-	u8 entry_type, u8 slab_bits, u16 bytes, u32	mtime, u64 slab_off,
-	u64	file_off, u64 size)
-{
-	struct finefs_inode_info *si = FINEFS_I(inode);
-    struct finefs_inode_info_header *sih = &si->header;
-
-	entry->entry_type = entry_type;
-	entry->slab_bits = slab_bits;
-	entry->bytes = cpu_to_le16(bytes);
-	entry->mtime = cpu_to_le32(mtime);
-	entry->slab_off = cpu_to_le64(slab_off);
-	entry->file_off = cpu_to_le64(file_off);
-	entry->size = cpu_to_le64(size);
-	barrier();
-	entry->entry_version = cpu_to_le64(0x1234);
-
-    finefs_flush_buffer(entry, sizeof(struct finefs_file_small_write_entry), 0);
-
-	rdv_proc(
-        "file %lu entry @ 0x%lx: entry_type %u, slab_bits %u, bytes: %u, "
-        "slab_off %lu, file_off %lu, size %lu",
-        inode->i_ino, finefs_get_addr_off(sb, entry), entry->entry_type,
-		entry->slab_bits, entry->bytes, entry->slab_off, entry->file_off,
-        entry->size);
-
-	sih->log_valid_bytes += sizeof(finefs_file_small_write_entry);
-	sih->h_slabs++;
-	sih->h_slab_bytes += 1ul << slab_bits;
-}
-
 // 返回写入entry的起始地址
 // bytes: 将要写入的字节数
 static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
@@ -546,8 +513,30 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 		i_size = pos + bytes;
 	else
 		i_size = inode->i_size;
-	finefs_dump_small_write_entry(sb, inode, small_entry_data, entry_type,
-		size_bits, bytes, time, slab_off, pos, i_size);
+
+	small_entry_data->entry_type = entry_type;
+	small_entry_data->slab_bits = size_bits;
+	small_entry_data->bytes = cpu_to_le16(bytes);
+	small_entry_data->mtime = cpu_to_le32(time);
+	small_entry_data->slab_off = cpu_to_le64(slab_off);
+	small_entry_data->file_off = cpu_to_le64(pos);
+	small_entry_data->size = cpu_to_le64(i_size);
+	small_entry_data->finefs_ino = cpu_to_le64(sih->ino);
+	small_entry_data->entry_ts = cpu_to_le64(sih->h_ts++);
+	barrier();
+	small_entry_data->entry_version = cpu_to_le64(0x1234);
+    finefs_flush_buffer(small_entry_data, sizeof(struct finefs_file_small_write_entry), 0);
+
+	rdv_proc(
+        "file %lu entry @ 0x%lx: entry_type %u, slab_bits %u, bytes: %u, "
+        "slab_off %lu, file_off %lu, size %lu",
+        inode->i_ino, finefs_get_addr_off(sb, small_entry_data), small_entry_data->entry_type,
+		small_entry_data->slab_bits, small_entry_data->bytes, small_entry_data->slab_off,
+		small_entry_data->file_off, small_entry_data->size);
+
+	sih->log_valid_bytes += sizeof(finefs_file_small_write_entry);
+	sih->h_slabs++;
+	sih->h_slab_bytes += 1ul << size_bits;
 
 	return curr_entry;
 }

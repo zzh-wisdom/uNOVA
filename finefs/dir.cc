@@ -94,12 +94,10 @@ static int finefs_remove_dir_radix_tree(struct super_block *sb,
 			r_error("%s dentry not match: %s, length %d, "
 					"hash %lu", __func__, name,
 					namelen, hash);
-			r_error("dentry: type %d, inode %lu, name %s, "
-					"namelen %u, rec len %u",
+			r_error("dentry: type %d, inode %lu, name %s, namelen %u",
 					entry->entry_type,
 					le64_to_cpu(entry->ino),
-					entry->name, entry->name_len,
-					le16_to_cpu(entry->de_len));
+					entry->name, entry->name_len);
 			return -EINVAL;
 		}
 
@@ -136,11 +134,10 @@ void finefs_delete_dir_tree(struct super_block *sb,
 			ret = radix_tree_delete(&sih->tree, pos);
 			if (!ret || ret != direntry) {
 				r_error("dentry: type %d, inode %lu, "
-					"name %s, namelen %u, rec len %u",
+					"name %s, namelen %u",
 					direntry->entry_type,
 					le64_to_cpu(direntry->ino),
-					direntry->name, direntry->name_len,
-					le16_to_cpu(direntry->de_len));
+					direntry->name, direntry->name_len);
 				if (!ret)
 					rd_info("ret is NULL");
 			}
@@ -168,14 +165,14 @@ void finefs_delete_dir_tree(struct super_block *sb,
  */
 static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 	struct finefs_inode *pidir, struct inode *dir,
-	u64 ino, struct dentry *dentry, unsigned short de_len, u64 tail,
+	u64 ino, struct dentry *dentry, u64 tail,
 	int link_change, u64 *curr_tail)
 {
 	struct finefs_inode_info *si = FINEFS_I(dir);
 	struct finefs_inode_info_header *sih = &si->header;
 	struct finefs_dentry *entry;
 	u64 curr_p;
-	size_t size = de_len; // log len, 文件名
+	size_t entry_size = sizeof(finefs_dentry); // entry大小
 	int extended = 0;
 	unsigned short links_count;
 	timing_t append_time;
@@ -183,43 +180,37 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 	FINEFS_START_TIMING(append_dir_entry_t, append_time);
 
 	// 获取这次写log的位置
-	curr_p = finefs_get_append_head(sb, pidir, sih, tail, size, &extended, false);
+	curr_p = finefs_get_append_head(sb, pidir, sih, tail, entry_size, &extended, false);
 	if (curr_p == 0)
 		BUG();
 
 	entry = (struct finefs_dentry *)finefs_get_block(sb, curr_p);
 	entry->entry_type = DIR_LOG;
-	entry->ino = cpu_to_le64(ino);
 	entry->name_len = dentry->d_name.len;
-	// memcpy_to_pmem_nocache(entry->name, dentry->d_name.name,
-	// 			dentry->d_name.len);
-	memcpy(entry->name, dentry->d_name.name, dentry->d_name.len);
-	entry->name[dentry->d_name.len] = '\0';
-	entry->file_type = 0;
-	// entry->invalid = 0;
-	entry->mtime = cpu_to_le32(dir->i_mtime.tv_sec);
-	entry->size = cpu_to_le64(dir->i_size);
-
 	links_count = cpu_to_le16(dir->i_nlink);
 	if (links_count == 0 && link_change == -1)
 		links_count = 0;
 	else
 		links_count += link_change;
 	entry->links_count = cpu_to_le16(links_count);
-
-	/* Update actual de_len */
-	entry->de_len = cpu_to_le16(de_len);
-	rdv_proc("dir entry @ 0x%lx: ino %lu, entry len %u, "
-			"name len %u, file type %u",
-			curr_p, entry->ino, entry->de_len,
-			entry->name_len, entry->file_type);
+	entry->mtime = cpu_to_le32(dir->i_mtime.tv_sec);
+	memcpy(entry->name, dentry->d_name.name, dentry->d_name.len);
+	entry->name[dentry->d_name.len] = '\0';
+	entry->ino = cpu_to_le64(ino);
+	entry->finefs_ino = cpu_to_le64(sih->ino);
+	entry->finefs_ino = cpu_to_le64(sih->h_ts++);
+	barrier();
 	entry->entry_version = 0x1234;
-	finefs_flush_buffer(entry, de_len, 0);
+	finefs_flush_buffer(entry, sizeof(finefs_dentry), 0);
+
+	rdv_proc("new dir entry @ 0x%lx: p_ino: %lu, ino %lu, name len %u",
+			curr_p, sih->ino, ino, entry->name_len);
+	sih->log_valid_bytes += entry_size;
 
 	dlog_assert(log_entry_is_set_valid(entry));
-	*curr_tail = curr_p + de_len;
+	*curr_tail = curr_p + entry_size;
 
-	dir->i_blocks = pidir->i_blocks;
+	dir->i_blocks = sih->h_blocks;
 	FINEFS_END_TIMING(append_dir_entry_t, append_time);
 	return curr_p;
 }
@@ -253,13 +244,14 @@ int finefs_append_root_init_entries(struct super_block *sb,
 	de_entry = (struct finefs_dentry *)finefs_get_block(sb, new_block);
 	de_entry->entry_type = DIR_LOG;
 	de_entry->name_len = 1;
-	// de_entry->invalid = 0;
-	de_entry->de_len = cpu_to_le16(FINEFS_DIR_LOG_REC_LEN(1));
 	de_entry->links_count = 1;
 	de_entry->mtime = GetTsSec();
+	strncpy(de_entry->name, ".\0", 2);
+	// de_entry->invalid = 0;
+	de_entry
 	de_entry->ino = cpu_to_le64(self_ino);
 	de_entry->size = sb->s_blocksize;
-	strncpy(de_entry->name, ".\0", 2);
+
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(1), 0);
 	dlog_assert(log_entry_is_set_valid(de_entry));
 
@@ -313,8 +305,8 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 		return -ENOMEM;
 	}
 	// pi->log_tail = new_block;
-	sih->h_blocks = 1;
-	sih->log_pages = 1;
+	sih->h_blocks = allocated;
+	sih->log_pages = allocated;
 	finefs_link_set_next_page(sb, &pi->log_head, new_block, 0);
 	// pi->log_head = new_block;
 	// finefs_flush_buffer(&pi->log_head, CACHELINE_SIZE, 0);
@@ -375,7 +367,6 @@ int finefs_add_dentry(struct dentry *dentry, u64 ino, int inc_link,
 	const char *name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
 	struct finefs_dentry *direntry;
-	unsigned short loglen;
 	int ret;
 	u64 curr_entry, curr_tail;
 	timing_t add_dentry_time;
@@ -395,16 +386,12 @@ int finefs_add_dentry(struct dentry *dentry, u64 ino, int inc_link,
 	 * completion of syscall, but too many callers depend
 	 * on this.
 	 */
-	// dir->i_mtime = dir->i_ctime = CURRENT_TIME_SEC;
 	dir->i_mtime = dir->i_ctime = get_cur_time_spec();
 
-	loglen = FINEFS_DIR_LOG_REC_LEN(namelen);
 	// curr_tail指向下一个entry的起始，
 	// 返回值是，当前append log entry的地址
 	curr_entry = finefs_append_dir_inode_entry(sb, pidir, dir, ino,
-				dentry,	loglen, tail, inc_link,
-				&curr_tail);
-	sih->log_valid_bytes += loglen;
+				dentry, tail, inc_link, &curr_tail);
 
 	direntry = (struct finefs_dentry *)finefs_get_block(sb, curr_entry);
 	// 将新的dentry插入到目录的radix-tree索引中
@@ -428,7 +415,6 @@ int finefs_remove_dentry(struct dentry *dentry, int dec_link, u64 tail,
 	struct finefs_inode_info_header *sih = &si->header;
 	struct finefs_inode *pidir;
 	struct qstr *entry = &dentry->d_name;
-	unsigned short loglen;
 	u64 curr_tail, curr_entry;
 	timing_t remove_dentry_time;
 
@@ -441,12 +427,10 @@ int finefs_remove_dentry(struct dentry *dentry, int dec_link, u64 tail,
 
 	dir->i_mtime = dir->i_ctime = get_cur_time_spec();
 
-	loglen = FINEFS_DIR_LOG_REC_LEN(entry->len);
 	// 在父母inode中写删除entry的log
 	// ino为0，表示删除
 	curr_entry = finefs_append_dir_inode_entry(sb, pidir, dir, 0,
-				dentry, loglen, tail, dec_link, &curr_tail);
-	sih->log_valid_bytes += loglen;
+				dentry, tail, dec_link, &curr_tail);
 	*new_tail = curr_tail;
 
 	finefs_remove_dir_radix_tree(sb, sih, entry->name, entry->len, 0);
