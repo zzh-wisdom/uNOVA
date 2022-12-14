@@ -868,10 +868,13 @@ setup_sb:
         goto out;
     }
     sih = &FINEFS_I(root_i)->header;
-    dlog_assert(sih->h_blocks = 1);
-    sih->log_pages = 1;
-    sih->log_valid_bytes = log_tail - root_pi->log_head.next_page_;
-    finefs_update_volatile_tail(sih, log_tail);
+    if (sbi->s_mount_opt & FINEFS_MOUNT_FORMAT) {
+        dlog_assert(sih->h_blocks = 1);
+        sih->log_pages = 1;
+        sih->log_valid_bytes = log_tail - root_pi->log_head.next_page_;
+        finefs_update_volatile_tail(sih, log_tail);
+        sih->h_ts = 3;
+    }
 
     sb->s_root = d_make_root(root_i);
     inode_unref(root_i);
@@ -967,14 +970,10 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
     log_assert(sizeof(struct finefs_inode_log_page) == FINEFS_LOG_SIZE);
     log_assert(NEXT_PAGE <= LOG_ENTRY_TYPE_MASK);
 
-#if LOG_ENTRY_SIZE==64
     log_assert(sizeof(struct finefs_file_pages_write_entry) == CACHELINE_SIZE);
-#endif
     log_assert(sizeof(struct finefs_dentry) == CACHELINE_SIZE);
     log_assert(sizeof(struct finefs_dentry) == FINEFS_DIR_LOG_REC_LEN(FINEFS_NAME_LEN));
-#if LOG_ENTRY_SIZE==64
     log_assert(sizeof(struct finefs_setattr_logentry) == CACHELINE_SIZE);
-#endif
     log_assert(sizeof(struct finefs_link_change_entry) == CACHELINE_SIZE);
     log_assert(sizeof(struct finefs_inode_page_tail) == CACHELINE_SIZE);
 

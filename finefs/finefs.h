@@ -322,8 +322,8 @@ struct finefs_inode_info_header {
 	// 每个线程的slab 分配器也需要添加统计数据
 	// 每个线程log时，下面的三个都需要去除
 	unsigned int log_pages;	/* Num of log pages */
-	unsigned long log_valid_bytes;	/* For thorough GC, log page中有效entry的总字节数*/
 	unsigned long h_log_tail;
+	unsigned long log_valid_bytes;	/* For thorough GC, log page中有效entry的总字节数*/
 
 	// finefs_init_header 中初始化
 	unsigned long h_blocks;
@@ -340,7 +340,7 @@ struct finefs_inode_info_header {
 	 * 后台gc时也会修改下面两个值，因此需要一个lock互斥
 	 */
 
-	// 搞成batch的形式，16或者32batch，减少inode元数据的写入次数
+	// 搞成batch的形式，64batch，减少inode元数据的写入次数
 	// 应用时需要按照时间戳顺序，将setattr和link_change都应用。算了，简化后这个没必要
 
 	// 随着操作的进行而修改
@@ -356,7 +356,9 @@ struct finefs_inode_info_header {
 
 	// 更新：
 	// 为了简化操作，last_setattr entry操作立即前台应用，并用set记录需要flush的cacheline
-	// 最后统一flush，然后再加fence，这时就可以将当前的log置为无效，但如果没有导致write entry
+	// 最后统一flush，然后再加fence(注意这个set应该记录在每个inode中，write操作时也需要将
+	// 之前失效的entry bitmap所在的cacheline加入到set)，
+	// 这时就可以将当前的log置为无效，但如果没有导致write entry
 	// 失效，那么就是单纯的写log。
 	// 1. 写setattr entry，flush+fence
 	// 2. 应用entry，set记录，flush+fence.
@@ -366,6 +368,8 @@ struct finefs_inode_info_header {
 	// 1. 写log，
 	// 2. 放到batch队列
 	// 3. batch达到一定长度后，应用到finefs。可以让后台线程负责应用
+
+	// batch设置为64，刚好一个page，而且需要通过锁管理，防止和后台gc竞争。
 };
 
 struct finefs_inode_info {
@@ -758,42 +762,21 @@ static inline void finefs_free_small_entry(struct finefs_file_small_entry *node)
     kmem_cache_free(finefs_file_small_entry_cachep, node);
 }
 
-#define LOG_ENTRY_SIZE 64
-
-#if LOG_ENTRY_SIZE==64
-
 struct finefs_file_pages_write_entry {
 	u8 entry_type;
-	u8 is_dirty;
+	u8 is_old;      // 当前这个entry是否因为其他写导致不是最新的数据
 	__le16	padding;
 	/* For both ctime and mtime */
 	__le32	mtime;
 	__le64	block;   // 起始block的NVM偏移地址
 	__le64	pgoff;   // page 偏移(编号)
 	__le32	num_pages;  // 写的page个数
-	// TODO： invalid_pages字段是否可以丢弃
-	__le32	invalid_pages; // 为什么这两个不相等就是有效的，其他原因导致无效的page个数？
-	__le64	size;    // 文件的大小, 不要移动定义位置
+	__le32	invalid_pages; // 覆盖写导致无效的page个数？
+	__le64	size;    // 文件的大小
 	__le64	finefs_ino; // 所属于的ino
 	__le64  entry_ts;
 	__le64 entry_version;
 } __attribute((__packed__));
-
-#else
-// 40B
-struct finefs_file_pages_write_entry {
-	/* ret of find_nvmm_block, the lowest byte is entry type */
-	__le64	block;   // 起始block的NVM偏移地址
-	__le64	pgoff;   // page 偏移
-	__le32	num_pages;  // 写的page个数
-	__le32	invalid_pages; // 为什么这两个不相等就是有效的，其他原因导致无效的page个数？
-	/* For both ctime and mtime */
-	__le32	mtime;
-	__le32	padding;
-	__le64	size;  // 文件的大小
-} __attribute((__packed__));
-
-#endif
 
 struct finefs_file_small_write_entry {
 	u8 entry_type;
@@ -852,8 +835,7 @@ struct finefs_dentry {
 // 				      ~FINEFS_DIR_ROUND)
 #define FINEFS_DIR_LOG_REC_LEN(name_len) (sizeof(struct finefs_dentry))
 
-#if LOG_ENTRY_SIZE==64
-
+/* Struct of inode attributes change log (setattr) */
 struct finefs_setattr_logentry {
 	u8	entry_type;
 	u8	attr;   // 表示哪些属性有效
@@ -864,26 +846,12 @@ struct finefs_setattr_logentry {
 	__le32	mtime;
 	__le32	ctime;
 	__le64	size;
-	u8      padding[24];
+	__le64	finefs_ino;       // 所属于的ino
+	__le64  entry_ts;
+	u8      padding[8];
 	__le64 entry_version;
 } __attribute((__packed__));
-#else
-/* Struct of inode attributes change log (setattr) */
-// 32B
-struct finefs_setattr_logentry {
-	u8	entry_type;
-	u8	attr;
-	__le16	mode;
-	__le32	uid;
-	__le32	gid;
-	__le32	atime;
-	__le32	mtime;
-	__le32	ctime;
-	__le64	size;
-} __attribute((__packed__));
-#endif
 
-/* Do we need this to be 32 bytes? */
 struct finefs_link_change_entry {
 	u8	entry_type;
 	u8	padding;
@@ -891,7 +859,9 @@ struct finefs_link_change_entry {
 	__le32	ctime;
 	__le32	flags;
 	__le32	generation;
-	__le64	paddings[5];
+	__le64	finefs_ino;       // 所属于的ino
+	__le64  entry_ts;
+	__le64	paddings[3];
 	__le64  entry_version;
 } __attribute((__packed__));
 

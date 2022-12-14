@@ -364,8 +364,12 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
     entry->ctime = cpu_to_le32(inode->i_ctime.tv_sec);
     entry->flags = cpu_to_le32(inode->i_flags);
     entry->generation = cpu_to_le32(inode->i_generation);
+    entry->finefs_ino = cpu_to_le64(sih->ino);
+    entry->entry_ts = cpu_to_le64(sih->h_ts++);
+    barrier();
     entry->entry_version = 0x1234;
     finefs_flush_buffer(entry, size, 0);
+
     *new_tail = curr_p + size;
     sih->log_valid_bytes += size;
     sih->last_link_change = curr_p;
@@ -610,7 +614,7 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
         return err;
     }
 
-    rd_info("%s: inode %lu, dir %lu, link %d", __func__, inode->i_ino, dir->i_ino, dir->i_nlink);
+    rd_info("%s: inode %lu, dir_ino %lu, dir_link %d", __func__, inode->i_ino, dir->i_ino, dir->i_nlink);
 
     if (inode->i_nlink != 2)
         r_error("empty directory %lu has nlink!=2 (%d), dir %lu", inode->i_ino, inode->i_nlink,
@@ -625,7 +629,7 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     inode->i_ctime = dir->i_ctime;
 
     if (dir->i_nlink) drop_nlink(dir);
-    // 删除inode内存中对应的索引
+    // TODO: 删除inode内存中对应的索引和nvm entry，需要放在事务提交后
     finefs_delete_dir_tree(sb, child_sih, true);
     // 孩子中添加unlink的log
     err = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);

@@ -34,6 +34,7 @@ rename操作，每个dentry log的version依旧取自它们所属的新inode。�
 - finefs_dentry
   - finefs_append_dir_inode_entry
   - finefs_append_root_init_entries
+  - finefs_append_dir_init_entries
 - finefs_setattr_logentry
   - finefs_append_link_change_entry
 - finefs_link_change_entry
@@ -148,10 +149,8 @@ inode中受到父母影响的状态有：link，valid，和version。因此redo 
 
 ## 一些宏
 
-#define LOG_ENTRY_SIZE 64
 LOG_ZERO
 LOG_HAS_TAIL
-SETATTR_BY_CPY_NT
 
 PMEM_MEM_WRITE
 

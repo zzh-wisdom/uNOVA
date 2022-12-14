@@ -35,7 +35,7 @@ static force_inline size_t finefs_page_write_entry_read(finefs_file_page_entry* 
 	size_t written = 0;
 #ifdef FINEFS_SMALL_ENTRY_USE_LIST
 	list_for_each_entry(cur, &page_entry->small_write_head, entry) {
-		if(cur->file_off + cur->bytes <= pos)
+		if(pos >= cur->file_off + cur->bytes)
 			continue;
 		if(pos < cur->file_off) {
 			bytes = cur->file_off - pos;
@@ -52,10 +52,10 @@ static force_inline size_t finefs_page_write_entry_read(finefs_file_page_entry* 
 			written += bytes;
 			if(!nr) break;
 		}
-		dlog_assert(pos == cur->file_off);
-		bytes = cur->bytes;
+		u32 off = pos - cur->file_off;
+		bytes = cur->bytes - off;
 		if(bytes > nr) bytes = nr;
-		__copy_to_user(buf, cur->nvm_data, bytes);
+		__copy_to_user(buf, cur->nvm_data+off, bytes);
 		buf += bytes;
 		page_data += bytes;
 		pos += bytes;
@@ -99,7 +99,7 @@ static force_inline size_t finefs_page_write_entry_read(finefs_file_page_entry* 
 
 	if(nr) {
 		if(has_page) {
-			if(page_entry->nvm_entry_p->is_dirty == 0) {
+			if(page_entry->nvm_entry_p->is_old == 0) {
 				bytes = page_entry->nvm_entry_p->num_pages << FINEFS_BLOCK_SHIFT;
 				if(unlikely(bytes > nr)) bytes = nr;
 			} else {
@@ -470,7 +470,7 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 {
 	struct finefs_inode_info *si = FINEFS_I(inode);
 	struct finefs_inode_info_header *sih = &si->header;
-	struct finefs_file_small_write_entry* small_entry_data;
+	struct finefs_file_small_write_entry* small_entry;
 	size_t i_size, entry_size;
 	int size_bits = 0, extended;
 	void* kmem;
@@ -493,7 +493,7 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 		return 0;
 	}
 
-    small_entry_data =
+    small_entry =
 		(struct finefs_file_small_write_entry *)finefs_get_block(sb, curr_entry);
 
 	// 最后一个提交log前，才需要sfence, 写提交entry时也不需要，后面更新tail时会进行
@@ -514,25 +514,25 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 	else
 		i_size = inode->i_size;
 
-	small_entry_data->entry_type = entry_type;
-	small_entry_data->slab_bits = size_bits;
-	small_entry_data->bytes = cpu_to_le16(bytes);
-	small_entry_data->mtime = cpu_to_le32(time);
-	small_entry_data->slab_off = cpu_to_le64(slab_off);
-	small_entry_data->file_off = cpu_to_le64(pos);
-	small_entry_data->size = cpu_to_le64(i_size);
-	small_entry_data->finefs_ino = cpu_to_le64(sih->ino);
-	small_entry_data->entry_ts = cpu_to_le64(sih->h_ts++);
+	small_entry->entry_type = entry_type;
+	small_entry->slab_bits = size_bits;
+	small_entry->bytes = cpu_to_le16(bytes);
+	small_entry->mtime = cpu_to_le32(time);
+	small_entry->slab_off = cpu_to_le64(slab_off);
+	small_entry->file_off = cpu_to_le64(pos);
+	small_entry->size = cpu_to_le64(i_size);
+	small_entry->finefs_ino = cpu_to_le64(sih->ino);
+	small_entry->entry_ts = cpu_to_le64(sih->h_ts++);
 	barrier();
-	small_entry_data->entry_version = cpu_to_le64(0x1234);
-    finefs_flush_buffer(small_entry_data, sizeof(struct finefs_file_small_write_entry), 0);
+	small_entry->entry_version = cpu_to_le64(0x1234);
+    finefs_flush_buffer(small_entry, sizeof(struct finefs_file_small_write_entry), 0);
 
 	rdv_proc(
         "file %lu entry @ 0x%lx: entry_type %u, slab_bits %u, bytes: %u, "
         "slab_off %lu, file_off %lu, size %lu",
-        inode->i_ino, finefs_get_addr_off(sb, small_entry_data), small_entry_data->entry_type,
-		small_entry_data->slab_bits, small_entry_data->bytes, small_entry_data->slab_off,
-		small_entry_data->file_off, small_entry_data->size);
+        inode->i_ino, finefs_get_addr_off(sb, small_entry), small_entry->entry_type,
+		small_entry->slab_bits, small_entry->bytes, small_entry->slab_off,
+		small_entry->file_off, small_entry->size);
 
 	sih->log_valid_bytes += sizeof(finefs_file_small_write_entry);
 	sih->h_slabs++;
@@ -669,7 +669,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 		pmem_memcpy(kmem, buf, bytes, false);
 		FINEFS_END_TIMING(memcpy_w_nvmm_t, memcpy_time);
 
-		page_entry_data.is_dirty = 0;
+		page_entry_data.is_old = 0;
 		page_entry_data.pgoff = cpu_to_le64(start_blk);
 		page_entry_data.num_pages = cpu_to_le32(allocated);
 		page_entry_data.invalid_pages = 0;
@@ -691,7 +691,6 @@ ssize_t finefs_cow_file_write(struct file *filp,
 			page_entry_data.size = cpu_to_le64(pos + bytes);
 		else
 			page_entry_data.size = cpu_to_le64(inode->i_size);
-
 		curr_entry = finefs_append_file_write_entry(sb, pi, inode,
 							&page_entry_data, temp_tail);
 		if (curr_entry == 0) {

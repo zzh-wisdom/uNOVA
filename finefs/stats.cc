@@ -277,11 +277,11 @@ static inline size_t finefs_print_dentry(struct super_block *sb,
 	u64 curr, struct finefs_dentry *entry)
 {
 	rd_info("dir logentry @ 0x%lx: inode %lu, "
-			"namelen %u, rec len %u\n", curr,
+			"namelen %u\n", curr,
 			le64_to_cpu(entry->ino),
-			entry->name_len, le16_to_cpu(entry->de_len));
+			entry->name_len);
 
-	return le16_to_cpu(entry->de_len);
+	return sizeof(finefs_dentry);
 }
 
 static u64 finefs_print_log_entry(struct super_block *sb, u64 curr)

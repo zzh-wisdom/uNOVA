@@ -142,6 +142,7 @@ void finefs_delete_dir_tree(struct super_block *sb,
 					rd_info("ret is NULL");
 			}
 			if(delete_nvmm) {
+				r_info("%s: delete dentry name: %s", __func__, direntry->name);
 				log_entry_set_invalid(sb, sih, direntry);
 			}
 		}
@@ -198,7 +199,7 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 	entry->name[dentry->d_name.len] = '\0';
 	entry->ino = cpu_to_le64(ino);
 	entry->finefs_ino = cpu_to_le64(sih->ino);
-	entry->finefs_ino = cpu_to_le64(sih->h_ts++);
+	entry->entry_ts = cpu_to_le64(sih->h_ts++);
 	barrier();
 	entry->entry_version = 0x1234;
 	finefs_flush_buffer(entry, sizeof(finefs_dentry), 0);
@@ -247,35 +248,34 @@ int finefs_append_root_init_entries(struct super_block *sb,
 	de_entry->links_count = 1;
 	de_entry->mtime = GetTsSec();
 	strncpy(de_entry->name, ".\0", 2);
-	// de_entry->invalid = 0;
-	de_entry
 	de_entry->ino = cpu_to_le64(self_ino);
-	de_entry->size = sb->s_blocksize;
-
+	de_entry->finefs_ino = cpu_to_le64(self_ino);
+	de_entry->entry_ts = cpu_to_le64(1);
+	barrier();
+	de_entry->entry_version = 0x1234;
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(1), 0);
 	dlog_assert(log_entry_is_set_valid(de_entry));
 
 	curr_p = new_block + FINEFS_DIR_LOG_REC_LEN(1);
 
 	de_entry = (struct finefs_dentry *)((char *)de_entry +
-					le16_to_cpu(de_entry->de_len));
+					sizeof(struct finefs_dentry));
 	de_entry->entry_type = DIR_LOG;
 	de_entry->name_len = 2;
-	// de_entry->invalid = 0;
-	de_entry->de_len = cpu_to_le16(FINEFS_DIR_LOG_REC_LEN(2));
 	de_entry->links_count = 2;
 	de_entry->mtime = GetTsSec();
-	de_entry->ino = cpu_to_le64(parent_ino);
-	de_entry->size = sb->s_blocksize;
 	strncpy(de_entry->name, "..\0", 3);
+	de_entry->ino = cpu_to_le64(parent_ino);
+	de_entry->finefs_ino = cpu_to_le64(self_ino);
+	de_entry->entry_ts = cpu_to_le64(2);
+	barrier();
+	de_entry->entry_version = 0x1234;
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(2), 0);
 	dlog_assert(log_entry_is_set_valid(de_entry));
 
 	curr_p += FINEFS_DIR_LOG_REC_LEN(2);
-	// finefs_update_tail(pi, curr_p);
-	// finefs_update_volatile_tail(sih, curr_p);
-	*log_tail = curr_p;
 
+	*log_tail = curr_p;
 	return 0;
 }
 
@@ -315,38 +315,39 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	de_entry = (struct finefs_dentry *)finefs_get_block(sb, new_block);
 	de_entry->entry_type = DIR_LOG;
 	de_entry->name_len = 1;
-	// de_entry->invalid = 0;
-	de_entry->de_len = cpu_to_le16(FINEFS_DIR_LOG_REC_LEN(1));
 	de_entry->links_count = 1;
 	de_entry->mtime = GetTsSec();
-	de_entry->ino = cpu_to_le64(self_ino);
-	de_entry->size = sb->s_blocksize;
 	strncpy(de_entry->name, ".\0", 2);
+	de_entry->ino = cpu_to_le64(self_ino);
+	de_entry->finefs_ino = cpu_to_le64(self_ino);
+	de_entry->entry_ts = cpu_to_le64(sih->h_ts++);
+	barrier();
+	de_entry->entry_version = 0x1234;
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(1), 0);
 	dlog_assert(log_entry_is_set_valid(de_entry));
-	sih->log_valid_bytes += FINEFS_DIR_LOG_REC_LEN(1);
 
+	sih->log_valid_bytes += FINEFS_DIR_LOG_REC_LEN(1);
 	curr_p = new_block + FINEFS_DIR_LOG_REC_LEN(1);
 
 	de_entry = (struct finefs_dentry *)((char *)de_entry +
-					le16_to_cpu(de_entry->de_len));
+					sizeof(finefs_dentry));
 	de_entry->entry_type = DIR_LOG;
 	de_entry->name_len = 2;
-	// de_entry->invalid = 0;
-	de_entry->de_len = cpu_to_le16(FINEFS_DIR_LOG_REC_LEN(2));
 	de_entry->links_count = 2;
 	de_entry->mtime = GetTsSec();
-	de_entry->ino = cpu_to_le64(parent_ino);
-	de_entry->size = sb->s_blocksize;
 	strncpy(de_entry->name, "..\0", 3);
+	de_entry->ino = cpu_to_le64(parent_ino);
+	de_entry->finefs_ino = cpu_to_le64(self_ino);
+	de_entry->entry_ts = cpu_to_le64(sih->h_ts++);
+	barrier();
+	de_entry->entry_version = 0x1234;
 	finefs_flush_buffer(de_entry, FINEFS_DIR_LOG_REC_LEN(2), 0);
 	dlog_assert(log_entry_is_set_valid(de_entry));
+
 	sih->log_valid_bytes += FINEFS_DIR_LOG_REC_LEN(2);
-
 	curr_p += FINEFS_DIR_LOG_REC_LEN(2);
-	// finefs_update_tail(pi, curr_p);
-	finefs_update_volatile_tail(sih, curr_p);
 
+	finefs_update_volatile_tail(sih, curr_p);
 	return 0;
 }
 
@@ -468,7 +469,8 @@ static inline void finefs_rebuild_dir_time_and_size(struct super_block *sb,
 
 	pi->i_ctime = entry->mtime;
 	pi->i_mtime = entry->mtime;
-	pi->i_size = entry->size;
+	// pi->i_size = entry->size;
+	pi->i_size = 0;
 	pi->i_links_count = entry->links_count;
 }
 
@@ -481,7 +483,6 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 	struct finefs_link_change_entry *link_change_entry = NULL;
 	struct finefs_inode_log_page *curr_page;
 	u64 ino = pi->finefs_ino;
-	unsigned short de_len;
 	timing_t rebuild_time;
 	void *addr;
 	u64 curr_p;
@@ -492,8 +493,6 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 	FINEFS_START_TIMING(rebuild_dir_t, rebuild_time);
 	rdv_proc("Rebuild dir %lu tree", ino);
 
-	sih->pi_addr = pi_addr;
-
 	curr_p = pi->log_head.next_page_;
 	if (curr_p == 0) {
 		r_error("Dir %lu log is NULL!", ino);
@@ -503,15 +502,40 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 	rdv_proc("Log head 0x%lx, tail 0x%lx",
 				curr_p, pi->log_tail);
 
-	sih->log_pages = 1;
-	// TODO: log_tail
+	if(pi->log_tail != 0) {
+		// 重启后的恢复
+		r_fatal("TODO: restart");
+		// 以下信息都需要重新恢复
+		// unsigned long log_valid_bytes;	/* For thorough GC, log page中有效entry的总字节数*/
+		// unsigned long h_log_tail;
+		// // finefs_init_header 中初始化
+		// unsigned long h_blocks;
+		// unsigned int  h_slabs;
+		// unsigned int  h_slab_bytes;
+		// unsigned long h_ts;
+		// TODO: log_tail
+		// 直接从pi里面读即可
+
+		sih->log_valid_bytes = 0; // 随着扫描恢复
+		sih->h_blocks = pi->i_blocks;
+		sih->h_slabs = pi->i_slabs;
+		sih->h_slab_bytes = pi->i_slab_bytes;
+		sih->h_ts = pi->i_ts;  // 扫描时，确保没有ts大于等于这个
+
+		sih->i_size = le64_to_cpu(pi->i_size);
+		sih->i_mode = le64_to_cpu(pi->i_mode);
+		sih->pi_addr = pi_addr;
+		dlog_assert(sih->ino = pi->finefs_ino);
+	}
+
+	// 用于新创建目录的内存索引重建
+
 	// 临时解决方法，未考虑恢复
 	int times = 0;
 	while (curr_p != pi->log_tail) {
 		++times;
 		if(times == 3) break;
 		if (goto_next_page(sb, curr_p)) {
-			sih->log_pages++;
 			curr_p = finefs_log_next_page(sb, curr_p);
 		}
 
@@ -529,7 +553,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 					(struct finefs_setattr_logentry *)addr;
 				finefs_apply_setattr_entry(sb, pi, sih,
 								attr_entry);
-				sih->last_setattr = curr_p;
+				// sih->last_setattr = curr_p;
 				curr_p += sizeof(struct finefs_setattr_logentry);
 				continue;
 			case LINK_CHANGE:
@@ -537,7 +561,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 					(struct finefs_link_change_entry *)addr;
 				finefs_apply_link_change_entry(pi,
 							link_change_entry);
-				sih->last_link_change = curr_p;
+				// sih->last_link_change = curr_p;
 				curr_p += sizeof(struct finefs_link_change_entry);
 				continue;
 			case DIR_LOG:
@@ -550,10 +574,9 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 
 		entry = (struct finefs_dentry *)finefs_get_block(sb, curr_p);
 		rdv_proc("curr_p: 0x%lx, type %d, ino %lu, "
-			"name %s, namelen %u, rec len %u", curr_p,
+			"name %s, namelen %u", curr_p,
 			entry->entry_type, le64_to_cpu(entry->ino),
-			entry->name, entry->name_len,
-			le16_to_cpu(entry->de_len));
+			entry->name, entry->name_len);
 
 		if (entry->ino > 0) {
 			if (log_entry_is_set_valid(entry)) {
@@ -572,14 +595,8 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 
 		finefs_rebuild_dir_time_and_size(sb, pi, entry);
 
-		de_len = le16_to_cpu(entry->de_len);
-		sih->log_valid_bytes += de_len;
-		curr_p += de_len;
+		curr_p += sizeof(finefs_dentry);
 	}
-
-	sih->i_size = le64_to_cpu(pi->i_size);
-	sih->i_mode = le64_to_cpu(pi->i_mode);
-	finefs_flush_buffer(pi, sizeof(struct finefs_inode), 0);
 
 	/* Keep traversing until log ends */
 	curr_p &= FINEFS_LOG_MASK;
@@ -590,8 +607,6 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 		curr_page = (struct finefs_inode_log_page *)
 			finefs_get_block(sb, curr_p);
 	}
-
-	pi->i_blocks = sih->log_pages;
 
 //	finefs_print_dir_tree(sb, sih, ino);
 	FINEFS_END_TIMING(rebuild_dir_t, rebuild_time);

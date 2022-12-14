@@ -766,7 +766,7 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
     finefs_file_pages_write_entry page_entry_data;
 
     // 提交log
-    page_entry_data.is_dirty = 0;
+    page_entry_data.is_old = 0;
     page_entry_data.pgoff = cpu_to_le64(dram_page_entry->file_pgoff);
 	page_entry_data.num_pages = cpu_to_le32(1);
 	page_entry_data.invalid_pages = 0;
@@ -907,7 +907,7 @@ static inline int finefs_file_page_entry_apply_slab(struct super_block *sb,
 #endif
 
     if(dram_page_entry->nvm_entry_p) {
-        dram_page_entry->nvm_entry_p->is_dirty = 1;
+        dram_page_entry->nvm_entry_p->is_old = 1;
     }
     return 0;
 }
@@ -1724,18 +1724,13 @@ int finefs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *st
     return 0;
 }
 
-// #define SETATTR_BY_CPY_NT
-
 static void finefs_update_setattr_entry(struct inode *inode,
                                         struct finefs_setattr_logentry *p_entry,
                                         struct iattr *attr) {
+    struct finefs_inode_info *si = FINEFS_I(inode);
+    struct finefs_inode_info_header *sih = &si->header;
     unsigned int ia_valid = attr->ia_valid, attr_mask;
-#ifdef SETATTR_BY_CPY_NT
-    struct finefs_setattr_logentry tmp;
-    struct finefs_setattr_logentry *entry = &tmp;
-#else
     struct finefs_setattr_logentry *entry = p_entry;
-#endif
     /* These files are in the lowest byte */
     attr_mask = ATTR_MODE | ATTR_UID | ATTR_GID | ATTR_SIZE | ATTR_ATIME | ATTR_MTIME | ATTR_CTIME;
 
@@ -1747,22 +1742,16 @@ static void finefs_update_setattr_entry(struct inode *inode,
     entry->atime = cpu_to_le32(inode->i_atime.tv_sec);
     entry->ctime = cpu_to_le32(inode->i_ctime.tv_sec);
     entry->mtime = cpu_to_le32(inode->i_mtime.tv_sec);
-
     if (ia_valid & ATTR_SIZE)
         entry->size = cpu_to_le64(attr->ia_size);
     else
         entry->size = cpu_to_le64(inode->i_size);
-
-#if LOG_ENTRY_SIZE == 64
+    entry->finefs_ino = cpu_to_le64(sih->ino);
+    entry->entry_ts = cpu_to_le64(sih->h_ts++);
     barrier();
     entry->entry_version = 0x1234;
-#endif
 
-#ifdef SETATTR_BY_CPY_NT
-    pmem_memcpy_nt_nodrain(p_entry, entry, sizeof(struct finefs_setattr_logentry));
-#else
     finefs_flush_buffer(p_entry, sizeof(struct finefs_setattr_logentry), 0);
-#endif
 }
 
 // 属性还包括文件大小（截断/扩展）
@@ -2117,7 +2106,7 @@ static bool curr_log_entry_invalid(struct super_block *sb, struct finefs_inode *
         case DIR_LOG:
             dentry = (struct finefs_dentry *)addr;
             if (dentry->ino && log_entry_is_set_valid(dentry)) ret = false;
-            *length = le16_to_cpu(dentry->de_len);
+            *length = sizeof(finefs_dentry);
             break;
         case NEXT_PAGE:
             log_assert(0);
@@ -2673,7 +2662,7 @@ u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
  * 返回当前entry写入的地址
  */
 u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *pi,
-                                   struct inode *inode, struct finefs_file_pages_write_entry *data,
+                                   struct inode *inode, struct finefs_file_pages_write_entry *dram_entry,
                                    u64 tail) {
     struct finefs_inode_info *si = FINEFS_I(inode);
     struct finefs_inode_info_header *sih = &si->header;
@@ -2689,14 +2678,12 @@ u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *
     if (curr_p == 0) return curr_p;
 
     entry = (struct finefs_file_pages_write_entry *)finefs_get_block(sb, curr_p);
-#if LOG_ENTRY_SIZE == 64
-    memcpy(entry, data, offsetof(struct finefs_file_pages_write_entry, size));
+    dram_entry->finefs_ino = cpu_to_le64(sih->ino);
+	dram_entry->entry_ts = cpu_to_le64(sih->h_ts++);
+    memcpy(entry, dram_entry, sizeof(finefs_file_pages_write_entry) - sizeof(entry->entry_version));
     barrier();
     entry->entry_version = 0x1234;
     finefs_flush_buffer(entry, sizeof(struct finefs_file_pages_write_entry), 0);
-#else
-    memcpy_to_pmem_nocache(entry, data, sizeof(struct finefs_file_pages_write_entry));
-#endif
     rdv_proc(
         "file %lu entry @ 0x%lx: pgoff %lu, num %u, "
         "block %lu, size %lu",
@@ -2707,7 +2694,7 @@ u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *
     FINEFS_END_TIMING(append_file_entry_t, append_time);
 
     sih->log_valid_bytes += size;
-    sih->h_blocks += data->num_pages;
+    sih->h_blocks += dram_entry->num_pages;
     return curr_p;
 }
 
