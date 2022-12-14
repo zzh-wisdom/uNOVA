@@ -218,7 +218,7 @@ static inline int finefs_free_contiguous_data_blocks(
     // TODO: 这个又是NVM本地写，随机性很严重
     entry->invalid_pages += num_pages;
     if(entry->invalid_pages == entry->num_pages) {
-        log_entry_set_invalid(sb, sih, entry);
+        log_entry_set_invalid(sb, sih, entry, true);
     }
 
     nvmm = get_nvmm(sb, sih, entry, pgoff);
@@ -398,7 +398,7 @@ static force_inline void finefs_small_entry_remove(super_block* sb,
     size_t slab_size = 1ul << small_entry->slab_bits;
     // 释放 nvm slab 空间
     finefs_less_page_free(sb, pi, slab_off, slab_size);
-    log_entry_set_invalid(sb, sih, small_write_entry);
+    log_entry_set_invalid(sb, sih, small_write_entry, true);
 
     sih->h_slabs--;
     sih->h_slab_bytes -= slab_size;
@@ -442,7 +442,7 @@ static void finefs_file_page_entry_clear(struct super_block *sb,
         finefs_file_pages_write_entry  *old_nvm_entry = dram_page_entry->nvm_entry_p;
         old_nvm_entry->invalid_pages++;
         if(old_nvm_entry->invalid_pages == old_nvm_entry->num_pages) {
-            log_entry_set_invalid(sb, sih, old_nvm_entry);
+            log_entry_set_invalid(sb, sih, old_nvm_entry, true);
         }
         // 立即释放特定的block
         u64 old_nvmm = get_blocknr_from_page_entry(sb, sih, dram_page_entry, dram_page_entry->file_pgoff);
@@ -796,7 +796,7 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
     if(pages_write_entry) {
         pages_write_entry->invalid_pages++;
         if(pages_write_entry->invalid_pages == pages_write_entry->num_pages) {
-            log_entry_set_invalid(sb, sih, pages_write_entry);
+            log_entry_set_invalid(sb, sih, pages_write_entry, true);
         }
     }
 
@@ -1426,7 +1426,8 @@ void finefs_evict_inode(struct inode *inode) {
         dlog_assert(freed == sih->h_blocks - sih->log_pages);
         dlog_assert(sih->h_slabs == 0);
         dlog_assert(sih->h_slab_bytes == 0);
-        dlog_assert(sih->log_valid_bytes == 64);
+        // TODO:
+        // dlog_assert(sih->log_valid_bytes == 64);
         rd_info("%s: valid entrys: %lu", __func__, sih->log_valid_bytes/CACHELINE_SIZE);
         /* Then we can free the inode log*/
         err = finefs_free_inode(inode, sih);
@@ -1816,14 +1817,52 @@ static u64 finefs_append_setattr_entry(struct super_block *sb, struct finefs_ino
     /* inode is already updated with attr */
     finefs_update_setattr_entry(inode, entry, attr);
     new_tail = curr_p + size;
-    sih->last_setattr = curr_p;
     sih->log_valid_bytes += size;
 
     FINEFS_END_TIMING(append_setattr_t, append_time);
     return new_tail;
 }
 
-// #define LOG_HAS_TAIL
+static void finefs_sih_setattr_entry_gc(super_block* sb, finefs_inode_info_header *sih) {
+    r_info("%s: cur_setattr_idx: %d, flush cachelins: %u",
+        __func__, sih->cur_setattr_idx, sih->cachelines_to_flush.size());
+    log_assert(0);
+    dlog_assert(sih->cur_setattr_idx == FINEFS_INODE_META_FLUSH_BATCH);
+
+    finefs_sih_bitmap_cache_flush(sih, true);
+    // 将entry置为无效
+    for(int i = 0; i < sih->cur_setattr_idx - 1; ++i) {
+        void *entry = finefs_get_block(sb, sih->h_setattr_entry_p[i]);
+        log_entry_set_invalid(sb, sih, entry, false);
+    }
+    sih->h_can_just_drop = true;
+    sih->h_setattr_entry_p[0] = sih->h_setattr_entry_p[sih->cur_setattr_idx - 1];
+    sih->cur_setattr_idx = 1;
+}
+
+static void finefs_sih_add_attr_entry(super_block* sb, finefs_inode_info_header *sih, u64 entry_p, bool is_shrink) {
+    log_assert(!is_shrink);
+    spin_lock(&sih->h_entry_lock);
+    if(sih->cur_setattr_idx == 0) {
+        sih->h_setattr_entry_p[0] = entry_p;
+        ++sih->cur_setattr_idx;
+        sih->h_can_just_drop = !is_shrink;
+    } else if(!is_shrink && sih->h_can_just_drop) {
+        int last_idx = sih->cur_setattr_idx - 1;
+        rd_info("%s: new entry: 0x%lx, invalid entry: 0x%lx", __func__,
+            entry_p, sih->h_setattr_entry_p[last_idx]);
+        void *entry = finefs_get_block(sb, sih->h_setattr_entry_p[last_idx]);
+        log_entry_set_invalid(sb, sih, entry, false);
+        sih->h_setattr_entry_p[last_idx] = entry_p;
+    } else {
+        sih->h_setattr_entry_p[sih->cur_setattr_idx++] = entry_p;
+        sih->h_can_just_drop = false;
+        if(sih->cur_setattr_idx == FINEFS_INODE_META_FLUSH_BATCH) {
+            finefs_sih_setattr_entry_gc(sb, sih);
+        }
+    }
+    spin_unlock(&sih->h_entry_lock);
+}
 
 int finefs_notify_change(struct dentry *dentry, struct iattr *attr) {
     struct inode *inode = dentry->d_inode;
@@ -1863,20 +1902,19 @@ int finefs_notify_change(struct dentry *dentry, struct iattr *attr) {
 
     /* We are holding i_mutex so OK to append the log */
     new_tail = finefs_append_setattr_entry(sb, pi, inode, attr, 0);
-
-    // sih->h_log_tail = new_tail;
-    // finefs_update_tail(pi, new_tail);
     finefs_update_volatile_tail(sih, new_tail);
 
+    bool is_shrink = false;
     /* Only after log entry is committed, we can truncate size */
     if ((ia_valid & ATTR_SIZE) &&
         (attr->ia_size != oldsize || pi->i_flags & cpu_to_le32(FINEFS_EOFBLOCKS_FL))) {
-        //		finefs_set_blocksize_hint(sb, inode, pi, attr->ia_size);
-        // TODO: 不支持文件的缩小
-        log_assert(attr->ia_size > oldsize);
+        // finefs_set_blocksize_hint(sb, inode, pi, attr->ia_size);
         /* now we can freely truncate the inode */
+        is_shrink = attr->ia_size < oldsize;
         finefs_setsize(inode, oldsize, attr->ia_size);
     }
+    finefs_sih_add_attr_entry(sb, sih,
+        new_tail-sizeof(finefs_setattr_logentry), is_shrink);
 
     FINEFS_END_TIMING(setattr_t, setattr_time);
     return ret;
@@ -2087,9 +2125,9 @@ static bool curr_log_entry_invalid(struct super_block *sb, struct finefs_inode *
     type = finefs_get_entry_type(addr);
     switch (type) {
         case SET_ATTR:
-            if (sih->last_setattr == curr_p) ret = false;
+            // if (sih->last_setattr == curr_p) ret = false;
+
             /* Do not invalidate setsize entries */
-            // TODO: 这是为什么
             setattr_entry = (struct finefs_setattr_logentry *)addr;
             if (setattr_entry->attr & ATTR_SIZE) ret = false;
             *length = sizeof(struct finefs_setattr_logentry);
@@ -2112,7 +2150,6 @@ static bool curr_log_entry_invalid(struct super_block *sb, struct finefs_inode *
             log_assert(0);
             /* No more entries in this page */
             *length = FINEFS_BLOCK_SIZE - FINEFS_LOG_ENTRY_LOC(curr_p);
-            ;
             break;
         default:
             rd_error("%s: unknown type %d, 0x%lx", __func__, type, curr_p);
@@ -2247,7 +2284,7 @@ static int finefs_gc_assign_new_entry(struct super_block *sb, struct finefs_inod
     type = finefs_get_entry_type(addr);
     switch (type) {
         case SET_ATTR:
-            sih->last_setattr = new_curr;  // tail page不回收，这里不会有问题？
+            // sih->last_setattr = new_curr;  // tail page不回收，这里不会有问题？
             break;
         case LINK_CHANGE:
             sih->last_link_change = new_curr;
@@ -2778,7 +2815,7 @@ int finefs_rebuild_file_inode_tree(struct super_block *sb, struct finefs_inode *
             case SET_ATTR:
                 attr_entry = (struct finefs_setattr_logentry *)addr;
                 finefs_apply_setattr_entry(sb, pi, sih, attr_entry);
-                sih->last_setattr = curr_p;
+                // sih->last_setattr = curr_p;
                 curr_p += sizeof(struct finefs_setattr_logentry);
                 continue;
             case LINK_CHANGE:

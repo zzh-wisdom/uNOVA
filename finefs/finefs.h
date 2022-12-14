@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 #include <map>
+#include <unordered_set>
 
 #include "vfs/fs_cfg.h"
 #include "finefs/journal.h"
@@ -304,7 +305,11 @@ struct finefs_range_node {
 // 这是针对某个inode， 包含管理的一些统计信息
 struct finefs_inode_info_header {
 	// 文件数据是按照blocknr来索引的？感觉还是红黑树，或者跳表好
+	spinlock_t tree_lock;
 	struct radix_tree_root tree;	/* Dir name entry tree root 或者文件数据*/
+	// TODO: 写的时候，需要将修改的bitmap添加到这
+	std::unordered_set<void*> cachelines_to_flush;
+
 	// struct radix_tree_root cache_tree;	/* Mmap cache tree root */
 	unsigned short i_mode;		/* Dir or file? */
 	unsigned long i_size;
@@ -321,9 +326,9 @@ struct finefs_inode_info_header {
 	// TODO: 额外添加全局的统计的数据，每个线程的已分配的log个数、有效的entry_bytes等等
 	// 每个线程的slab 分配器也需要添加统计数据
 	// 每个线程log时，下面的三个都需要去除
-	unsigned int log_pages;	/* Num of log pages */
 	unsigned long h_log_tail;
-	unsigned long log_valid_bytes;	/* For thorough GC, log page中有效entry的总字节数*/
+	unsigned int log_pages;	/* Num of log pages */
+	unsigned int log_valid_bytes;	/* For thorough GC, log page中有效entry的总字节数*/
 
 	// finefs_init_header 中初始化
 	unsigned long h_blocks;
@@ -340,37 +345,42 @@ struct finefs_inode_info_header {
 	 * 后台gc时也会修改下面两个值，因此需要一个lock互斥
 	 */
 
-	// 搞成batch的形式，64batch，减少inode元数据的写入次数
-	// 应用时需要按照时间戳顺序，将setattr和link_change都应用。算了，简化后这个没必要
-
-	// 随着操作的进行而修改
-	// 系统关闭时需要将last_link_change应用到pi
-	// 注意，ftruncate时，如果设置的size比当前文件的大小要大，
-	// 那么应用后，是可以直接丢弃该entry的，因为它不影响任何的write entry
-	u64 last_setattr;		/* Last setattr entry  额外保存一个size/是否可以丢弃的标志 */
-	// 由于setattr和link_change公用一个元数据时间戳，因此，需要在前台操作时直接应用
-	// 但只是flush，不fence
-	// 后一个操作来时，正常执行事务，应用并flush，在更新last_link_change之前，
-	// 将旧的entry置为无效，而last_setattr不能，原因是size会导致某些write_entry复活。
-	u64 last_link_change;		/* Last link change entry */
-
 	// 更新：
-	// 为了简化操作，last_setattr entry操作立即前台应用，并用set记录需要flush的cacheline
-	// 最后统一flush，然后再加fence(注意这个set应该记录在每个inode中，write操作时也需要将
+	// 注意set应该记录在每个inode中，write操作时也需要将
 	// 之前失效的entry bitmap所在的cacheline加入到set)，
-	// 这时就可以将当前的log置为无效，但如果没有导致write entry
-	// 失效，那么就是单纯的写log。
 	// 1. 写setattr entry，flush+fence
-	// 2. 应用entry，set记录，flush+fence.
-	// 3. 放到batch队列。batch的方式减少对finefs inode的写入
+	// 2. 应用entry，更新set记录
+	// 3. 放到batch队列。batch的方式回收entry。
+	// 4. 回收时，要保留最后一个entry，flush set中的cacheline，再将旧的entry失效
 
-	// 对于last_link_change，也要batch
+	// 对于last_link_change，不需要batch
 	// 1. 写log，
-	// 2. 放到batch队列
-	// 3. batch达到一定长度后，应用到finefs。可以让后台线程负责应用
+	// 2. 将前一个last_link_change entry失效
+	// 3. 更新last idx
 
 	// batch设置为64，刚好一个page，而且需要通过锁管理，防止和后台gc竞争。
+
+	// 随着操作的进行而修改
+	// 系统关闭时, 应用所有队列的log h_entry_p, 但保留最后一个
+
+	// 注意，ftruncate时，如果设置的size比当前文件的大小要大，
+	// 那么应用后，是可以直接丢弃该entry的，因为它不影响任何的write entry
+	// 而不需要放在batch队列
+	spinlock_t h_entry_lock;
+	u64 h_setattr_entry_p[FINEFS_INODE_META_FLUSH_BATCH];
+	int cur_setattr_idx;			/* Last setattr entry index*/
+	bool h_can_just_drop; // h_setattr_entry_p中的entry可否直接丢弃
+	int last_link_change;			/* Last link change entry index */
 };
+
+static force_inline void finefs_sih_bitmap_cache_flush(finefs_inode_info_header* sih, bool fence) {
+	for(auto p: sih->cachelines_to_flush) {
+        finefs_flush_cacheline(p, 0);
+    }
+    if(!sih->cachelines_to_flush.empty() && fence)
+        PERSISTENT_BARRIER();
+    sih->cachelines_to_flush.clear();
+}
 
 struct finefs_inode_info {
 	struct finefs_inode_info_header header;
@@ -1470,8 +1480,8 @@ unsigned long finefs_get_last_blocknr(struct super_block *sb,
 	struct finefs_inode_info_header *sih);
 int finefs_get_inode_address(struct super_block *sb, u64 ino,
 	u64 *pi_addr, int extendable);
-int finefs_set_blocksize_hint(struct super_block *sb, struct inode *inode,
-	struct finefs_inode *pi, loff_t new_size);
+// int finefs_set_blocksize_hint(struct super_block *sb, struct inode *inode,
+// 	struct finefs_inode *pi, loff_t new_size);
 // struct finefs_file_pages_write_entry *finefs_find_next_entry(struct super_block *sb,
 // 	struct finefs_inode_info_header *sih, pgoff_t pgoff);
 struct finefs_file_page_entry *finefs_find_next_page_entry(struct super_block *sb,
@@ -1566,7 +1576,9 @@ static force_inline bool log_entry_is_set_valid(void* entry) {
 }
 
 // FIXME: THREADS
-static force_inline void log_entry_set_invalid(struct super_block *sb, struct finefs_inode_info_header *sih, void* entry) {
+static force_inline void log_entry_set_invalid(struct super_block *sb, struct finefs_inode_info_header *sih,
+	void* entry, bool is_write_entry)
+{
 	finefs_inode_page_tail* page_tail = (finefs_inode_page_tail*)FINEFS_LOG_TAIL((uintptr_t)entry);
 	int entry_nr = FINEFS_LOG_ENTRY_NR(entry);
 	dlog_assert((page_tail->bitmap >> (entry_nr)) & 1);
@@ -1578,7 +1590,10 @@ static force_inline void log_entry_set_invalid(struct super_block *sb, struct fi
 		bitmap_set_weight((unsigned long *)&(page_tail->bitmap), BITS_PER_TYPE(page_tail->bitmap)));
 	sih->log_valid_bytes -= CACHELINE_SIZE;
 
-	if(remain_num == 0) {
+	dlog_assert(!is_write_entry ||
+		finefs_get_entry_type(entry)&LOG_ENTRY_TYPE_MASK == FILE_PAGES_WRITE ||
+		finefs_get_entry_type(entry)&LOG_ENTRY_TYPE_MASK == FILE_SMALL_WRITE);
+	if(remain_num == 0) { // 此时是log回收，恢复时不可能会扫描到该log，因此不需要添加到set
 		finefs_inode_log_page* curr_page = (finefs_inode_log_page*)((uintptr_t)entry & FINEFS_LOG_MASK);
 		rd_info("Delete log page: %lu", finefs_get_addr_off(sb, curr_page) >> FINEFS_LOG_SHIFT);
 		finefs_log_delete(sb, curr_page);
@@ -1588,6 +1603,15 @@ static force_inline void log_entry_set_invalid(struct super_block *sb, struct fi
 		dlog_assert(ret == 0);
 		sih->log_pages--;
 		sih->h_blocks--;
+	}
+	else { // 说明: 增加的时延不多，1%-2%不到
+		if(is_write_entry) {
+			sih->cachelines_to_flush.insert(page_tail);
+			if(sih->cachelines_to_flush.size() == FINEFS_BITMAP_CACHELINE_FLUSH_BATCH) {
+				rd_info("flush cacheline set.");
+				finefs_sih_bitmap_cache_flush(sih, false);
+			}
+		}
 	}
 }
 

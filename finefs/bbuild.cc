@@ -707,7 +707,11 @@ void finefs_init_header(struct super_block *sb,
     struct finefs_inode_info_header *sih, struct finefs_inode *pi,
     u16 i_mode)
 {
+    spin_lock_init(&sih->tree_lock);
     INIT_RADIX_TREE(&sih->tree, GFP_ATOMIC);
+    new (&sih->cachelines_to_flush) std::unordered_set<void*>();
+    sih->cachelines_to_flush.reserve(FINEFS_BITMAP_CACHELINE_FLUSH_BATCH);
+
     sih->i_mode = i_mode;
     sih->i_size = 0;
 
@@ -730,9 +734,10 @@ void finefs_init_header(struct super_block *sb,
         sih->h_ts = 1;
     }
 
-    sih->last_setattr = 0;
+    spin_lock_init(&sih->h_entry_lock);
+    sih->h_can_just_drop = true;
+    sih->cur_setattr_idx = 0;
     sih->last_link_change = 0;
-    // INIT_RADIX_TREE(&sih->cache_tree, GFP_ATOMIC);
 }
 
 int finefs_rebuild_inode(struct super_block *sb, struct finefs_inode_info *si, u64 pi_addr) {

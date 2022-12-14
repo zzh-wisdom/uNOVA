@@ -17,18 +17,18 @@
 
 #include "finefs/finefs.h"
 
-static inline int finefs_can_set_blocksize_hint(struct inode *inode,
-	struct finefs_inode *pi, loff_t new_size)
-{
-	struct finefs_inode_info *si = FINEFS_I(inode);
-	struct finefs_inode_info_header *sih = &si->header;
+// static inline int finefs_can_set_blocksize_hint(struct inode *inode,
+// 	struct finefs_inode *pi, loff_t new_size)
+// {
+// 	struct finefs_inode_info *si = FINEFS_I(inode);
+// 	struct finefs_inode_info_header *sih = &si->header;
 
-	/* Currently, we don't deallocate data blocks till the file is deleted.
-	 * So no changing blocksize hints once allocation is done. */
-	if (sih->i_size > 0)
-		return 0;
-	return 1;
-}
+// 	/* Currently, we don't deallocate data blocks till the file is deleted.
+// 	 * So no changing blocksize hints once allocation is done. */
+// 	if (sih->i_size > 0)
+// 		return 0;
+// 	return 1;
+// }
 
 // int finefs_set_blocksize_hint(struct super_block *sb, struct inode *inode,
 // 	struct finefs_inode *pi, loff_t new_size)

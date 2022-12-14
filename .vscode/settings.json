@@ -64,6 +64,7 @@
         "iosfwd": "cpp",
         "sstream": "cpp",
         "numbers": "cpp",
-        "map": "cpp"
+        "map": "cpp",
+        "unordered_set": "cpp"
     }
 }

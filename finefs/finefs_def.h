@@ -173,8 +173,6 @@ struct finefs_inode {
 	__le32	i_gid;		/* Group Id */
 	__le32	i_generation;	/* File version (for NFS) */
 	__le32  i_padding;
-	__le64  i_links_ts;    /* 记录inode应用的link值的最大时间戳*/
-
 	u8      first_cacheline_bar__[0];
 	/*以上56B，处于一个cacheline，都属于会改变的信息，不要挪用，便于只用flush一个cacheline*/
 
@@ -321,17 +319,21 @@ static inline void finefs_flush_buffer(void *buf, uint32_t len, bool fence)
 
 
 // some config
+// TODO: config from param
 
 #define SLAB_PAGE_BATCH_EXTEND_THRESHOLD 16
 // 一个slab free list最多可以持有的page个数
-#define SLAB_PAGE_KEEP_THRESHOLD  32
+#define SLAB_PAGE_KEEP_THRESHOLD  16
 
 // log一次批量分配page的最大个数
 #define	LOG_EXTEND_THRESHOLD	256
 
 #define SMALL_ENTRY_FLUSH_THRESHOLD_FOR_READ 4
-#define SMALL_ENTRY_FLUSH_THRESHOLD_FOR_WRITE 64
+#define SMALL_ENTRY_FLUSH_THRESHOLD_FOR_WRITE 16
 
 #define FINEFS_SMALL_ENTRY_USE_LIST
+
+#define FINEFS_INODE_META_FLUSH_BATCH 64
+#define FINEFS_BITMAP_CACHELINE_FLUSH_BATCH 4096
 
 #endif /* _LINUX_FINEFS_DEF_H */

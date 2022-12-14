@@ -34,6 +34,8 @@ static force_inline size_t finefs_page_write_entry_read(finefs_file_page_entry* 
 	finefs_file_small_entry *cur;
 	size_t written = 0;
 #ifdef FINEFS_SMALL_ENTRY_USE_LIST
+
+	// TODO: 读跨越的small wrtie超过阈值，进行flush
 	list_for_each_entry(cur, &page_entry->small_write_head, entry) {
 		if(pos >= cur->file_off + cur->bytes)
 			continue;
@@ -163,76 +165,12 @@ do_dax_mapping_read(struct file *filp, char *buf,
 		goto out;
 
 	end_index = (isize - 1) >> FINEFS_BLOCK_SHIFT;
+
+	spin_lock(&sih->tree_lock);
 	while (len) {
 		unsigned long nr;  // 实际读的字节数
-		// unsigned long nvmm;
-		// void *dax_mem = NULL;
-		// int zero = 0;
-
-		/* nr is the maximum number of bytes to copy from this page */
-		// if (index >= end_index) {
-		// 	if (index > end_index)
-		// 		goto out;
-		// 	nr = ((isize - 1) & FINEFS_BLOCK_UMASK) + 1;
-		// 	if (nr <= offset) {
-		// 		goto out;
-		// 	}
-		// }
 		page_entry = finefs_get_page_entry(sb, si, index);
 		nr = finefs_page_write_entry_read(page_entry, buf, len, pos);
-
-		// if (unlikely(page_entry == NULL)) {
-		// 	// 一个空洞的页
-		// 	rdv_proc("Required extent not found: pgoff %lu, "
-		// 		"inode size %lld", index, isize);
-		// 	nr = FINEFS_BLOCK_SIZE;
-		// 	zero = 1;
-		// 	goto memcpy;
-		// }
-
-		/* Find contiguous blocks */
-		// if (index < entry->pgoff ||
-		// 	index - entry->pgoff >= entry->num_pages) { // 超出范围了
-		// 	r_error("%s ERROR: %lu, entry pgoff %lu, num %u, "
-		// 		"blocknr %lu", __func__, index, entry->pgoff,
-		// 		entry->num_pages, entry->block >> FINEFS_BLOCK_SHIFT);
-		// 	return -EINVAL;
-		// }
-		// write_entry = page_entry->nvm_entry_p;
-		// dlog_assert(index == page_entry->file_pgoff);
-		// if (write_entry->invalid_pages == 0) {
-		// 	nr = (write_entry->num_pages - (index - write_entry->pgoff))
-		// 		* FINEFS_BLOCK_SIZE;
-		// } else {  // 如果有无效的page，一个一个page的拷贝。防止下一个page就是无效的
-		// 	nr = FINEFS_BLOCK_SIZE;
-		// }
-
-		// nvmm = get_nvmm(sb, sih, entry, index);
-		// dax_mem = finefs_get_block(sb, (nvmm << FINEFS_BLOCK_SHIFT));
-		// dax_mem = page_entry->nvm_block_p;
-
-// memcpy:
-// 		nr = nr - offset;
-// 		if (nr > len - copied)
-// 			nr = len - copied;
-
-// 		FINEFS_START_TIMING(memcpy_r_nvmm_t, memcpy_time);
-
-// 		if (!zero)
-// 			left = __copy_to_user(buf + copied,
-// 						dax_mem + offset, nr);
-// 		else
-// 			left = __clear_user(buf + copied, nr);
-
-// 		FINEFS_END_TIMING(memcpy_r_nvmm_t, memcpy_time);
-
-// 		if (left) {
-// 			r_error("%s ERROR!: bytes %lu, left %lu",
-// 				__func__, nr, left);
-// 			err = -EFAULT;
-// 			goto out;
-// 		}
-
 		copied += nr;
 		offset += nr;
 		index += offset >> FINEFS_BLOCK_SHIFT;
@@ -242,6 +180,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 		len -= nr;
 		buf += nr;
 	};
+	spin_unlock(&sih->tree_lock);
 
 out:
 	*ppos = pos;
@@ -382,6 +321,7 @@ int finefs_reassign_file_tree(struct super_block *sb,
 	dlog_assert(entry_size == sizeof(struct finefs_file_small_write_entry));
 	bool is_tx_begin = false, is_tx_end = false;
 
+	spin_lock(&sih->tree_lock);
 	while (curr_p != end_tail) {
 		if (is_last_entry(curr_p, entry_size))
 			curr_p = finefs_log_next_page(sb, curr_p);
@@ -409,6 +349,7 @@ int finefs_reassign_file_tree(struct super_block *sb,
 		if(ret) return ret;
 		curr_p += entry_size;
 	}
+	spin_unlock(&sih->tree_lock);
 	dlog_assert(is_tx_begin && is_tx_end);
 
 	return 0;
