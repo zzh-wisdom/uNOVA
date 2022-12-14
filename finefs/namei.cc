@@ -372,6 +372,7 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
 
     *new_tail = curr_p + size;
     sih->log_valid_bytes += size;
+    finefs_sih_flush_link_change_entry(sb, sih);
     sih->last_link_change = curr_p;
 
     FINEFS_END_TIMING(append_link_change_t, append_time);

@@ -1421,13 +1421,16 @@ void finefs_evict_inode(struct inode *inode) {
                 log_assert(0);
                 break;
         }
-
         rd_info("%s: Freed %d, %0.2lf MB", __func__, freed, ((u64)freed << FINEFS_BLOCK_SHIFT >> 10) / 1024.0);
         dlog_assert(freed == sih->h_blocks - sih->log_pages);
+
+        finefs_sih_flush_setattr_entry(sb, sih, true);
+        finefs_sih_flush_link_change_entry(sb,sih);
+        finefs_sih_bitmap_cache_flush(sih, true);
+
         dlog_assert(sih->h_slabs == 0);
         dlog_assert(sih->h_slab_bytes == 0);
-        // TODO:
-        // dlog_assert(sih->log_valid_bytes == 64);
+        dlog_assert(sih->log_valid_bytes == 0);
         rd_info("%s: valid entrys: %lu", __func__, sih->log_valid_bytes/CACHELINE_SIZE);
         /* Then we can free the inode log*/
         err = finefs_free_inode(inode, sih);
@@ -1442,6 +1445,7 @@ void finefs_evict_inode(struct inode *inode) {
     }
 out:
     if (destroy == 0) {
+        r_fatal("TODO");
         finefs_inode_statistic_dump(pi, sih);
         finefs_free_dram_resource(sb, sih); // 如果是文件删除，这个不会执行
     }
@@ -1830,11 +1834,7 @@ static void finefs_sih_setattr_entry_gc(super_block* sb, finefs_inode_info_heade
     dlog_assert(sih->cur_setattr_idx == FINEFS_INODE_META_FLUSH_BATCH);
 
     finefs_sih_bitmap_cache_flush(sih, true);
-    // 将entry置为无效
-    for(int i = 0; i < sih->cur_setattr_idx - 1; ++i) {
-        void *entry = finefs_get_block(sb, sih->h_setattr_entry_p[i]);
-        log_entry_set_invalid(sb, sih, entry, false);
-    }
+    finefs_sih_flush_setattr_entry(sb, sih, false);
     sih->h_can_just_drop = true;
     sih->h_setattr_entry_p[0] = sih->h_setattr_entry_p[sih->cur_setattr_idx - 1];
     sih->cur_setattr_idx = 1;

@@ -46,6 +46,8 @@ rename操作，每个dentry log的version依旧取自它们所属的新inode。�
 
 对于删除文件/目录的dentry，我们和nova一样，不回收，避免旧的dentry复活。
 
+**兄弟们，重大改动**，所有失效的entry对应bitmap所在的cacheline都需要加入到到set，删除inode后，需要flush set中的所有cacheline，以保证之前的entry全部失效，而不会出现复活的问题，从而影响后续ino的复用。
+
 ## 小写slab分配器
 
 分成若干个page链表。不要伙伴算法了，简单的slab
