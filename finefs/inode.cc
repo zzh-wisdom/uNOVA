@@ -1471,9 +1471,8 @@ u64 finefs_new_finefs_inode(struct super_block *sb, u64 *pi_addr) {
     timing_t new_inode_time;
 
     FINEFS_START_TIMING(new_finefs_inode_t, new_inode_time);
-    map_id = sbi->map_id;
-    // TODO: 原子递增才行
-    sbi->map_id = (sbi->map_id + 1) % sbi->cpus;
+    map_id = atomic_fetch_add(&sbi->map_id, 1);
+    map_id = (map_id + 1) % sbi->cpus;
 
     inode_map = &sbi->inode_maps[map_id];
 

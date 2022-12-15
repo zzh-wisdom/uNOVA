@@ -78,10 +78,10 @@ NOVA [54， 55] 是一个日志结构的 NVMM 文档系统，它为每个文档�
 - read
 - ftruncate
 
-
 ## TODO
 
 1. 测试不对齐写，参考这里的参数 <file:///C:/Users/Mrzho/Desktop/github/%E7%A1%95%E5%A3%AB%E6%AF%95%E8%AE%BE/practice-ssd/fio/html-doc/fio_man.html#i-o-type>
 2. 解决多线程扩展性问题，考虑公平信号量。nt cpy时进行互斥
 3. 看不同的io engine和io type，应该有其他负载
+4. 测试一下用inode log的方式保存零散entry的位置，恢复时需要多久。和nova对比
 

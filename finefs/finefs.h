@@ -305,7 +305,7 @@ struct finefs_inode_info_header {
     // 文件数据是按照blocknr来索引的？感觉还是红黑树，或者跳表好
     spinlock_t tree_lock;
     struct radix_tree_root tree; /* Dir name entry tree root 或者文件数据*/
-    // TODO: 写的时候，需要将修改的bitmap添加到这
+    // set是inode独享的，后台gc不会修改它，因此它不会出现冲突
     std::unordered_set<void *> cachelines_to_flush;
 
     // struct radix_tree_root cache_tree;	/* Mmap cache tree root */
@@ -1503,8 +1503,8 @@ static force_inline void log_entry_set_invalid(struct super_block *sb,
     sih->log_valid_bytes -= CACHELINE_SIZE;
 
     dlog_assert(!is_write_entry ||
-                finefs_get_entry_type(entry) & LOG_ENTRY_TYPE_MASK == FILE_PAGES_WRITE ||
-                finefs_get_entry_type(entry) & LOG_ENTRY_TYPE_MASK == FILE_SMALL_WRITE);
+                (finefs_get_entry_type(entry) & LOG_ENTRY_TYPE_MASK) == FILE_PAGES_WRITE ||
+                (finefs_get_entry_type(entry) & LOG_ENTRY_TYPE_MASK) == FILE_SMALL_WRITE);
     if (remain_num == 0) {  // 此时是log回收，恢复时不可能会扫描到该log，因此不需要添加到set
         finefs_inode_log_page *curr_page =
             (finefs_inode_log_page *)((uintptr_t)entry & FINEFS_LOG_MASK);
@@ -1523,7 +1523,7 @@ static force_inline void log_entry_set_invalid(struct super_block *sb,
 		sih->cachelines_to_flush.insert(page_tail);
         if (sih->cachelines_to_flush.size() == FINEFS_BITMAP_CACHELINE_FLUSH_BATCH) {
 			// 对于单纯增大的ftruncate，到不了这里，因为page立即回收，最终循环使用两个page而已
-            rd_info("flush cacheline set.");
+            r_info("flush cacheline set.");
             finefs_sih_bitmap_cache_flush(sih, false);
         }
     }

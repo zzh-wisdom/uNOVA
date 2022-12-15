@@ -29,6 +29,8 @@ rename操作，每个dentry log的version依旧取自它们所属的新inode。�
 
 一共5种 entry，以及它们的写入地方
 
+TODO: 优化小写和小读
+
 - finefs_file_small_write_entry
   - finefs_dump_small_write_entry
 - finefs_file_pages_write_entry
@@ -81,14 +83,46 @@ TODO: 推荐使用跳表而不是radix tree。后者需要逐个block处理，�
 
 ## 事务流程
 
-### 创建inode
+任何事务流程，都只需要一个fence，这得益于单个log的连续性。只有在log中连续看到的TX_BEGIN和TX_END。
+我们才称一个事务已经完成。
+
+恢复时：按顺序扫描log链表，直到最后一个version不合法的entry为止。我们只会检查log尾部，也就是最后一个事务是否提交成功。
+
+对于没有提交成功的事务，即没有看到TX_END标志，我们会把最后一个包含TX_BEGIN标志以及之后的entry丢弃。
+
+一个inode的生命周期开始于link=1的entry（对于目录而言是"."dentry，对于文件而言是link_change entry 且link=1），并结束于link=0的link_change entry。
+
+### 创建目录
+
+1. 父母inode log中写一个dentry
+2. 新建目录的inode log中添加两条dentry，"." 和 ".."
+3. 写journal，将新建的inode的valid设置为1
+
+注意：由于我们会在正常关闭时，保存inode number的free list（状态），因此正常启动时可以很快构建inode free list用于提供分配服务。而崩溃时，通过扫描log得到那些inode有效，从而恢复inode free list。因此inode中的valid字段不是必须的。
+
+TODO: 删除inode的valid字段（其实link字段就可以作为是否有效标志，但是这里没有并不会应用任何信息到inode，所有的元数据都以log的方式存放）
+
+三条dentry当成一个事务。父母写的dentry是tx begin。然后写子目录的"."dentry，~~将子目录的inode的valid字段设置为1~~，fence，最后提交事务，写".."dentry tx end。
+
+崩溃恢复时，将全部的inode设置为无效，扫描全部log，每看到一个提交的事务，根据dentry1，将对应的inode设置为有效。
+
+恢复分两步：先多线程扫描目录log，恢复所有有效的inode。
+再扫描文件log，恢复所有有效inode的数据。
+
+与nova不同的是，inode的valid标志位在我们这不是保持一致状态的，崩溃恢复后需要恢复valid字段的一致状态。
+
+### 创建文件
 
 1. 父母inode log中写一个dentry
 2. journal记录旧的log tail + inode valid标志
 3. 执行事务，更新tail和valid标记
 4. 提交事务
 
-### 删除inode
+更改：
+
+父母dentry+孩子link_change entry+flush+fence
+
+### 删除inode（包括目录和）
 
 1. 父母pidir，写删除子inode的log entry，并记录自身的link变化。并将就entry标记为无效
 2. 被删除的dir inode中写LINK_CHANGE log，将links置为0，表示删除
@@ -100,19 +134,14 @@ TODO: 推荐使用跳表而不是radix tree。后者需要逐个block处理，�
 
 > 涉及三个实体，父母、孩子和inode有效位。这个保证一致即可(包括父母inode的link，dentry删除，和孩子inode的link，如果link为0，则还有valid标志位和version)
 
-更改后：
+更改：
 
-inode中受到父母影响的状态有：link，valid，和version。因此redo log中需要包含这些信息。
-
-1. dir log中，写rmdir entry（redo）。记录父母删除的inode、更新后的iversion和link。表示孩子dentry删除。flush fennce
-2. 执行事务实际删除 inode（即把inode置为无效，更新iversion） flush fence。将旧的entry标记为无效，方便回收
-3. 提交事务写commit entry flush fence（这个不需要吧，就把上面的当做redo log算了，写入就表示事务完成）
-
-恢复时，仅看到rmdir entry，说明事务未完成，将inode标记为有效，完成回滚。否则保留
-
-问题是，崩溃恢复时，删除inode的数据的有效性收到删除log的影响。因此可以通过inode的版本号来直接丢弃
+1. 父母dentry+孩子link_change entry
+2. flush孩子之前无效entry的bitmap
 
 ### rename 留给以后实现
+
+但也挺好实现的，就两个dentry。一个删除dentry+增加的dentry
 
 ### 导致log失效的操作有
 
@@ -164,8 +193,9 @@ PMEM_MEM_WRITE
 
 后台GC：
 
-1. 删除inode时，后台完成block的回收
+1. 删除inode时，后台完成block的回收（前台回收好了）
 2. 搞一个现成的内存分配器
+3. 系统总结，如何保证崩溃一致性的，找出几条不变式，再分元数据和数据两部分来分析。
 
 一致性问题还得再考虑一下：
 
