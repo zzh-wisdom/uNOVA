@@ -142,7 +142,7 @@ void finefs_delete_dir_tree(struct super_block *sb,
 					rd_info("ret is NULL");
 			}
 			if(delete_nvmm) {
-				r_info("%s: delete dentry name: %s", __func__, direntry->name);
+				rd_info("%s: delete dentry name: %s", __func__, direntry->name);
 				log_entry_set_invalid(sb, sih, direntry, false);
 			}
 		}
@@ -186,7 +186,7 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 		BUG();
 
 	entry = (struct finefs_dentry *)finefs_get_block(sb, curr_p);
-	entry->entry_type = DIR_LOG;
+	entry->entry_type = TX_BEGIN_DIR_LOG;
 	entry->name_len = dentry->d_name.len;
 	links_count = cpu_to_le16(dir->i_nlink);
 	if (links_count == 0 && link_change == -1)
@@ -243,7 +243,7 @@ int finefs_append_root_init_entries(struct super_block *sb,
 	dlog_assert(finefs_log_page_tail_remain_init(sb, finefs_log_page_addr(sb, pi->log_head.next_page_)));
 
 	de_entry = (struct finefs_dentry *)finefs_get_block(sb, new_block);
-	de_entry->entry_type = DIR_LOG;
+	de_entry->entry_type = TX_BEGIN_DIR_LOG; // root目录的创建比较特殊
 	de_entry->name_len = 1;
 	de_entry->links_count = 1;
 	de_entry->mtime = GetTsSec();
@@ -260,7 +260,7 @@ int finefs_append_root_init_entries(struct super_block *sb,
 
 	de_entry = (struct finefs_dentry *)((char *)de_entry +
 					sizeof(struct finefs_dentry));
-	de_entry->entry_type = DIR_LOG;
+	de_entry->entry_type = TX_END_DIR_LOG;
 	de_entry->name_len = 2;
 	de_entry->links_count = 2;
 	de_entry->mtime = GetTsSec();
@@ -313,7 +313,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	dlog_assert(finefs_log_page_tail_remain_init(sb, finefs_log_page_addr(sb, pi->log_head.next_page_)));
 
 	de_entry = (struct finefs_dentry *)finefs_get_block(sb, new_block);
-	de_entry->entry_type = DIR_LOG;
+	de_entry->entry_type = DIR_LOG;   // 中间log
 	de_entry->name_len = 1;
 	de_entry->links_count = 1;
 	de_entry->mtime = GetTsSec();
@@ -331,7 +331,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 
 	de_entry = (struct finefs_dentry *)((char *)de_entry +
 					sizeof(finefs_dentry));
-	de_entry->entry_type = DIR_LOG;
+	de_entry->entry_type = TX_END_DIR_LOG;    // 创建目录结束
 	de_entry->name_len = 2;
 	de_entry->links_count = 2;
 	de_entry->mtime = GetTsSec();
@@ -546,7 +546,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 
 		addr = (void *)finefs_get_block(sb, curr_p);
 		type = finefs_get_entry_type(addr);
-		switch (type) {
+		switch (type & LOG_ENTRY_TYPE_MASK) {
 			case SET_ATTR:
 				log_assert(0);
 				attr_entry =

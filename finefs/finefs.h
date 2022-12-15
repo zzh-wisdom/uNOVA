@@ -366,8 +366,8 @@ struct finefs_inode_info_header {
     // 而不需要放在batch队列
     spinlock_t h_entry_lock;
     u64 h_setattr_entry_p[FINEFS_INODE_META_FLUSH_BATCH];
-    int cur_setattr_idx;   /* Last setattr entry index*/
     bool h_can_just_drop;  // h_setattr_entry_p中的entry可否直接丢弃
+    int cur_setattr_idx;   /* Last setattr entry index*/
     int last_link_change;  /* Last link change entry index */
 };
 
@@ -657,8 +657,8 @@ enum finefs_entry_type {
     // TODO: 暂时实现write的事务，其他的有待实现
     FILE_PAGES_WRITE = 1,
     FILE_SMALL_WRITE,
-    DIR_LOG,  // 新建一个dir
     SET_ATTR,
+    DIR_LOG,  // 新建一个dir
     LINK_CHANGE,
     NEXT_PAGE,
     // 具体操作类型，占6bit，最多支持 1<<6=64 种log
@@ -674,8 +674,15 @@ enum finefs_entry_type {
     TX_BEGIN_FILE_SMALL_WRITE = TX_BEGIN | FILE_SMALL_WRITE,
     TX_END_FILE_SMALL_WRITE = TX_END | FILE_SMALL_WRITE,
 
+    TX_BEGIN_DIR_LOG = TX_BEGIN | DIR_LOG,
+    TX_END_DIR_LOG = TX_END | DIR_LOG,      // root初始化和，mkdir时用到
+
+    TX_END_LINK_CHANGE = TX_END | LINK_CHANGE, // 创建文件、删除文件和删除目录时用到
+
     TX_ATOMIC_FILE_PAGES_WRITE = TX_ATOMIC | FILE_PAGES_WRITE,
     TX_ATOMIC_FILE_SMALL_WRITE = TX_ATOMIC | FILE_SMALL_WRITE,
+    TX_ATOMIC_SET_ATTR = TX_ATOMIC | SET_ATTR,
+
 };
 
 struct finefs_file_pages_write_entry;
@@ -1523,7 +1530,7 @@ static force_inline void log_entry_set_invalid(struct super_block *sb,
 		sih->cachelines_to_flush.insert(page_tail);
         if (sih->cachelines_to_flush.size() == FINEFS_BITMAP_CACHELINE_FLUSH_BATCH) {
 			// 对于单纯增大的ftruncate，到不了这里，因为page立即回收，最终循环使用两个page而已
-            r_info("flush cacheline set.");
+            r_info("ino: %lu flush cacheline set.", sih->ino);
             finefs_sih_bitmap_cache_flush(sih, false);
         }
     }

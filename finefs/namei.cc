@@ -129,7 +129,7 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
     struct finefs_inode *pidir, *pi;
     finefs_inode_info_header* p_sih = &FINEFS_I(dir)->header;
     u64 pi_addr = 0;  // 新分配inode的nvm地址
-    u64 tail = 0;
+    u64 pidir_tail = 0, pi_tail = 0;
     u64 ino;
     timing_t create_time;
 
@@ -145,9 +145,9 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
     ino = finefs_new_finefs_inode(sb, &pi_addr);
     if (ino == 0) goto out_err;
 
-    // 想父目录添加一个dentry（写log的形式）
+    // 向父目录添加一个dentry（写log的形式）
     // tail带回新的tail，实际的tail没有改
-    err = finefs_add_dentry(dentry, ino, 0, 0, &tail);
+    err = finefs_add_dentry(dentry, ino, 0, 0, &pidir_tail);
     if (err) goto out_err;
 
     rd_info("%s: %s", __func__, dentry->d_name.name);
@@ -159,8 +159,14 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
     // unlock_new_inode(inode);
 
     pi = (struct finefs_inode *)finefs_get_block(sb, pi_addr);
-    finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
-    p_sih->h_log_tail = tail;
+    err = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
+    if (err) goto out_err;
+    // finefs_lite_transaction_for_new_inode(sb, pi, pidir, pidir_tail);
+
+    PERSISTENT_BARRIER();
+    FINEFS_I(dir)->header.h_log_tail = pidir_tail;
+    FINEFS_I(inode)->header.h_log_tail = pi_tail;
+
     inode_unref(inode);
     FINEFS_END_TIMING(create_t, create_time);
     return err;
@@ -329,7 +335,7 @@ static void finefs_lite_transaction_for_time_and_link(struct super_block *sb,
     // pidir->log_tail = pidir_tail;
     // finefs_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
     if (invalidate) {
-        pi->valid = 0;  // 可能需要等到垃圾回收时，才真正回收空间
+        pi->valid = 0;
         finefs_flush_buffer(&pi->valid, CACHELINE_SIZE, 0);
     }
     PERSISTENT_BARRIER();
@@ -359,7 +365,7 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
     if (curr_p == 0) return -ENOMEM;
 
     entry = (struct finefs_link_change_entry *)finefs_get_block(sb, curr_p);
-    entry->entry_type = LINK_CHANGE;
+    entry->entry_type = TX_END_LINK_CHANGE;
     entry->links = cpu_to_le16(inode->i_nlink);
     entry->ctime = cpu_to_le32(inode->i_ctime.tv_sec);
     entry->flags = cpu_to_le32(inode->i_flags);
@@ -476,7 +482,9 @@ static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
     retval = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
     if (retval) goto out;
 
-    finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, invalidate);
+    // finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, invalidate);
+
+    PERSISTENT_BARRIER();
     FINEFS_I(dir)->header.h_log_tail = pidir_tail;
     FINEFS_I(inode)->header.h_log_tail = pi_tail;
 

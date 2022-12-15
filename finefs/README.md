@@ -196,6 +196,7 @@ PMEM_MEM_WRITE
 1. 删除inode时，后台完成block的回收（前台回收好了）
 2. 搞一个现成的内存分配器
 3. 系统总结，如何保证崩溃一致性的，找出几条不变式，再分元数据和数据两部分来分析。
+4. 恢复时，需要将link_change entry和setattr entry应用到inode中，因为内存中的inode可能会从这里初始化inode信息
 
 一致性问题还得再考虑一下：
 

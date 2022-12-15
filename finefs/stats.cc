@@ -292,7 +292,7 @@ static u64 finefs_print_log_entry(struct super_block *sb, u64 curr)
 
 	addr = (void *)finefs_get_block(sb, curr);
 	type = finefs_get_entry_type(addr);
-	switch (type) {
+	switch (type & LOG_ENTRY_TYPE_MASK) {
 		case SET_ATTR:
 			finefs_print_set_attr_entry(sb, curr, (struct finefs_setattr_logentry *)addr);
 			curr += sizeof(struct finefs_setattr_logentry);

@@ -1738,7 +1738,7 @@ static void finefs_update_setattr_entry(struct inode *inode,
     /* These files are in the lowest byte */
     attr_mask = ATTR_MODE | ATTR_UID | ATTR_GID | ATTR_SIZE | ATTR_ATIME | ATTR_MTIME | ATTR_CTIME;
 
-    entry->entry_type = SET_ATTR;
+    entry->entry_type = TX_ATOMIC_SET_ATTR;
     entry->attr = ia_valid & attr_mask;
     entry->mode = cpu_to_le16(inode->i_mode);
     // entry->uid	= cpu_to_le32(i_uid_read(inode));
@@ -1767,7 +1767,7 @@ void finefs_apply_setattr_entry(struct super_block *sb, struct finefs_inode *pi,
     loff_t start, end;
     int freed = 0;
 
-    if (entry->entry_type != SET_ATTR) BUG();
+    dlog_assert((entry->entry_type & LOG_ENTRY_TYPE_MASK) == SET_ATTR);
 
     pi->i_mode = entry->mode;
     pi->i_uid = entry->uid;
@@ -2122,7 +2122,7 @@ static bool curr_log_entry_invalid(struct super_block *sb, struct finefs_inode *
 
     addr = (void *)finefs_get_block(sb, curr_p);
     type = finefs_get_entry_type(addr);
-    switch (type) {
+    switch (type & LOG_ENTRY_TYPE_MASK) {
         case SET_ATTR:
             // if (sih->last_setattr == curr_p) ret = false;
 
@@ -2281,7 +2281,7 @@ static int finefs_gc_assign_new_entry(struct super_block *sb, struct finefs_inod
 
     addr = (void *)finefs_get_block(sb, curr_p);
     type = finefs_get_entry_type(addr);
-    switch (type) {
+    switch (type & LOG_ENTRY_TYPE_MASK) {
         case SET_ATTR:
             // sih->last_setattr = new_curr;  // tail page不回收，这里不会有问题？
             break;
