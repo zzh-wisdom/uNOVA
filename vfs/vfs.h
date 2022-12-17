@@ -1195,26 +1195,13 @@ struct vfs_cfg {
     int measure_timing;
     int start_fd;
 	bool format;
+    double log_block_occupy;
 
     int pmem_nt_threshold;
 };
 
 void vfs_cfg_print(struct vfs_cfg* cfg);
-static force_inline void vfs_cfg_default_init(struct vfs_cfg* cfg) {
-	cfg->numa_socket = 1;
-	cfg->cpu_num = 0;
-	for(int i = 26; i < 40; ++i) {
-		cfg->cpu_ids[cfg->cpu_num++] = i;
-	}
-	for(int i = 60; i < 78; ++i) {
-		cfg->cpu_ids[cfg->cpu_num++] = i;
-	}
-	cfg->bg_thread_cpu_id = 79;
-	cfg->measure_timing = 0;
-	cfg->start_fd = CFG_START_FD;
-	cfg->format = true;
-    cfg->pmem_nt_threshold = 256;
-}
+void vfs_cfg_default_init(struct vfs_cfg* cfg);
 
 void setattr_copy(struct inode *inode, const struct iattr *attr);
 

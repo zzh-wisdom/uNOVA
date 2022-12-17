@@ -278,11 +278,14 @@ struct finefs_sb_info {
     unsigned long map_id;
 
     /* Per-CPU free block list */
-    struct free_list *free_lists;
+    struct free_list *data_free_lists;
+    struct free_list *log_free_lists;
     struct slab_heap *slab_heaps;
 
     /* Shared free block list */
     unsigned long per_list_blocks;      // 每个cpu的block个数 sbi->num_blocks / sbi->cpus;
+    unsigned long per_list_log_blocks;      // 每个cpu的block个数 sbi->num_blocks / sbi->cpus;
+    unsigned long per_list_data_blocks;      // 每个cpu的block个数 sbi->num_blocks / sbi->cpus;
     struct free_list shared_free_list;  // 平均分不完全时，管理剩下多余的
 };
 
@@ -449,6 +452,11 @@ static force_inline int get_cpuid(struct finefs_sb_info *sbi, unsigned long bloc
     return cpuid;
 }
 
+static force_inline bool finefs_is_log_area(struct finefs_sb_info *sbi, unsigned long blocknr) {
+    unsigned long blocknr_in_cpu = blocknr % sbi->per_list_blocks;
+    return blocknr_in_cpu < sbi->per_list_log_blocks;
+}
+
 static inline struct finefs_super_block *finefs_get_redund_super(struct super_block *sb) {
     struct finefs_sb_info *sbi = FINEFS_SB(sb);
 
@@ -474,11 +482,21 @@ static inline u64 finefs_get_block_off(struct super_block *sb, unsigned long blo
     return (u64)blocknr << FINEFS_BLOCK_SHIFT;
 }
 
-static inline struct free_list *finefs_get_free_list(struct super_block *sb, int cpu) {
+static inline struct free_list *finefs_get_log_free_list(struct super_block *sb, int cpu) {
     struct finefs_sb_info *sbi = FINEFS_SB(sb);
 
     if (cpu < sbi->cpus)
-        return &sbi->free_lists[cpu];
+        return &sbi->log_free_lists[cpu];
+    else {
+        return nullptr;
+    }
+}
+
+static inline struct free_list *finefs_get_data_free_list(struct super_block *sb, int cpu) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+
+    if (cpu < sbi->cpus)
+        return &sbi->data_free_lists[cpu];
     else {
         rdv_verb("%s: cpu:%d, sbi->cpus:%d", __func__, cpu, sbi->cpus);
         return &sbi->shared_free_list;
@@ -1292,21 +1310,24 @@ int finefs_alloc_slab_heaps(struct super_block *sb);
 void finefs_delete_slab_heaps(struct super_block *sb);
 
 /* balloc.c */
-int finefs_alloc_block_free_lists(struct super_block *sb);
-void finefs_delete_free_lists(struct super_block *sb);
+int finefs_alloc_log_free_lists(struct super_block *sb);
+void finefs_delete_log_free_lists(struct super_block *sb);
+int finefs_alloc_data_free_lists(struct super_block *sb);
+void finefs_delete_data_free_lists(struct super_block *sb);
+void* finefs_init_log_block_area(super_block* sb, int cpu_id);
 struct finefs_range_node *finefs_alloc_blocknode(struct super_block *sb);
 struct finefs_range_node *finefs_alloc_inode_node(struct super_block *sb);
 void finefs_free_range_node(struct finefs_range_node *node);
 void finefs_free_blocknode(struct super_block *sb, struct finefs_range_node *bnode);
 void finefs_free_inode_node(struct super_block *sb, struct finefs_range_node *bnode);
-extern void finefs_init_blockmap(struct super_block *sb, int recovery);
+extern void finefs_init_blockmap(struct super_block *sb, double log_block_occupy, int recovery);
 extern int finefs_free_data_blocks(struct super_block *sb, struct finefs_inode *pi,
                                    unsigned long blocknr, int num);
 extern int finefs_free_log_blocks(struct super_block *sb, struct finefs_inode *pi,
                                   unsigned long blocknr, int num);
 extern int finefs_new_data_blocks(struct super_block *sb, struct finefs_inode *pi,
                                   unsigned long *blocknr, unsigned int num, unsigned long start_blk,
-                                  int zero, int cow);
+                                  int zero, int cow, int cpuid = -1);
 extern int finefs_new_log_blocks(struct super_block *sb, struct finefs_inode *pi,
                                  unsigned long *blocknr, unsigned int num, int zero,
                                  int cpuid = -1);

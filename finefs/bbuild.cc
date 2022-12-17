@@ -137,10 +137,17 @@ static void finefs_destroy_range_node_tree(struct super_block *sb, struct rb_roo
     }
 }
 
-static void finefs_destroy_blocknode_tree(struct super_block *sb, int cpu) {
+static void finefs_destroy_log_blocknode_tree(struct super_block *sb, int cpu) {
     struct free_list *free_list;
 
-    free_list = finefs_get_free_list(sb, cpu);
+    free_list = finefs_get_log_free_list(sb, cpu);
+    finefs_destroy_range_node_tree(sb, &free_list->block_free_tree);
+}
+
+static void finefs_destroy_data_blocknode_tree(struct super_block *sb, int cpu) {
+    struct free_list *free_list;
+
+    free_list = finefs_get_data_free_list(sb, cpu);
     finefs_destroy_range_node_tree(sb, &free_list->block_free_tree);
 }
 
@@ -149,10 +156,14 @@ static void finefs_destroy_blocknode_trees(struct super_block *sb) {
     int i;
 
     for (i = 0; i < sbi->cpus; i++) {
-        finefs_destroy_blocknode_tree(sb, i);
+        finefs_destroy_log_blocknode_tree(sb, i);
     }
 
-    finefs_destroy_blocknode_tree(sb, SHARED_CPU);
+    for (i = 0; i < sbi->cpus; i++) {
+        finefs_destroy_data_blocknode_tree(sb, i);
+    }
+
+    finefs_destroy_data_blocknode_tree(sb, SHARED_CPU);
 }
 
 // static int finefs_init_blockmap_from_inode(struct super_block *sb) {
@@ -369,8 +380,9 @@ static u64 finefs_save_range_nodes_to_log(struct super_block *sb, struct rb_root
 static u64 finefs_save_free_list_blocknodes(struct super_block *sb, int cpu, u64 temp_tail) {
     struct free_list *free_list;
 
-    free_list = finefs_get_free_list(sb, cpu);
-    temp_tail = finefs_save_range_nodes_to_log(sb, &free_list->block_free_tree, temp_tail, 0);
+    r_fatal("TODO");
+    // free_list = finefs_get_free_list(sb, cpu);
+    // temp_tail = finefs_save_range_nodes_to_log(sb, &free_list->block_free_tree, temp_tail, 0);
     return temp_tail;
 }
 
@@ -430,14 +442,15 @@ void finefs_save_blocknode_mappings_to_log(struct super_block *sb) {
     u64 temp_tail;
     int i;
 
+    r_fatal("TODO log");
     /* Allocate log pages before save blocknode mappings */
     for (i = 0; i < sbi->cpus; i++) {
-        free_list = finefs_get_free_list(sb, i);
+        free_list = finefs_get_data_free_list(sb, i);
         num_blocknode += free_list->num_blocknode;
         rd_info("%s: free list %d: %lu nodes", __func__, i, free_list->num_blocknode);
     }
 
-    free_list = finefs_get_free_list(sb, SHARED_CPU);
+    free_list = finefs_get_data_free_list(sb, SHARED_CPU);
     num_blocknode += free_list->num_blocknode;
     rd_info("%s: shared list: %lu nodes", __func__, free_list->num_blocknode);
 

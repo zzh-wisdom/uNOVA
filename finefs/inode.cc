@@ -105,7 +105,7 @@ int finefs_init_inode_table(struct super_block *sb) {
         inode_table = finefs_get_inode_table(sb, i);
         if (!inode_table) return -EINVAL;
 
-        allocated = finefs_new_log_blocks(sb, pi, &blocknr, 1, 1, i);
+        allocated = finefs_new_data_blocks(sb, pi, &blocknr, 1, 0, 1, 0,i);
         rdv_proc("%s: allocate log @ 0x%lx", __func__, blocknr);
         if (allocated != 1 || blocknr == 0) return -ENOSPC;
 
@@ -176,7 +176,7 @@ int finefs_get_inode_address(struct super_block *sb, u64 ino, u64 *pi_addr, int 
         if (curr == 0) {
             if (extendable == 0) return -EINVAL;
 
-            allocated = finefs_new_log_blocks(sb, pi, &blocknr, 1, 1);
+            allocated = finefs_new_data_blocks(sb, pi, &blocknr, 1, 0, 1, 0);
 
             if (allocated != 1) {
                 // return allocated;
@@ -2062,6 +2062,7 @@ int finefs_allocate_inode_log_pages(struct super_block *sb, struct finefs_inode 
     allocated = finefs_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 1, cpuid);
 #else
     // r_info("finefs_new_log_blocks ZERO=0");
+    // TODO: log block alloc support not successive
     allocated = finefs_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0, cpuid);
 #endif
     if (allocated <= 0) {
@@ -2084,6 +2085,7 @@ int finefs_allocate_inode_log_pages(struct super_block *sb, struct finefs_inode 
 
     /* Allocate remaining pages */
     while (num_pages) {
+        log_assert(0);
         allocated = finefs_new_log_blocks(sb, pi, &new_inode_blocknr, num_pages, 0, cpuid);
 
         r_info("Alloc %d log blocks @ 0x%lx", allocated, new_inode_blocknr);

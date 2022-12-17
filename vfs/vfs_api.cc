@@ -55,6 +55,23 @@ void vfs_cfg_print(struct vfs_cfg* cfg) {
     r_info("format=%d", cfg->format);
 }
 
+void vfs_cfg_default_init(struct vfs_cfg* cfg) {
+	cfg->numa_socket = 1;
+	cfg->cpu_num = 0;
+	for(int i = 26; i < 40; ++i) {
+		cfg->cpu_ids[cfg->cpu_num++] = i;
+	}
+	for(int i = 60; i < 78; ++i) {
+		cfg->cpu_ids[cfg->cpu_num++] = i;
+	}
+	cfg->bg_thread_cpu_id = 79;
+	cfg->measure_timing = 0;
+	cfg->start_fd = CFG_START_FD;
+	cfg->format = true;
+    cfg->log_block_occupy = 1.0/16;
+    cfg->pmem_nt_threshold = 256;
+}
+
 static inline bool fs_root_valid(const std::string& root_path) {
     int prefix_len = ROOT_PREFIX.length();
     if (root_path.size() < prefix_len + 1) {

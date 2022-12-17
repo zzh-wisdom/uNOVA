@@ -300,7 +300,7 @@ static bool finefs_check_size(struct super_block *sb, unsigned long size) {
 
 // 初始化文件系统
 // 返回root inode
-static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long size, u64 *log_tail) {
+static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long size, double log_block_occupy, u64 *log_tail) {
     unsigned long blocksize;
     unsigned long reserved_space, reserved_blocks;
     struct finefs_inode *root_i, *pi;
@@ -320,6 +320,9 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     blocksize = sbi->blocksize = FINEFS_BLOCK_SIZE;
 
     finefs_set_blocksize(sb, blocksize);
+    for(int i = 0; i < sbi->cpus; ++i) {
+        finefs_init_log_block_area(sb, i);
+    }
     blocksize = sb->s_blocksize;
 
     if (sbi->blocksize && sbi->blocksize != blocksize) sbi->blocksize = blocksize;
@@ -352,13 +355,13 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     super->s_blocksize = cpu_to_le32(blocksize);
     super->s_magic = cpu_to_le32(FINEFS_SUPER_MAGIC);
 
-    finefs_init_blockmap(sb, 0);
+    finefs_init_blockmap(sb, log_block_occupy, 0);
 
     // 初始化并恢复journal
-    if ((ret = finefs_lite_journal_hard_init(sb)) < 0) {
-        r_error("Lite journal hard initialization failed, ret %d\n", ret);
-        return nullptr;
-    }
+    // if ((ret = finefs_lite_journal_hard_init(sb)) < 0) {
+    //     r_error("Lite journal hard initialization failed, ret %d\n", ret);
+    //     return nullptr;
+    // }
 
     // 初始化已经使用的inode列表，主要是处理预留的inode
     if (finefs_init_inode_inuse_list(sb) < 0) return nullptr;
@@ -675,12 +678,14 @@ static void finefs_put_super(struct super_block *sb) {
         sbi->virt_addr = NULL;
     }
 
-    finefs_delete_free_lists(sb);
+    finefs_delete_log_free_lists(sb);
+    finefs_delete_data_free_lists(sb);
     finefs_delete_slab_heaps(sb);
 
     // FREE(sbi->zeroed_page);
     finefs_dbgmask = 0;
-    FREE(sbi->free_lists);
+    FREE(sbi->data_free_lists);
+    FREE(sbi->log_free_lists);
     FREE(sbi->slab_heaps);
     FREE(sbi->journal_locks);
 
@@ -720,7 +725,7 @@ static struct super_operations finefs_sops = {
                                   // .show_options	= finefs_show_options,
 };
 
-static int finefs_fill_super(struct super_block *sb, bool format) {
+static int finefs_fill_super(struct super_block *sb, double log_block_occupy, bool format) {
     struct finefs_super_block *super;
     struct finefs_inode *root_pi;
     struct finefs_sb_info *sbi = NULL;
@@ -796,8 +801,13 @@ static int finefs_fill_super(struct super_block *sb, bool format) {
 
     set_opt(sbi->s_mount_opt, MOUNTING);
 
+    if (finefs_alloc_log_free_lists(sb)) {
+        retval = -ENOMEM;
+        goto out;
+    }
+
     // init 每个cpu的block free list
-    if (finefs_alloc_block_free_lists(sb)) {
+    if (finefs_alloc_data_free_lists(sb)) {
         retval = -ENOMEM;
         goto out;
     }
@@ -810,7 +820,7 @@ static int finefs_fill_super(struct super_block *sb, bool format) {
     /* Init a new finefs instance */
     u64 log_tail;
     if (sbi->s_mount_opt & FINEFS_MOUNT_FORMAT) {  // 重新初始化挂载
-        root_pi = finefs_init(sb, sbi->initsize, &log_tail);
+        root_pi = finefs_init(sb, sbi->initsize, log_block_occupy,  &log_tail);
         if (!root_pi) goto out;
         super = finefs_get_super(sb);
         goto setup_sb;
@@ -912,9 +922,13 @@ out:
     // 	sbi->zeroed_page = NULL;
     // }
 
-    if (sbi->free_lists) {
-        FREE(sbi->free_lists);
-        sbi->free_lists = NULL;
+    if (sbi->log_free_lists) {
+        FREE(sbi->log_free_lists);
+        sbi->log_free_lists = NULL;
+    }
+    if (sbi->data_free_lists) {
+        FREE(sbi->data_free_lists);
+        sbi->data_free_lists = NULL;
     }
 
     if (sbi->slab_heaps) {
@@ -1000,9 +1014,9 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
     // if (rc)
     // 	goto out2;
 
-    rc = finefs_fill_super(sb, cfg->format);
+    rc = finefs_fill_super(sb, cfg->log_block_occupy, cfg->format);
     if (rc) {
-        r_error("%s fail.\n", "finefs_fill_super");
+        r_error("%s fail, rc: %d.\n", "finefs_fill_super", rc);
         goto out;
     }
 
