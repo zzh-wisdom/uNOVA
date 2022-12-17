@@ -166,7 +166,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 
 	end_index = (isize - 1) >> FINEFS_BLOCK_SHIFT;
 
-	spin_lock(&sih->tree_lock);
+	// spin_lock(&sih->tree_lock);
 	while (len) {
 		unsigned long nr;  // 实际读的字节数
 		page_entry = finefs_get_page_entry(sb, si, index);
@@ -180,7 +180,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 		len -= nr;
 		buf += nr;
 	};
-	spin_unlock(&sih->tree_lock);
+	// spin_unlock(&sih->tree_lock);
 
 out:
 	*ppos = pos;
@@ -321,7 +321,7 @@ int finefs_reassign_file_tree(struct super_block *sb,
 	dlog_assert(entry_size == sizeof(struct finefs_file_small_write_entry));
 	bool is_tx_begin = false, is_tx_end = false;
 
-	spin_lock(&sih->tree_lock);
+	// spin_lock(&sih->tree_lock);
 	while (curr_p != end_tail) {
 		if (is_last_entry(curr_p, entry_size))
 			curr_p = finefs_log_next_page(sb, curr_p);
@@ -349,7 +349,7 @@ int finefs_reassign_file_tree(struct super_block *sb,
 		if(ret) return ret;
 		curr_p += entry_size;
 	}
-	spin_unlock(&sih->tree_lock);
+	// spin_unlock(&sih->tree_lock);
 	dlog_assert(is_tx_begin && is_tx_end);
 
 	return 0;

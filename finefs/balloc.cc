@@ -472,8 +472,10 @@ static unsigned long finefs_alloc_blocks_in_free_list(struct super_block *sb,
 	// 统计分配block时红黑树的node跳转次数
 	FINEFS_STATS_ADD(alloc_steps, step);
 
-	if (found == 0)
+	if (found == 0) {
+		r_error("%s not found.", __func__);
 		return -ENOSPC;
+	}
 
 	return num_blocks;
 }
