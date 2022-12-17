@@ -85,6 +85,10 @@ void finefs_init_blockmap(struct super_block *sb, int recovery)
 			free_list->first_node = blknode;
 			free_list->num_blocknode = 1;
 		}
+		r_info("%s: i=%d, num_block=%lu, size=%0.2lf MB", __func__, i,
+			free_list->block_end - free_list->block_start,
+			((free_list->block_end - free_list->block_start) << FINEFS_BLOCK_SHIFT) * 1.0
+			/ 1024 / 1024);
 	}
 
 	free_list = finefs_get_free_list(sb, (sbi->cpus - 1));

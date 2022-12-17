@@ -368,7 +368,7 @@ struct finefs_inode_info_header {
     u64 h_setattr_entry_p[FINEFS_INODE_META_FLUSH_BATCH];
     bool h_can_just_drop;  // h_setattr_entry_p中的entry可否直接丢弃
     int cur_setattr_idx;   /* Last setattr entry index*/
-    int last_link_change;  /* Last link change entry index */
+    u64 last_link_change;  /* Last link change entry index */
 };
 
 static force_inline void finefs_sih_bitmap_cache_flush(finefs_inode_info_header *sih, bool fence) {
@@ -1530,7 +1530,7 @@ static force_inline void log_entry_set_invalid(struct super_block *sb,
 		sih->cachelines_to_flush.insert(page_tail);
         if (sih->cachelines_to_flush.size() == FINEFS_BITMAP_CACHELINE_FLUSH_BATCH) {
 			// 对于单纯增大的ftruncate，到不了这里，因为page立即回收，最终循环使用两个page而已
-            r_info("ino: %lu flush cacheline set.", sih->ino);
+            rd_info("ino: %lu flush cacheline set.", sih->ino);
             finefs_sih_bitmap_cache_flush(sih, false);
         }
     }
