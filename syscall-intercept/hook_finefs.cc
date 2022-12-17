@@ -15,7 +15,10 @@ int finefs_fs_init(void** sb_, const std::string& dev_name, const std::string& r
     SetSocketAndPolicy(fs_cfg.numa_socket, 1);
 
     int ret = 0;
+    u64 start_ns = GetTsUsec();
     ret = fs_mount(sb_, dev_name, root_path, &fs_cfg);
+    u64 end_ns = GetTsUsec();
+    r_info("fs_mount spent %lu us", end_ns - start_ns);
     return ret;
 }
 

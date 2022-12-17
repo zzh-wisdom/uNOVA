@@ -1314,7 +1314,13 @@ int finefs_alloc_log_free_lists(struct super_block *sb);
 void finefs_delete_log_free_lists(struct super_block *sb);
 int finefs_alloc_data_free_lists(struct super_block *sb);
 void finefs_delete_data_free_lists(struct super_block *sb);
-void* finefs_init_log_block_area(super_block* sb, int cpu_id);
+struct log_block_init_arg
+{
+	super_block* sb;
+	int cpu_id;
+    int log_area_num;
+};
+void* finefs_init_log_block_area(void *arg);
 struct finefs_range_node *finefs_alloc_blocknode(struct super_block *sb);
 struct finefs_range_node *finefs_alloc_inode_node(struct super_block *sb);
 void finefs_free_range_node(struct finefs_range_node *node);

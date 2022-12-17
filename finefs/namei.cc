@@ -499,7 +499,7 @@ out:
 static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
     struct super_block *sb = dir->i_sb;
     struct inode *inode;
-    struct finefs_inode *pidir, *pi;
+    struct finefs_inode *pi;
     finefs_inode_info_header* p_sih = &FINEFS_I(dir)->header;
     struct finefs_inode_info_header *child_sih = NULL;
     u64 pi_addr = 0;
@@ -545,13 +545,15 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
     /* Build the dir tree */
     finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, child_sih);
 
-    pidir = finefs_get_inode(sb, dir);
+    // pidir = finefs_get_inode(sb, dir);
     dir->i_blocks = p_sih->h_blocks;
     inc_nlink(dir);
     d_instantiate(dentry, inode);
     // unlock_new_inode(inode);
 
-    finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
+    // finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
+
+    PERSISTENT_BARRIER();
     FINEFS_I(dir)->header.h_log_tail = tail;
     inode_unref(inode);
 out:

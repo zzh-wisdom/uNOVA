@@ -320,9 +320,6 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     blocksize = sbi->blocksize = FINEFS_BLOCK_SIZE;
 
     finefs_set_blocksize(sb, blocksize);
-    for(int i = 0; i < sbi->cpus; ++i) {
-        finefs_init_log_block_area(sb, i);
-    }
     blocksize = sb->s_blocksize;
 
     if (sbi->blocksize && sbi->blocksize != blocksize) sbi->blocksize = blocksize;
@@ -348,7 +345,7 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     super = finefs_get_super(sb);
 
     /* clear out super-block and inode table */
-    memset_nt(super, 0, sbi->reserved_blocks * sbi->blocksize);
+    pmem_memset_nt(super, 0, sbi->reserved_blocks * sbi->blocksize);
     r_info("sbi->reserved_blocks=%ld", sbi->reserved_blocks);
 
     super->s_size = cpu_to_le64(size);
@@ -356,6 +353,30 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     super->s_magic = cpu_to_le32(FINEFS_SUPER_MAGIC);
 
     finefs_init_blockmap(sb, log_block_occupy, 0);
+    pthread_t threads[CFG_MAX_CPU_NUM];
+    log_block_init_arg init_args[CFG_MAX_CPU_NUM];
+    const int init_thread_num = 4;
+    int per_thread_log_areas = (sbi->cpus+init_thread_num-1) / init_thread_num;
+    int cpu_id_now = 0;
+    u64 start_us = GetTsUsec();
+    for(int i = 0; i < init_thread_num; ++i) {
+        init_args[i].sb = sb;
+        init_args[i].cpu_id = cpu_id_now;
+        if(cpu_id_now + per_thread_log_areas >= sbi->cpus) {
+            init_args[i].log_area_num = sbi->cpus - cpu_id_now;
+        } else {
+            init_args[i].log_area_num = per_thread_log_areas;
+        }
+        cpu_id_now += per_thread_log_areas;
+        int ret = pthread_create(&threads[i], nullptr, finefs_init_log_block_area, &init_args[i]);
+        log_assert(!ret);
+    }
+    for(int i = 0; i < init_thread_num; ++i) {
+        pthread_join(threads[i], nullptr);
+    }
+    u64 end_us = GetTsUsec();
+    r_info("init log area, threads: %d, spent %lu us", init_thread_num, end_us - start_us);
+
 
     // 初始化并恢复journal
     // if ((ret = finefs_lite_journal_hard_init(sb)) < 0) {

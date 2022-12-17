@@ -16,7 +16,7 @@ int finefs_alloc_log_free_lists(struct super_block *sb)
 	int i;
 
 	sbi->log_free_lists = (struct free_list*)ZALLOC(sbi->cpus * sizeof(struct free_list));
-	if (!sbi->data_free_lists)
+	if (!sbi->log_free_lists)
 		return -ENOMEM;
 
 	for (i = 0; i < sbi->cpus; i++) {
@@ -137,11 +137,11 @@ void finefs_init_blockmap(struct super_block *sb, double log_block_occupy, int r
 			data_free_list->first_node = blknode;
 			data_free_list->num_blocknode = 1;
 		}
-		r_info("i=%d, num_block=%lu, size=%0.2lf MB", __func__, i,
+		rd_info("i=%d, num_block=%lu, size=%0.2lf MB", i,
 			log_free_list->block_end - log_free_list->block_start,
 			((log_free_list->block_end - log_free_list->block_start) << FINEFS_BLOCK_SHIFT) * 1.0
 			/ 1024 / 1024);
-		r_info("i=%d, num_block=%lu, size=%0.2lf MB", __func__, i,
+		rd_info("i=%d, num_block=%lu, size=%0.2lf MB", i,
 			data_free_list->block_end - data_free_list->block_start,
 			((data_free_list->block_end - data_free_list->block_start) << FINEFS_BLOCK_SHIFT) * 1.0
 			/ 1024 / 1024);
@@ -157,28 +157,36 @@ void finefs_init_blockmap(struct super_block *sb, double log_block_occupy, int r
 
 static force_inline void finefs_init_log_block(char* block_addr) {
 	finefs_inode_page_tail* log_tail = (finefs_inode_page_tail*)(block_addr + FINEFS_LOG_LAST_ENTRY);
-	log_tail->log_version = 0;
-	finefs_flush_cacheline(log_tail, 0);
+	// log_tail->log_version = 0;
+	// finefs_flush_cacheline(log_tail, 0);
 	for(int i = 0; i < FINEFS_BLOCK_SIZE - FINEFS_LOG_LAST_ENTRY; i += CACHELINE_SIZE) {
-		*(u64*)(block_addr + i + CACHELINE_SIZE - sizeof(u64)) = 0;
-		finefs_flush_cacheline(block_addr + i, 0);
+		if(*(u64*)(block_addr + i + CACHELINE_SIZE - sizeof(u64)) == log_tail->log_version + 1) {
+			*(u64*)(block_addr + i + CACHELINE_SIZE - sizeof(u64)) = log_tail->log_version;
+			finefs_flush_cacheline(block_addr + i, 0);
+		}
 	}
 }
 
-void* finefs_init_log_block_area(super_block* sb, int cpu_id) {
+void* finefs_init_log_block_area(void *arg) {
+	log_block_init_arg* init_arg = (log_block_init_arg*)arg;
+	super_block* sb = init_arg->sb;
 	struct finefs_sb_info *sbi = FINEFS_SB(sb);
 	struct free_list *log_free_list;
 	unsigned long block_start;
 	unsigned long block_end;
-	log_free_list = finefs_get_log_free_list(sb, cpu_id);
-	log_assert(log_free_list);
-	block_start = log_free_list->block_start;
-	block_end = log_free_list->block_end;
-	char* block = (char*)finefs_get_block(sb,
-		finefs_get_block_off(sb, block_start, FINEFS_BLOCK_TYPE_4K));
-	for(int j = 0; j < block_end - block_start + 1; ++j) {
-		finefs_init_log_block(block);
-		block += FINEFS_BLOCK_SIZE;
+	for(int i = init_arg->cpu_id; i < init_arg->cpu_id + init_arg->log_area_num; ++i) {
+		// r_info("cpuid: %d", i);
+		log_free_list = finefs_get_log_free_list(sb, i);
+		log_assert(log_free_list);
+		block_start = log_free_list->block_start;
+		block_end = log_free_list->block_end;
+		char* block = (char*)finefs_get_block(sb,
+			finefs_get_block_off(sb, block_start, FINEFS_BLOCK_TYPE_4K));
+		for(int j = 0; j < block_end - block_start + 1; ++j) {
+			finefs_init_log_block(block);
+			block += FINEFS_BLOCK_SIZE;
+		}
+		// pmem_memset_nt(block, 0, (block_end - block_start + 1) << FINEFS_BLOCK_SHIFT);
 	}
 	PERSISTENT_BARRIER();
 	return nullptr;
@@ -679,7 +687,7 @@ retry:
 	if (zero) {
 		bp = finefs_get_block(sb, finefs_get_block_off(sb,
 						new_blocknr, btype));
-		memset_nt(bp, 0, FINEFS_BLOCK_SIZE * ret_blocks);
+		pmem_memset_nt(bp, 0, FINEFS_BLOCK_SIZE * ret_blocks);
 	}
 	*blocknr = new_blocknr;
 
@@ -693,7 +701,7 @@ static int finefs_new_blocks_from_data_area(struct super_block *sb, unsigned lon
 
 	struct free_list *free_list;
 	void *bp;
-	unsigned long ret_blocks = 0;
+	int ret_blocks = 0;
 	unsigned long new_blocknr = 0;
 	struct rb_node *temp;
 	struct finefs_range_node *first;
@@ -746,7 +754,7 @@ retry:
 	if (zero) {
 		bp = finefs_get_block(sb, finefs_get_block_off(sb,
 						new_blocknr, btype));
-		memset_nt(bp, 0, FINEFS_BLOCK_SIZE * ret_blocks);
+		pmem_memset_nt(bp, 0, FINEFS_BLOCK_SIZE * ret_blocks);
 	}
 	*blocknr = new_blocknr;
 
@@ -764,6 +772,7 @@ static int finefs_new_blocks(struct super_block *sb, unsigned long *blocknr,
 	enum alloc_type atype, int cpuid = -1)
 {
 	unsigned long num_blocks = 0;
+	int ret_blocks = 0;
 
 	num_blocks = num * finefs_get_numblocks(btype);
 	// r_info("new block size: %lu, type %s", num_blocks << FINEFS_BLOCK_SHIFT, atype == LOG ? "LOG" : "DATA");
@@ -774,17 +783,30 @@ static int finefs_new_blocks(struct super_block *sb, unsigned long *blocknr,
 		cpuid = get_processor_id();
 
 	if(atype == LOG) {
-		int ret_blocks = finefs_new_blocks_from_log_area(sb, blocknr, num_blocks, btype, zero, atype, cpuid);
-		if(ret_blocks < 0) {
-			r_info("log area full, alloc from data area, cpuid: %d", cpuid);
-			return finefs_new_blocks_from_data_area(sb, blocknr, num_blocks, btype, 1, atype, cpuid);
+		ret_blocks = finefs_new_blocks_from_log_area(sb, blocknr, num_blocks, btype, zero, atype, cpuid);
+		if(ret_blocks > 0) {
+			return ret_blocks;
 		}
+		r_info("log area full, alloc from data area, cpuid: %d", cpuid);
+		ret_blocks = finefs_new_blocks_from_data_area(sb, blocknr, num_blocks, btype, zero, atype, cpuid);
+		log_assert(zero == 0);
+		if(ret_blocks > 0) {
+			char* block = (char*)finefs_get_block(sb,
+				finefs_get_block_off(sb, *blocknr, FINEFS_BLOCK_TYPE_4K));
+			for(int j = 0; j < ret_blocks; ++j) {
+				finefs_init_log_block(block);
+				block += FINEFS_BLOCK_SIZE;
+			}
+		}
+		return ret_blocks;
 	} else {
-		int ret_blocks = finefs_new_blocks_from_data_area(sb, blocknr, num_blocks, btype, zero, atype, cpuid);
-		if(ret_blocks < 0) {
-			r_info("data area full, alloc from log area, cpuid: %d", cpuid);
-			return finefs_new_blocks_from_log_area(sb, blocknr, num_blocks, btype, zero, atype, cpuid);
+		ret_blocks = finefs_new_blocks_from_data_area(sb, blocknr, num_blocks, btype, zero, atype, cpuid);
+		if(ret_blocks > 0) {
+			return ret_blocks;
 		}
+		r_info("data area full, alloc from log area, cpuid: %d, ret_blocks: %d",
+				cpuid, ret_blocks);
+		return finefs_new_blocks_from_log_area(sb, blocknr, num_blocks, btype, zero, atype, cpuid);
 	}
 }
 

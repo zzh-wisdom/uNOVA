@@ -105,7 +105,7 @@ int finefs_init_inode_table(struct super_block *sb) {
         inode_table = finefs_get_inode_table(sb, i);
         if (!inode_table) return -EINVAL;
 
-        allocated = finefs_new_data_blocks(sb, pi, &blocknr, 1, 0, 1, 0,i);
+        allocated = finefs_new_data_blocks(sb, pi, &blocknr, 1, 0, 1, 0, i);
         rdv_proc("%s: allocate log @ 0x%lx", __func__, blocknr);
         if (allocated != 1 || blocknr == 0) return -ENOSPC;
 
