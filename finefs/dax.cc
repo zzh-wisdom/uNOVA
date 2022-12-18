@@ -650,6 +650,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 		buf += bytes;
 		count -= bytes;
 		num_blocks -= allocated;
+		log_assert(num_blocks == 0);
 	}
 
 	// 处理尾部不对齐的数据

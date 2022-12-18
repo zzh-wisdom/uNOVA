@@ -440,9 +440,11 @@ static void finefs_file_page_entry_clear(struct super_block *sb,
     if(nvm_delete && dram_page_entry->nvm_entry_p) {
         dlog_assert(dram_page_entry->nvm_block_p);
         finefs_file_pages_write_entry  *old_nvm_entry = dram_page_entry->nvm_entry_p;
-        old_nvm_entry->invalid_pages++;
-        if(old_nvm_entry->invalid_pages == old_nvm_entry->num_pages) {
+        // old_nvm_entry->invalid_pages++;
+        if(old_nvm_entry->invalid_pages + 1 == old_nvm_entry->num_pages) {
             log_entry_set_invalid(sb, sih, old_nvm_entry, true);
+        } else {
+            old_nvm_entry->invalid_pages++;
         }
         // 立即释放特定的block
         u64 old_nvmm = get_blocknr_from_page_entry(sb, sih, dram_page_entry, dram_page_entry->file_pgoff);
@@ -794,9 +796,10 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
     finefs_file_page_entry_clear(sb, pi, sih, dram_page_entry, true, true);
     // 删除 page write entry
     if(pages_write_entry) {
-        pages_write_entry->invalid_pages++;
-        if(pages_write_entry->invalid_pages == pages_write_entry->num_pages) {
+        if(pages_write_entry->invalid_pages + 1 == pages_write_entry->num_pages) {
             log_entry_set_invalid(sb, sih, pages_write_entry, true);
+        } else {
+            pages_write_entry->invalid_pages++;
         }
     }
 

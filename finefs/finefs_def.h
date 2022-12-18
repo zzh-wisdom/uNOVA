@@ -134,7 +134,10 @@ struct finefs_super_block {
 	__le32		s_wtime;            /* write time */
 	/* fields for fast mount support. Always keep them together */
 	__le64		s_num_free_blocks;
+	__le64      s_log_page_num;
 } __attribute((__packed__));  // 取消对齐
+
+// const int a = sizeof(finefs_super_block);
 
 #define FINEFS_SB_STATIC_SIZE(ps) ((u64)&ps->s_start_dynamic - (u64)ps)
 
@@ -241,6 +244,7 @@ const int a = sizeof(finefs_inode);
 #define FINEFS_LITEJOURNAL_INO	(5)
 #define FINEFS_INODELIST1_INO	(6)
 
+// 实际上只预留了8个inode空间
 #define	FINEFS_ROOT_INO_START	(FINEFS_SB_SIZE * 2)
 
 /* Normal inode starts at 16 */

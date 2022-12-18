@@ -310,6 +310,9 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
 
     r_info("creating an empty finefs of size %lu", size);
     sbi->num_blocks = ((unsigned long)(size) >> FINEFS_BLOCK_SHIFT);
+    sbi->log_pages = sbi->num_blocks*log_block_occupy;
+    sbi->log_pages = (sbi->log_pages + sbi->cpus - 1) / sbi->cpus * sbi->cpus;
+    r_info("log_block_occupy: %0.2lf, sbi->log_pages = %u", log_block_occupy, sbi->log_pages);
 
     if (!sbi->virt_addr) {
         r_error("ioremap of the finefs image failed(1)");
@@ -351,6 +354,7 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     super->s_size = cpu_to_le64(size);
     super->s_blocksize = cpu_to_le32(blocksize);
     super->s_magic = cpu_to_le32(FINEFS_SUPER_MAGIC);
+    super->s_log_page_num = cpu_to_le64(sbi->log_pages);
 
     finefs_init_blockmap(sb, log_block_occupy, 0);
     pthread_t threads[CFG_MAX_CPU_NUM];

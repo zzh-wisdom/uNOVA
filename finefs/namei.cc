@@ -646,7 +646,7 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     err = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
     if (err) goto end_rmdir;
 
-    finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, 1);
+    // finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, 1);
     FINEFS_I(dir)->header.h_log_tail = pidir_tail;
     FINEFS_I(inode)->header.h_log_tail = pi_tail;
 

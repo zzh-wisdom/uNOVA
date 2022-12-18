@@ -76,7 +76,7 @@ void finefs_init_blockmap(struct super_block *sb, double log_block_occupy, int r
 	struct finefs_range_node *blknode;
 	struct free_list *data_free_list;
 	struct free_list *log_free_list;
-	unsigned long per_list_blocks;
+	// unsigned long per_list_blocks;
 	unsigned long per_list_log_blocks;
 	unsigned long per_list_data_blocks;
 	int i;
@@ -85,27 +85,22 @@ void finefs_init_blockmap(struct super_block *sb, double log_block_occupy, int r
 	num_used_block = sbi->reserved_blocks;
 
 	/* Divide the block range among per-CPU free lists */
-	per_list_blocks = sbi->num_blocks / sbi->cpus;
-	per_list_log_blocks = per_list_blocks * log_block_occupy;
-	per_list_data_blocks = per_list_blocks - per_list_log_blocks;
-	sbi->per_list_blocks = per_list_blocks;
+	// per_list_blocks = sbi->num_blocks / sbi->cpus;
+	per_list_log_blocks = sbi->log_pages / sbi->cpus;
+	// sbi->per_list_blocks = per_list_blocks;
 	sbi->per_list_log_blocks = per_list_log_blocks;
+	per_list_data_blocks = (sbi->num_blocks - sbi->log_pages) / sbi->cpus;
 	sbi->per_list_data_blocks = per_list_data_blocks;
+
 	for (i = 0; i < sbi->cpus; i++) {
 		log_free_list = finefs_get_log_free_list(sb, i);
 		log_tree = &(log_free_list->block_free_tree);
-		data_free_list = finefs_get_data_free_list(sb, i);
-		data_tree = &(data_free_list->block_free_tree);
-		log_free_list->block_start = per_list_blocks * i;
+		log_free_list->block_start = per_list_log_blocks * i;
 		log_free_list->block_end = log_free_list->block_start + per_list_log_blocks - 1;
-		data_free_list->block_start = per_list_blocks * i + per_list_log_blocks;
-		data_free_list->block_end = data_free_list->block_start +
-						per_list_data_blocks - 1;
 
 		/* For recovery, update these fields later */
 		if (recovery == 0) {  // 此时是没有恢复的情况
 			log_free_list->num_free_blocks = per_list_log_blocks;
-			data_free_list->num_free_blocks = per_list_data_blocks;
 			if (i == 0) {  // 第一个要减去预留的block个数
 				log_free_list->block_start += num_used_block;
 				log_free_list->num_free_blocks -= num_used_block;
@@ -123,12 +118,32 @@ void finefs_init_blockmap(struct super_block *sb, double log_block_occupy, int r
 			}
 			log_free_list->first_node = blknode;
 			log_free_list->num_blocknode = 1;
+		}
+		rd_info("i=%d, num_block=%lu, size=%0.2lf MB", i,
+			log_free_list->block_end - log_free_list->block_start + 1,
+			((log_free_list->block_end - log_free_list->block_start + 1) << FINEFS_BLOCK_SHIFT) * 1.0
+			/ 1024 / 1024);
+		dlog_assert(get_cpuid(sbi, log_free_list->block_start) == i);
+		dlog_assert(get_cpuid(sbi, log_free_list->block_end) == i);
+	}
+	dlog_assert(finefs_get_log_free_list(sb, sbi->cpus-1)->block_end == sbi->log_pages - 1);
+
+	for (i = 0; i < sbi->cpus; i++) {
+		data_free_list = finefs_get_data_free_list(sb, i);
+		data_tree = &(data_free_list->block_free_tree);
+		data_free_list->block_start = per_list_data_blocks * i + sbi->log_pages;
+		data_free_list->block_end = data_free_list->block_start +
+						per_list_data_blocks - 1;
+
+		/* For recovery, update these fields later */
+		if (recovery == 0) {  // 此时是没有恢复的情况
+			data_free_list->num_free_blocks = per_list_data_blocks;
 
 			blknode = finefs_alloc_blocknode(sb);
 			if (blknode == NULL) log_assert(0);
 			blknode->range_low = data_free_list->block_start;
 			blknode->range_high = data_free_list->block_end;
-			ret = finefs_insert_blocktree(sbi, log_tree, blknode);
+			ret = finefs_insert_blocktree(sbi, data_tree, blknode);
 			if (ret) {
 				r_error("%s failed", __func__);
 				finefs_free_blocknode(sb, blknode);
@@ -138,13 +153,11 @@ void finefs_init_blockmap(struct super_block *sb, double log_block_occupy, int r
 			data_free_list->num_blocknode = 1;
 		}
 		rd_info("i=%d, num_block=%lu, size=%0.2lf MB", i,
-			log_free_list->block_end - log_free_list->block_start,
-			((log_free_list->block_end - log_free_list->block_start) << FINEFS_BLOCK_SHIFT) * 1.0
+			data_free_list->block_end - data_free_list->block_start + 1,
+			((data_free_list->block_end - data_free_list->block_start + 1) << FINEFS_BLOCK_SHIFT) * 1.0
 			/ 1024 / 1024);
-		rd_info("i=%d, num_block=%lu, size=%0.2lf MB", i,
-			data_free_list->block_end - data_free_list->block_start,
-			((data_free_list->block_end - data_free_list->block_start) << FINEFS_BLOCK_SHIFT) * 1.0
-			/ 1024 / 1024);
+		dlog_assert(get_cpuid(sbi, data_free_list->block_start) == i);
+		dlog_assert(get_cpuid(sbi, data_free_list->block_end) == i);
 	}
 
 	data_free_list = finefs_get_data_free_list(sb, (sbi->cpus - 1));
@@ -379,13 +392,10 @@ static int finefs_free_blocks(struct super_block *sb, unsigned long blocknr,
 	block_low = blocknr;
 	block_high = blocknr + num_blocks - 1;
 
-	cpuid = blocknr / sbi->per_list_blocks;
-	if (cpuid >= sbi->cpus) {
-		cpuid = SHARED_CPU;
-		free_list = finefs_get_data_free_list(sb, cpuid);
-	} else if(finefs_is_log_area(sbi, blocknr)) {
-		free_list = finefs_get_log_free_list(sb, cpuid);
-		// 非log page释放到data area
+	if(finefs_is_log_area(sbi, blocknr)) {
+		cpuid = blocknr/sbi->per_list_log_blocks;
+		log_assert(cpuid < sbi->cpus);
+		// 非log page释放到log area
 		if(!log_page) {
 			char* block_addr = (char*)finefs_get_block(sb,
 				finefs_get_block_off(sb, block_low, btype));
@@ -394,7 +404,11 @@ static int finefs_free_blocks(struct super_block *sb, unsigned long blocknr,
 				block_addr += FINEFS_BLOCK_SIZE;
 			}
 		}
+		free_list = finefs_get_log_free_list(sb, cpuid);
 	} else {
+		cpuid = (blocknr - sbi->log_pages) / sbi->per_list_data_blocks;
+		if (cpuid >= sbi->cpus)
+			cpuid = SHARED_CPU;
 		free_list = finefs_get_data_free_list(sb, cpuid);
 	}
 
@@ -661,7 +675,7 @@ retry:
 				return -ENOSPC;
 			// 从其他cpu分配空闲空间
 			cpuid = finefs_get_candidate_log_free_list(sb);
-			r_info("new log page from other cpuid: %d", cpuid);
+			rd_info("new log page from other cpuid: %d", cpuid);
 			retried++;
 			goto retry;
 		}
@@ -821,7 +835,7 @@ int finefs_new_data_blocks(struct super_block *sb, struct finefs_inode *pi,
 	// allocated = finefs_new_blocks(sb, blocknr, num,
 	// 				pi->i_blk_type, zero, DATA);
 	allocated = finefs_new_blocks(sb, blocknr, num,
-					FINEFS_DEFAULT_DATA_BLOCK_TYPE, zero, DATA, cpuid);
+					pi->i_blk_type, zero, DATA, cpuid);
 	FINEFS_END_TIMING(new_data_blocks_t, alloc_time);
 	rdv_proc("Inode %lu, start blk %lu, cow %d, "
 			"alloc %d data blocks from %lu to %lu",

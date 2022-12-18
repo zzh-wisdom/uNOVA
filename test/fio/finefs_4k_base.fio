@@ -19,8 +19,8 @@ create_fsync=1
 # 运行完负载后，删除文件
 unlink=1
 openfiles=1
-# time_based
-# runtime=30
+time_based
+runtime=30
 numjobs=1
 description=顺序写文件,单个线程单独一个文件,io大小变化
 size=3GB
@@ -34,8 +34,8 @@ rw=write
 [seq-write-4K]
 wait_for_previous
 overwrite=1
-rw=write
+rw=randwrite
 
 [seq-read-4K]
 wait_for_previous
-rw=read
+rw=randread

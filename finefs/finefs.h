@@ -237,6 +237,7 @@ struct finefs_sb_info {
     void *virt_addr;  // NVM映射的虚拟地址
 
     unsigned long num_blocks;  // 整个NVM的page的个数
+    unsigned long log_pages;   // 用于log的page个数
 
     /*
      * Backing store option:
@@ -283,7 +284,7 @@ struct finefs_sb_info {
     struct slab_heap *slab_heaps;
 
     /* Shared free block list */
-    unsigned long per_list_blocks;      // 每个cpu的block个数 sbi->num_blocks / sbi->cpus;
+    // unsigned long per_list_blocks;      // 每个cpu的block个数 sbi->num_blocks / sbi->cpus;
     unsigned long per_list_log_blocks;      // 每个cpu的block个数 sbi->num_blocks / sbi->cpus;
     unsigned long per_list_data_blocks;      // 每个cpu的block个数 sbi->num_blocks / sbi->cpus;
     struct free_list shared_free_list;  // 平均分不完全时，管理剩下多余的
@@ -445,16 +446,18 @@ static inline void *finefs_get_block(struct super_block *sb, u64 block) {
 static force_inline int get_cpuid(struct finefs_sb_info *sbi, unsigned long blocknr) {
     int cpuid;
 
-    cpuid = blocknr / sbi->per_list_blocks;
-
-    if (cpuid >= sbi->cpus) cpuid = SHARED_CPU;
+    if(unlikely(blocknr < sbi->log_pages)) {
+        cpuid = blocknr / sbi->per_list_log_blocks;
+    } else {
+        cpuid = (blocknr - sbi->log_pages) / sbi->per_list_data_blocks;
+        if (cpuid >= sbi->cpus) cpuid = SHARED_CPU;
+    }
 
     return cpuid;
 }
 
 static force_inline bool finefs_is_log_area(struct finefs_sb_info *sbi, unsigned long blocknr) {
-    unsigned long blocknr_in_cpu = blocknr % sbi->per_list_blocks;
-    return blocknr_in_cpu < sbi->per_list_log_blocks;
+    return blocknr < sbi->log_pages;
 }
 
 static inline struct finefs_super_block *finefs_get_redund_super(struct super_block *sb) {
@@ -1003,10 +1006,11 @@ void finefs_slab_free(super_block *sb, u64 nvm_off, size_t size);
 
 /*
  * The first block contains super blocks and reserved inodes;
- * The second block contains pointers to journal pages.
- * The third block contains pointers to inode tables.
+ * The second block contains pointers to inode tables.
+ * The third block contains pointers to file log.
+ * The forth block contains pointers to dir log.
  */
-#define RESERVED_BLOCKS 3
+#define RESERVED_BLOCKS 4
 
 struct inode_map {
     mutex_t inode_table_mutex;
@@ -1024,7 +1028,7 @@ struct ptr_pair {
 
 static inline struct ptr_pair *finefs_get_journal_pointers(struct super_block *sb, int cpu) {
     struct finefs_sb_info *sbi = FINEFS_SB(sb);
-
+    log_assert(0);
     if (cpu >= sbi->cpus) return NULL;
 
     return (struct ptr_pair *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE) +
@@ -1040,7 +1044,49 @@ static inline struct inode_table *finefs_get_inode_table(struct super_block *sb,
 
     if (cpu >= sbi->cpus) return NULL;
 
-    return (struct inode_table *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE * 2) +
+    return (struct inode_table *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE) +
+                                  cpu * CACHELINE_SIZE);
+}
+
+// 崩溃恢复时，只扫描bitmap为1的log entry。
+// 扫描时记录上一次包含tx_start标志的log entry位置last_start;
+// 遇到bitmap为0，或者tx_end标志时，清除last_start
+// 于是，当遇到连续bitmap为1的log entry，且只有tx_start而没有tx_end，
+// 说明这是一个未完成的事务，需要丢弃tx_start以及之后的log
+//
+// 提供一个log_tx_start;
+// log_tx_end接口，start时记录当前的log_tail
+// end时，将从start到end（不包括end）的log page的can_delete标志设置为1，不用flush
+
+// TODO: 每个log page尾部有一个can_delete标志位
+// TODO: gc
+// 每次配分log page时，判断剩余的log page的占比，如果低于10%，则唤醒GC线程。
+// 每次有log entry被无效时，判断如果can_delete=1,且有效entry个数低于阈值（如16个），加入gc集合
+// 当gc集合大于阈值时，比如16。唤醒GC线程。
+// gc线程，首先回收gc集合中有效entry个数为0的log page，如果回收后，空闲的log page个数还没有达到低水线
+// 启动彻底回收。搞个两粒度锁，整个索引一个锁，每个page一个锁。
+//
+// 64B
+struct finefs_log {
+	finefs_log_page_link log_head;
+	finefs_log_page_link log_head_gc;  // gc后的log
+};
+
+static inline struct finefs_log *finefs_get_file_log(struct super_block *sb, int cpu) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+
+    if (cpu >= sbi->cpus) return NULL;
+
+    return (struct finefs_log *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE*2) +
+                                  cpu * CACHELINE_SIZE);
+}
+
+static inline struct finefs_log *finefs_get_dir_log(struct super_block *sb, int cpu) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+
+    if (cpu >= sbi->cpus) return NULL;
+
+    return (struct finefs_log *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE*3) +
                                   cpu * CACHELINE_SIZE);
 }
 

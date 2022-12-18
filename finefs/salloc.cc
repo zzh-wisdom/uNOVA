@@ -106,6 +106,7 @@ static inline int finefs_batch_extend_slab_page(super_block* sb, slab_free_list*
         if(!cur_allocated) break;
 
         for(int i = 0; i < cur_allocated; ++i) {
+            dlog_assert(get_cpuid(sbi, blocknr+i) == get_processor_id());
             u64 block_off = finefs_get_block_off(sb, blocknr+i, pi->i_blk_type);
             page = finefs_alloc_slab_page(sb);
             log_assert(page);
@@ -151,7 +152,7 @@ static inline void finefs_free_or_goto_next_page(slab_free_list* slab_list, slab
         finefs_free_slab_page(page);
         slab_list->page_num--;
     }
-    if(slab_list->cur_page != page) return;
+    if(slab_list->cur_page && slab_list->cur_page != page) return;
 
     if(it_next == slab_list->page_off_2_slab_page.end()) {
         it_next = slab_list->page_off_2_slab_page.begin();
@@ -163,6 +164,7 @@ static inline void finefs_free_or_goto_next_page(slab_free_list* slab_list, slab
     } else {
         dlog_assert(slab_list->page_num == 0);
         slab_list->cur_page = nullptr;
+        r_error("slab_list->cur_page set null, slab_list->page_num = %u", slab_list->page_num);
         slab_list->next_slab_idx = 0;
     }
     rd_info("%s: page_num: %u, cur_page_off: %lu, next_slab_idx:%u", __func__, slab_list->page_num,
@@ -195,11 +197,12 @@ u64 finefs_slab_alloc(super_block* sb, size_t size, int *s_bits) {
     dlog_assert(size_bits <= SLAB_MAX_BITS);
     slab_free_list *slab_list = &slab_heap->slab_lists[size_bits - SLAB_MIN_BITS];
     slab_page* cur_page = nullptr;
-    u32 slab_off = 0;
+    u64 slab_off = 0;
     bool is_full;
 
     spin_lock(&slab_heap->slab_lock);
     if(slab_list->cur_page == nullptr) {
+        dlog_assert(slab_list->page_num == 0);
         int nr = finefs_batch_extend_slab_page(sb, slab_list);
         if(nr == 0) {
             r_error("%s: not free block.", __func__);
@@ -227,6 +230,7 @@ void finefs_slab_free(super_block* sb, u64 nvm_off, size_t size) {
     u64 block_off = finefs_get_block_off(sb, blocknr, FINEFS_DEFAULT_DATA_BLOCK_TYPE);
     struct finefs_sb_info *sbi = FINEFS_SB(sb);
     int cpuid = get_cpuid(sbi, blocknr);
+    dlog_assert(finefs_is_log_area(sbi, blocknr) == false);
     struct slab_heap *slab_heap = finefs_get_slab_heap(sb, cpuid);
     int size_bits = fls(size) - 1;
     dlog_assert((1 << size_bits) == size);
