@@ -240,9 +240,11 @@ const int a = sizeof(finefs_inode);
 #define FINEFS_BLOCKNODE_INO	(3)
 // 用于分配slab page
 #define FINEFS_SLAB_PAGE_INO	(4)
+// 用于分配log page
+#define FINEFS_LOG_PAGE_INO     (5)
 // 用于分配journal的空间（每次4KB）
-#define FINEFS_LITEJOURNAL_INO	(5)
-#define FINEFS_INODELIST1_INO	(6)
+#define FINEFS_LITEJOURNAL_INO	(6)
+#define FINEFS_INODELIST1_INO	(7)
 
 // 实际上只预留了8个inode空间
 #define	FINEFS_ROOT_INO_START	(FINEFS_SB_SIZE * 2)
@@ -330,7 +332,7 @@ static inline void finefs_flush_buffer(void *buf, uint32_t len, bool fence)
 #define SLAB_PAGE_KEEP_THRESHOLD  16
 
 // log一次批量分配page的最大个数
-#define	LOG_EXTEND_THRESHOLD	256
+#define	LOG_EXTEND_THRESHOLD	64
 
 #define SMALL_ENTRY_FLUSH_THRESHOLD_FOR_READ 4
 #define SMALL_ENTRY_FLUSH_THRESHOLD_FOR_WRITE 16

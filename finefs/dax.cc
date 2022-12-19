@@ -311,7 +311,7 @@ static void finefs_handle_head_tail_blocks(struct super_block *sb,
 
 int finefs_reassign_file_tree(struct super_block *sb,
 	struct finefs_inode *pi, struct finefs_inode_info_header *sih,
-	u64 begin_tail, u64 *tail)
+	u64 begin_tail, u64 *tail, finefs_log_info* log_info)
 {
 	void* entry;
 	u64 curr_p = begin_tail;
@@ -345,7 +345,7 @@ int finefs_reassign_file_tree(struct super_block *sb,
 		}
 #endif
 
-		int ret = finefs_assign_write_entry(sb, pi, sih, entry, tail, true);
+		int ret = finefs_assign_write_entry(sb, pi, sih, entry, tail, true, log_info);
 		if(ret) return ret;
 		curr_p += entry_size;
 	}
@@ -407,7 +407,7 @@ static int finefs_cleanup_incomplete_write(struct super_block *sb,
 // bytes: 将要写入的字节数
 static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 	struct inode *inode, size_t pos, const char *buf, size_t bytes, u32 time,
-	u64 tail, int num_entry, bool is_end)
+	u64 tail, int num_entry, bool is_end, finefs_log_info *log_info)
 {
 	struct finefs_inode_info *si = FINEFS_I(inode);
 	struct finefs_inode_info_header *sih = &si->header;
@@ -428,7 +428,7 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 	kmem = finefs_get_block(sb, slab_off);
 	pmem_memcpy(kmem, buf, bytes, false);
 
-	curr_entry = finefs_get_append_head(sb, pi, sih, tail, entry_size, &extended, false);
+	curr_entry = finefs_get_append_head(sb, tail, entry_size, false, log_info);
     if (curr_entry == 0) {
 		finefs_less_page_free(sb, pi, slab_off, 1 << size_bits);
 		return 0;
@@ -550,8 +550,9 @@ ssize_t finefs_cow_file_write(struct file *filp,
 	rd_info("%s: inode %lu, file_offset %lld, count %lu",
 			__func__, inode->i_ino,	pos, count);
 
-	temp_tail = sih->h_log_tail;
-	begin_tail = sih->h_log_tail;
+	finefs_log_info* log_info = finefs_log_tx_begin(sb, FINEFS_FILE_LOG);
+	temp_tail = log_info->cur_tail;
+	begin_tail = log_info->cur_tail;
 
 	// 块内偏移
 	offset = pos & (sb->s_blocksize - 1);
@@ -561,7 +562,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 		if(bytes > count) bytes = count;
 
 		curr_entry = finefs_file_small_write(sb, pi, inode, pos, buf, bytes, time,
-			temp_tail, num_entry, bytes == count);
+			temp_tail, num_entry, bytes == count, log_info);
 		ret = -ENOSPC;
 		if(curr_entry == 0) goto out;
 
@@ -633,7 +634,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 		else
 			page_entry_data.size = cpu_to_le64(inode->i_size);
 		curr_entry = finefs_append_file_write_entry(sb, pi, inode,
-							&page_entry_data, temp_tail);
+							&page_entry_data, temp_tail, log_info);
 		if (curr_entry == 0) {
 			rd_warning("%s: append inode entry failed", __func__);
 			ret = -ENOSPC;
@@ -657,7 +658,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 	if(count) {
 		bytes = count;
 		curr_entry = finefs_file_small_write(sb, pi, inode, pos, buf, bytes, time,
-			temp_tail, num_entry, true);
+			temp_tail, num_entry, true, log_info);
 		ret = -ENOSPC;
 		if(curr_entry == 0) goto out;
 
@@ -680,13 +681,12 @@ ssize_t finefs_cow_file_write(struct file *filp,
 
 	/* Free the overlap blocks after the write is committed */
 	// 更改内存中的索引
-	ret = finefs_reassign_file_tree(sb, pi, sih, begin_tail, &temp_tail);
+	ret = finefs_reassign_file_tree(sb, pi, sih, begin_tail, &temp_tail, log_info);
 	if (ret)
 		goto out;
 
 	// 提交写操作
-	// finefs_update_tail(pi, temp_tail);
-	finefs_update_volatile_tail(sih, temp_tail);
+	finefs_log_tx_end(sb, log_info, temp_tail);
 
 	// 注意： 在写log时已经更新sih中的统计信息
 	inode->i_blocks = sih->h_blocks;

@@ -19,7 +19,7 @@
 
 #include "util/cpu.h"
 
-const uint64_t FILE_SIZE = 2ul << 30; // 3GB
+const uint64_t FILE_SIZE = 3ul << 30; // 3GB
 
 int main(int argc, char* argv[]) {
     // #if FS_HOOK==1

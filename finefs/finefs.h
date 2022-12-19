@@ -221,6 +221,34 @@ struct slab_heap {
     }
 };
 
+
+#define FREE_LOG_GC_THRESHOLD 64
+#define SPARSE_LOG_GC_THRESHOLD 4096
+
+enum log_type_t {
+    FINEFS_FILE_LOG = 1,
+    FINEFS_DIR_LOG,
+};
+
+struct finefs_log;
+
+struct finefs_log_info {
+    spinlock_t log_lock;
+    int next_alloc_pages;
+    u32 num_pages;
+    int cpuid;
+    unsigned long cur_tail;
+    unsigned long gc_tail;
+    finefs_log* fine_log;
+
+    std::vector<u64> free_logs;
+    std::unordered_set<u64> sparse_logs;
+    spinlock_t info_lock;
+    // u8 paddings[8];
+};
+
+// const int a = sizeof(finefs_log_info);
+
 /*
  * FINEFS super-block data in memory
  */
@@ -270,6 +298,8 @@ struct finefs_sb_info {
 
     /* Per-CPU journal lock */
     spinlock_t *journal_locks;
+    finefs_log_info* file_logs;
+    finefs_log_info* dir_logs;
 
     /* Per-CPU inode map */
     struct inode_map *inode_maps;
@@ -522,12 +552,16 @@ static inline struct slab_heap *finefs_get_slab_heap(struct super_block *sb, int
 
 struct finefs_inode_page_tail {
     __le64 paddings[3];
-    __le32 padding;
+    u8 padding1;
+    u8 can_delete;  // 崩溃后需要恢复
+    __le16 padding2;
     __le32 valid_num;  // atomic，减为0的线程负责回收
     __le64 bitmap;
     __le64 log_version;
     struct finefs_log_page_link page_link;
 } __attribute((__packed__));
+
+// const int a = sizeof(finefs_inode_page_tail);
 
 /* FINEFS_LOG_BLOCK_TYPE 和 FINEFS_LOG_NUM_BLOCKS 需要一起修改 */
 // log的大小必须等于基本lock大小，否则一些掩码的操作会存在问题，
@@ -643,6 +677,7 @@ static inline void finefs_log_page_tail_init(struct super_block *sb,
                                              struct finefs_inode_log_page *curr_page, u64 next_page,
                                              bool for_gc, int fence) {
     dlog_assert((next_page & FINEFS_LOG_UMASK) == 0);
+    curr_page->page_tail.can_delete = 0;
     curr_page->page_tail.valid_num = FINEFS_LOG_ENTRY_VALID_NUM_INIT;
     curr_page->page_tail.bitmap = FINEFS_LOG_BITMAP_INIT;
     if (for_gc) {
@@ -728,7 +763,7 @@ struct finefs_file_page_entry {
 #else
     std::map<u64, finefs_file_small_entry *> file_off_2_small;
 #endif
-
+    spinlock_t lock;
     // TODO: page cache for small write
     // cache page in dram befor write
     u64 file_pgoff;  // page 偏移（编号）
@@ -745,6 +780,7 @@ static force_inline void finefs_page_write_entry_init(finefs_file_page_entry *pa
     new (&page_entry->file_off_2_small) std::map<u64, finefs_file_small_entry *>();
 #endif
 
+    spin_lock_init(&page_entry->lock);
     page_entry->file_pgoff = pgoff;
     page_entry->nvm_block_p = nullptr;
     page_entry->nvm_entry_p = nullptr;
@@ -782,11 +818,11 @@ struct finefs_file_pages_write_entry {
     /* For both ctime and mtime */
     __le32 mtime;
     __le64 block;          // 起始block的NVM偏移地址
-    __le64 pgoff;          // page 偏移(编号)
+    __le64 pgoff;          // page 偏移(编号)，这也可以改成32
     __le32 num_pages;      // 写的page个数
     __le32 invalid_pages;  // 覆盖写导致无效的page个数？
     __le64 size;           // 文件的大小
-    __le64 finefs_ino;     // 所属于的ino
+    __le64 finefs_ino;     // 所属于的ino, 改成32
     __le64 entry_ts;
     __le64 entry_version;
 } __attribute((__packed__));
@@ -930,17 +966,17 @@ static inline __le32 finefs_mask_flags(umode_t mode, __le32 flags) {
         return flags & cpu_to_le32(FINEFS_OTHER_FLMASK);
 }
 
-static inline void finefs_update_volatile_tail(struct finefs_inode_info_header *sih, u64 new_tail) {
-    // timing_t update_time;
+// static inline void finefs_update_volatile_tail(struct finefs_inode_info_header *sih, u64 new_tail) {
+//     // timing_t update_time;
 
-    // FINEFS_START_TIMING(update_tail_t, update_time);
+//     // FINEFS_START_TIMING(update_tail_t, update_time);
 
-    PERSISTENT_BARRIER();
-    sih->h_log_tail = new_tail;
+//     PERSISTENT_BARRIER();
+//     sih->h_log_tail = new_tail;
 
-    // finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 1);
-    // FINEFS_END_TIMING(update_tail_t, update_time);
-}
+//     // finefs_flush_buffer(&pi->log_tail, CACHELINE_SIZE, 1);
+//     // FINEFS_END_TIMING(update_tail_t, update_time);
+// }
 
 static force_inline inode *finefs_get_vfs_inode_from_header(finefs_inode_info_header *sih) {
     finefs_inode_info *fi = container_of(sih, finefs_inode_info, header);
@@ -1069,7 +1105,9 @@ static inline struct inode_table *finefs_get_inode_table(struct super_block *sb,
 // 64B
 struct finefs_log {
 	finefs_log_page_link log_head;
+    u64 log_tail; // 关闭时进行赋值. 指向最后一个entry而不是page
 	finefs_log_page_link log_head_gc;  // gc后的log
+    u64 log_gc_tail; // 关闭时进行赋值
 };
 
 static inline struct finefs_log *finefs_get_file_log(struct super_block *sb, int cpu) {
@@ -1088,6 +1126,23 @@ static inline struct finefs_log *finefs_get_dir_log(struct super_block *sb, int 
 
     return (struct finefs_log *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE*3) +
                                   cpu * CACHELINE_SIZE);
+}
+
+static inline struct finefs_log_info *finefs_get_file_log_info(struct super_block *sb, int cpu) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+
+    if (cpu >= sbi->cpus) return NULL;
+
+    return &sbi->file_logs[cpu];
+}
+
+static inline struct finefs_log_info *finefs_get_dir_log_info(struct super_block *sb, int cpu) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+
+    if (cpu >= sbi->cpus) return NULL;
+
+    return &sbi->dir_logs[cpu];
+
 }
 
 // BKDR String Hash Function
@@ -1440,7 +1495,8 @@ int finefs_recovery(struct super_block *sb);
 
 /* dax.c */
 int finefs_reassign_file_tree(struct super_block *sb, struct finefs_inode *pi,
-                              struct finefs_inode_info_header *sih, u64 begin_tail, u64 *tail);
+                              struct finefs_inode_info_header *sih, u64 begin_tail,
+                              u64 *tail, finefs_log_info* log_info);
 ssize_t finefs_dax_file_read(struct file *filp, char *buf, size_t len, loff_t *ppos);
 ssize_t finefs_dax_file_write(struct file *filp, const char *buf, size_t len, loff_t *ppos);
 // int finefs_dax_get_block(struct inode *inode, sector_t iblock,
@@ -1449,12 +1505,14 @@ int finefs_dax_file_mmap(struct file *file, struct vm_area_struct *vma);
 
 /* dir.c */
 extern const struct file_operations finefs_dir_operations;
-int finefs_append_root_init_entries(struct super_block *sb, struct finefs_inode *pi, u64 self_ino,
-                                    u64 parent_ino, u64 *log_tail, int cpuid = -1);
-int finefs_append_dir_init_entries(struct super_block *sb, struct finefs_inode *pi,
-                                   struct inode *inode, u64 parent_ino, int cpuid = -1);
-extern int finefs_add_dentry(struct dentry *dentry, u64 ino, int inc_link, u64 tail, u64 *new_tail);
-extern int finefs_remove_dentry(struct dentry *dentry, int dec_link, u64 tail, u64 *new_tail);
+u64 finefs_append_root_init_entries(struct super_block *sb, struct finefs_inode *pi, u64 self_ino,
+                                    u64 parent_ino, u64 tail, finefs_log_info* log_info);
+u64 finefs_append_dir_init_entries(struct super_block *sb, struct finefs_inode *pi,
+                                   struct inode *inode, u64 parent_ino, u64 tail, finefs_log_info* log_info);
+extern int finefs_add_dentry(struct dentry *dentry, u64 ino, int inc_link,
+    u64 tail, u64 *new_tail, finefs_log_info* log_info);
+extern int finefs_remove_dentry(struct dentry *dentry, int dec_link, u64 tail,
+    u64 *new_tail, finefs_log_info* log_info);
 void finefs_print_dir_tree(struct super_block *sb, struct finefs_inode_info_header *sih,
                            unsigned long ino);
 void finefs_delete_dir_tree(struct super_block *sb, struct finefs_inode_info_header *sih,
@@ -1464,6 +1522,8 @@ struct finefs_dentry *finefs_find_dentry(struct super_block *sb, struct finefs_i
                                          unsigned long name_len);
 int finefs_rebuild_dir_inode_tree(struct super_block *sb, struct finefs_inode *pi, u64 pi_addr,
                                   struct finefs_inode_info_header *sih);
+int finefs_init_dir_inode_tree(struct super_block *sb, struct finefs_inode *pi, u64 pi_addr,
+                                  struct finefs_inode_info_header *sih, u64 start, u64 end);
 
 /* file.c */
 extern const struct inode_operations finefs_file_inode_operations;
@@ -1504,12 +1564,11 @@ int finefs_allocate_inode_log_pages(struct super_block *sb, struct finefs_inode 
 int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_header *sih,
                             unsigned long start_blocknr, unsigned long last_blocknr,
                             bool delete_nvmm, bool delete_mmap);
-u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
-                           struct finefs_inode_info_header *sih, u64 tail, size_t size,
-                           int *extended, bool for_gc);
+u64 finefs_get_append_head(struct super_block *sb, u64 tail, size_t size,
+                           bool for_gc, finefs_log_info *log_info);
 u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *pi,
                                    struct inode *inode, struct finefs_file_pages_write_entry *data,
-                                   u64 tail);
+                                   u64 tail, finefs_log_info* log_info);
 int finefs_rebuild_file_inode_tree(struct super_block *sb, struct finefs_inode *pi, u64 pi_addr,
                                    struct finefs_inode_info_header *sih);
 u64 finefs_new_finefs_inode(struct super_block *sb, u64 *pi_addr);
@@ -1518,7 +1577,7 @@ extern struct inode *finefs_new_vfs_inode(enum finefs_new_inode_type, struct ino
                                           dev_t rdev, const struct qstr *qstr);
 int finefs_assign_write_entry(struct super_block *sb, struct finefs_inode *pi,
                               struct finefs_inode_info_header *sih, void *entry, u64 *tail,
-                              bool free);
+                              bool free, finefs_log_info* log_info);
 
 /* ioctl.c */
 extern long finefs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
@@ -1531,7 +1590,8 @@ extern const struct inode_operations finefs_dir_inode_operations;
 extern const struct inode_operations finefs_special_inode_operations;
 extern struct dentry *finefs_get_parent(struct dentry *child);
 int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode *pi,
-                                    struct inode *inode, u64 tail, u64 *new_tail);
+                                    struct inode *inode, u64 tail, u64 *new_tail,
+                                    finefs_log_info *log_info);
 void finefs_apply_link_change_entry(struct finefs_inode *pi,
                                     struct finefs_link_change_entry *entry);
 
@@ -1560,6 +1620,14 @@ void finefs_clear_stats(void);
 void finefs_print_inode_log(struct super_block *sb, struct inode *inode);
 void finefs_print_inode_log_pages(struct super_block *sb, struct inode *inode);
 void finefs_print_free_lists(struct super_block *sb);
+
+/* log.cc */
+int finefs_init_log_page_inode(struct super_block *sb);
+int finefs_log_soft_init(struct super_block *sb);
+int finefs_log_hard_init(struct super_block *sb);
+finefs_log_info* finefs_log_tx_begin(super_block* sb, log_type_t log_type);
+finefs_log_info* finefs_log_tx_begin(super_block* sb, log_type_t log_type, int cpuid);
+void finefs_log_tx_end(super_block* sb, finefs_log_info* log_info, u64 new_tail);
 
 static force_inline bool log_entry_is_set_valid(void *entry) {
     finefs_inode_page_tail *page_tail = (finefs_inode_page_tail *)FINEFS_LOG_TAIL((uintptr_t)entry);
@@ -1594,8 +1662,8 @@ static force_inline void log_entry_set_invalid(struct super_block *sb,
         u64 curr_p = finefs_get_addr_off(sb, entry);
         int ret = finefs_free_log_blocks(sb, pi, finefs_get_blocknr(sb, curr_p, pi->i_blk_type), 1);
         dlog_assert(ret == 0);
-        sih->log_pages--;
-        sih->h_blocks--;
+        // sih->log_pages--;
+        // sih->h_blocks--;
     } else {  // 说明: 增加的时延不多，1%-2%不到
         // if (is_write_entry) {
 

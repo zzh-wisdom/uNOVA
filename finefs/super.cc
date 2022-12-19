@@ -300,7 +300,7 @@ static bool finefs_check_size(struct super_block *sb, unsigned long size) {
 
 // 初始化文件系统
 // 返回root inode
-static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long size, double log_block_occupy, u64 *log_tail) {
+static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long size, double log_block_occupy) {
     unsigned long blocksize;
     unsigned long reserved_space, reserved_blocks;
     struct finefs_inode *root_i, *pi;
@@ -394,6 +394,12 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     // 分配每个cpu的NVM inode table
     if (finefs_init_inode_table(sb) < 0) return nullptr;
     if (finefs_init_slab_page_inode(sb) < 0) return nullptr;
+    if (finefs_init_log_page_inode(sb) < 0) return nullptr;
+
+    if ((ret = finefs_log_hard_init(sb)) < 0) {
+        r_error("log hard initialization failed, ret %d\n", ret);
+        return nullptr;
+    }
 
     pi = finefs_get_inode_by_ino(sb, FINEFS_BLOCKNODE_INO);
     pi->finefs_ino = FINEFS_BLOCKNODE_INO;
@@ -430,10 +436,11 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     finefs_memlock_inode(sb, root_i);
     finefs_flush_buffer(root_i, sizeof(*root_i), false);
 
-    finefs_append_root_init_entries(sb, root_i, FINEFS_ROOT_INO, FINEFS_ROOT_INO, log_tail, 0);
+    finefs_log_info* log_info = finefs_log_tx_begin(sb, FINEFS_DIR_LOG, 0);
+    u64 new_tail = finefs_append_root_init_entries(sb, root_i, FINEFS_ROOT_INO, FINEFS_ROOT_INO, 0, log_info);
 
     PERSISTENT_MARK();
-    PERSISTENT_BARRIER();
+    finefs_log_tx_end(sb, log_info, new_tail);
     return root_i;
 }
 
@@ -843,9 +850,8 @@ static int finefs_fill_super(struct super_block *sb, double log_block_occupy, bo
     }
 
     /* Init a new finefs instance */
-    u64 log_tail;
     if (sbi->s_mount_opt & FINEFS_MOUNT_FORMAT) {  // 重新初始化挂载
-        root_pi = finefs_init(sb, sbi->initsize, log_block_occupy,  &log_tail);
+        root_pi = finefs_init(sb, sbi->initsize, log_block_occupy);
         if (!root_pi) goto out;
         super = finefs_get_super(sb);
         goto setup_sb;
@@ -906,9 +912,11 @@ setup_sb:
     if (sbi->s_mount_opt & FINEFS_MOUNT_FORMAT) {
         dlog_assert(sih->h_blocks = 1);
         sih->log_pages = 1;
-        sih->log_valid_bytes = log_tail - root_pi->log_head.next_page_;
-        finefs_update_volatile_tail(sih, log_tail);
+        sih->log_valid_bytes = CACHELINE_SIZE * 2;
         sih->h_ts = 3;
+        finefs_log_info* log_info = finefs_get_dir_log_info(sb, 0);
+        finefs_init_dir_inode_tree(sb, root_pi, FINEFS_ROOT_INO_START, sih,
+            log_info->fine_log->log_head.next_page_, log_info->cur_tail);
     }
 
     sb->s_root = d_make_root(root_i);

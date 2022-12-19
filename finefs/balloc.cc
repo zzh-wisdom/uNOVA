@@ -847,6 +847,7 @@ int finefs_new_data_blocks(struct super_block *sb, struct finefs_inode *pi,
 // 分配新的用于log的block
 // 返回分配指定inode类型的block个数
 // zero为1表示新分配的空间需要清零
+// TODO: 支持不连续page分配
 int finefs_new_log_blocks(struct super_block *sb, struct finefs_inode *pi,
 	unsigned long *blocknr, unsigned int num, int zero, int cpuid)
 {
