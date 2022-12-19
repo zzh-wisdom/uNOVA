@@ -1404,7 +1404,7 @@ void finefs_evict_inode(struct inode *inode) {
         switch (inode->i_mode & S_IFMT) {
             case S_IFREG:
                 last_blocknr = finefs_get_last_blocknr(sb, sih);
-                rd_info("%s: file ino %lu", __func__, inode->i_ino);
+                rd_info("%s: file ino %lu, size: %lu", __func__, inode->i_ino, inode->i_size);
                 freed = finefs_delete_file_tree(sb, sih, 0, last_blocknr, true, true);
                 finefs_delete_dir_tree(sb, sih, false); // 删除内存的radix tree
                 break;
