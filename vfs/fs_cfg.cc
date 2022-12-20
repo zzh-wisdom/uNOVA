@@ -48,6 +48,11 @@ int fs_register_thread(int* proc_id) {
     if(atomic_load(&register_thread_num) >= fs_cpu_num) {
         r_error("register_thread_num %d >= fs_cpu_num %d", register_thread_num, fs_cpu_num);
     }
+    if(processor_id != -1) {
+        r_warning("has been fs_register_thread: %d", processor_id);
+        if(proc_id) *proc_id = processor_id;
+        return fs_cpu_ids[processor_id].id;
+    }
     processor_id = atomic_fetch_add(&register_thread_num, 1);
     processor_id = processor_id % fs_cpu_num;
     int core_id = fs_cpu_ids[processor_id].id;
