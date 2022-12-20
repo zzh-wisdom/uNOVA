@@ -436,7 +436,7 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags* o
     if (flags & __O_SYNC) flags |= O_DSYNC;
 
     if (flags & __O_TMPFILE) {
-        log_assert(0);
+        // log_assert(0);
         if ((flags & O_TMPFILE_MASK) != O_TMPFILE) return -EINVAL;
         if (!(acc_mode & MAY_WRITE)) return -EINVAL;
     } else if (flags & O_PATH) {
