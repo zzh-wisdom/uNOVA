@@ -729,7 +729,7 @@ int do_open(dentry *parent, qstr name, struct open_flags *op) {
     }
 
     if (!(op->open_flag & O_CREAT)) {
-        r_error("open fail, %s not exist.", name.name);
+        r_error("open fail, %s not exist. open flag: %d", name.name, op->open_flag);
         goto err;
     }
 

@@ -417,17 +417,17 @@ int nova_rebuild_dir_inode_tree(struct super_block *sb,
 	int ret;
 
 	NOVA_START_TIMING(rebuild_dir_t, rebuild_time);
-	rdv_proc("Rebuild dir %lu tree", ino);
+	r_info("Rebuild dir %lu tree", ino);
 
 	sih->pi_addr = pi_addr;
 
 	curr_p = pi->log_head;
 	if (curr_p == 0) {
 		r_error("Dir %lu log is NULL!", ino);
-		BUG();
+		log_assert(0);
 	}
 
-	rdv_proc("Log head 0x%lx, tail 0x%lx",
+	r_info("Log head 0x%lx, tail 0x%lx",
 				curr_p, pi->log_tail);
 
 	sih->log_pages = 1;
@@ -439,6 +439,7 @@ int nova_rebuild_dir_inode_tree(struct super_block *sb,
 
 		if (curr_p == 0) {
 			r_error("Dir %lu log is NULL!", ino);
+			log_assert(0);
 			BUG();
 		}
 
@@ -464,9 +465,10 @@ int nova_rebuild_dir_inode_tree(struct super_block *sb,
 			case DIR_LOG:
 				break;
 			default:
-				rd_error("%s: unknown type %d, 0x%lx",
+				r_error("%s: unknown type %d, 0x%lx",
 							__func__, type, curr_p);
 				log_assert(0);
+				continue;
 		}
 
 		entry = (struct nova_dentry *)nova_get_block(sb, curr_p);

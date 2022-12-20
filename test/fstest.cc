@@ -13,9 +13,17 @@
 #include <unordered_map>
 
 #include <time.h>
+#include <pthread.h>
 
 #include <libsyscall_intercept_hook_point.h>
 #include <dlfcn.h>
+
+void* simple_job(void* arg) {
+    int num = 1000000;
+    while(num--);
+    printf("simple_job  simple_job simple_job over.\n");
+    return nullptr;
+}
 
 int main(int argc, char* argv[]) {
 
@@ -49,6 +57,11 @@ int main(int argc, char* argv[]) {
     } else {
         printf("syscall Disable!\n");
     }
+
+    pthread_t thread_h;
+    ret = pthread_create(&thread_h, nullptr, simple_job, nullptr);
+    assert(ret == 0);
+    pthread_join(thread_h, nullptr);
 
     // Create topdir
     ret = mkdir(dir1.c_str(), mkdir_flag);

@@ -11,6 +11,9 @@ int main(int argc, char* argv[]) {
     };
     InitLog(argv[0], &log_cfg);
 
+    setenv("LD_PRELOAD", "./libnova_hook.so", 1);
+    printf("setenv\n");
+
     // rand 随机数种子
     int seed = time(nullptr);
     srand((unsigned int)seed);

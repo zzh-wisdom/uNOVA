@@ -1143,7 +1143,7 @@ static force_inline struct dentry *d_splice_alias(struct inode *inode, struct de
 	// }
 out:
 	// __d_add(dentry, inode);
-	return NULL;
+	return dentry;
 }
 
 // 返回的dentry已经被引用
@@ -1159,7 +1159,7 @@ static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool cre
     dentry *child = dentry_get_child(parent, qs, lock);
     if (child) return child;
     rd_warning("%s not in dentry hash, lookup from nvm", qs.name);
-    if (create == false) return nullptr; // TODO: 恢复时需要完善
+    // if (create == false) return nullptr; // TODO: 恢复时需要完善
 
     child = d_alloc(parent, &qs);
     if (unlikely(!child)) {
@@ -1169,9 +1169,14 @@ static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool cre
     struct inode *dir = parent->d_inode;
     dentry *old = dir->i_op->lookup(dir, child, 0);
     if (unlikely(old)) {
-        r_fatal("unexpected!, 还需要将child从parent的map中删除");
+        // r_fatal("unexpected!, 还需要将child从parent的map中删除");
+        // dentry_unref(child);
+        // child = old;
+    }
+    if(child->d_inode == nullptr && create == false) {
         dentry_unref(child);
-        child = old;
+        d_delete(child);
+        return nullptr;
     }
     return child;
 }

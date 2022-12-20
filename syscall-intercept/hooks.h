@@ -68,6 +68,8 @@ extern struct hook_operations hook_op_native;
 extern struct hook_operations hook_op_nova;
 extern struct hook_operations hook_op_finefs;
 
+void init_is_hook_flag();
+
 int wrapper_hook(long syscall_number,
                 long a0, long a1,
                 long a2, long a3,
