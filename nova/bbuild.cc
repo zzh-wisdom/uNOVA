@@ -218,7 +218,8 @@ static int nova_init_blockmap_from_inode(struct super_block *sb) {
         curr_p += sizeof(struct nova_range_node_lowhigh);
     }
 out:
-    nova_free_inode_log(sb, pi);
+    // TODO
+    // nova_free_inode_log(sb, pi);
     return ret;
 }
 
@@ -300,7 +301,8 @@ static int nova_init_inode_list_from_inode(struct super_block *sb) {
 
     rd_info("%s: %lu inode nodes", __func__, num_inode_node);
 out:
-    nova_free_inode_log(sb, pi);
+    // TODO:
+    // nova_free_inode_log(sb, pi);
     return ret;
 }
 
@@ -1255,7 +1257,7 @@ int nova_recovery(struct super_block *sb) {
     if (value) {
         r_info("NOVA: Normal shutdown");
     } else {
-        fatal << "TODO: Failure recovery";
+        error << "TODO: Failure recovery";
         // nova_dbg("NOVA: Failure recovery");
         // ret = alloc_bm(sb, initsize);
         // if (ret) goto out;

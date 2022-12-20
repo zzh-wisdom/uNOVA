@@ -77,6 +77,7 @@ ATTR_CONSTRUCTOR void preload(int argc, char **argv) {
 
     printf("preload ok\n");
 
+    init_is_hook_flag();
     intercept_hook_point = wrapper_hook;
 
 #if HOOK_REWRITE

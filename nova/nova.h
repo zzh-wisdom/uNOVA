@@ -673,7 +673,7 @@ static inline unsigned long get_nvmm(struct super_block *sb,
 		u64 curr;
 
 		curr = nova_get_addr_off(sbi, data);
-		rd_info("Entry ERROR: inode %lu, curr 0x%lx, pgoff %lu, "
+		r_error("Entry ERROR: inode %lu, curr 0x%lx, pgoff %lu, "
 			"entry pgoff %lu, num %u", sih->ino,
 			curr, pgoff, data->pgoff, data->num_pages);
 		pi = (struct nova_inode *)nova_get_block(sb, sih->pi_addr);

@@ -11,6 +11,7 @@
 
 #include <string>
 #include <unordered_map>
+#include "util/common.h"
 
 extern "C" {
 #include <dirent.h>  // used for file types in the getdents{,64}() functions
@@ -240,7 +241,7 @@ static inline int hook_getdents64(int fd, struct linux_dirent64 *dirp, int count
 // 返回1表示
 // mkdir时调用的似乎是SYS_create
 // opendir内部还会调用SYS_close
-int hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long a5, long *res) {
+static int hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long a5, long *res) {
     switch (syscall_number) {
         case SYS_mkdirat:
             // printf("=== SYS_mkdirat %s\n", (const char *)a1);
@@ -302,9 +303,9 @@ int hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long 
         case SYS_ioctl:
             // printf("SYS_ioctl %d\n", (int)a0);
             return hook_ioctl((int)a0, (int)a1, (unsigned long)a2, res);
-        case SYS_fadvise64:
-            // printf("SYS_fadvise64 %d\n", (int)a0);
-            return hook_fadvise64((int)a0, (loff_t )a1, (loff_t )a2, (int)a3, res);
+        // case SYS_fadvise64:
+        //     // printf("SYS_fadvise64 %d\n", (int)a0);
+        //     return hook_fadvise64((int)a0, (loff_t )a1, (loff_t )a2, (int)a3, res);
         case SYS_getdents:
             // printf("SYS_getdents %d\n", (int)a0);
             return hook_getdents((int)a0, (linux_dirent *)a1, (int)a2, res);
@@ -318,20 +319,82 @@ int hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long 
         default:
             // printf("=== SYS_unhook: %ld\n", syscall_number);
             // SYS_clone linux用来创建线程的
-            assert(syscall_number != SYS_fork && syscall_number != SYS_vfork);
+            // assert(syscall_number != SYS_fork && syscall_number != SYS_vfork);
             return -1;
     }
-    assert(false);
-    return 0;
+    exit(-1);
+    return -1;
 }
 
 // std::unordered_map<long, bool> reentrance_thread_map;
 
+
+        // case SYS_mkdirat:
+        // case SYS_mkdir:
+        // case SYS_rmdir:
+        // case SYS_open:
+        // case SYS_openat:
+        // case SYS_creat:
+        // case SYS_close:
+        // case SYS_write:
+        // case SYS_read:
+        // case SYS_lseek:
+        // case SYS_ftruncate:
+        // case SYS_truncate:
+        // case SYS_fsync:
+        // case SYS_unlink:
+        // case SYS_lstat:
+        // case SYS_stat:
+        // case SYS_fstat:
+        // case SYS_statfs:
+        // case SYS_access:
+        // case SYS_ioctl:
+        // case SYS_fadvise64:
+        // case SYS_getdents:
+        // case SYS_getdents64:
+static bool is_hook_flags[496]; // ATTR_PRIORITY_ONE
+
+void init_is_hook_flag() {
+    memset(is_hook_flags, 0, sizeof(is_hook_flags));
+    is_hook_flags[SYS_mkdirat] = 1;
+    is_hook_flags[SYS_mkdir] = 1;
+    is_hook_flags[SYS_rmdir] = 1;
+    is_hook_flags[SYS_open] = 1;
+    is_hook_flags[SYS_openat] = 1;
+    is_hook_flags[SYS_creat] = 1;
+    is_hook_flags[SYS_close] = 1;
+    is_hook_flags[SYS_write] = 1;
+    is_hook_flags[SYS_read] = 1;
+    is_hook_flags[SYS_lseek] = 1;
+    is_hook_flags[SYS_ftruncate] = 1;
+    is_hook_flags[SYS_truncate] = 1;
+    is_hook_flags[SYS_fsync] = 1;
+    is_hook_flags[SYS_unlink] = 1;
+    is_hook_flags[SYS_lstat] = 1;
+    is_hook_flags[SYS_stat] = 1;
+    is_hook_flags[SYS_fstat] = 1;
+    is_hook_flags[SYS_statfs] = 1;
+    is_hook_flags[SYS_access] = 1;
+    is_hook_flags[SYS_ioctl] = 1;
+    is_hook_flags[SYS_fadvise64] = 1;
+    is_hook_flags[SYS_getdents] = 1;
+    is_hook_flags[SYS_getdents64] = 1;
+}
+
+thread_local static int reentrance_flag = false;
+
 int wrapper_hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long a5,
                  long *res) {
-    int was_hooked;
+    // if(syscall_number == 273) return -1;
+    // if(syscall_number == __NR_madvise) return -1;
+    // if(syscall_number == __NR_exit) return -1;
+    // if(syscall_number == __NR_mmap) return -1;
+    // if(syscall_number == __NR_mprotect) return -1;
+    // if(syscall_number == __NR_munmap) return -1;
+    if(is_hook_flags[syscall_number] != 1) return -1;
+
+    int was_hooked = -1;
     // 防止重复进入
-    thread_local static int reentrance_flag = false;
     if (reentrance_flag) {
         return -1;
     }

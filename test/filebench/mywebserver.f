@@ -27,7 +27,7 @@ set $dir=/tmp/nova
 set $nfiles=1000
 set $meandirwidth=20
 set $filesize=cvar(type=cvar-gamma,parameters=mean:16384;gamma:1.5)
-set $nthreads=1
+set $nthreads=2
 set $iosize=1m
 set $meanappendsize=16k
 
@@ -74,4 +74,4 @@ define process name=filereader,instances=1
 
 echo  "Web-server Version 3.1 personality successfully loaded"
 
-run 10
+run 60
