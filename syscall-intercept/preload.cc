@@ -85,6 +85,6 @@ ATTR_CONSTRUCTOR void preload(int argc, char **argv) {
 }
 
 ATTR_DESTRUCTOR void destroy() {
-    // int ret = hook_op->fs_unmount(&hook_op->sb, hook_op->root_name);
-    // log_assert(ret == 0);
+    int ret = hook_op->fs_unmount(&hook_op->sb, hook_op->root_name);
+    log_assert(ret == 0);
 }

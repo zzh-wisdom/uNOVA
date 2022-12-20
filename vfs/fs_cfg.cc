@@ -24,7 +24,7 @@ pmem2_memcpy_fn pmem_memcpy_func;
 pmem2_drain_fn pmem_drain_func;
 
 void fs_cfg_init(pmem2_map* pmap, struct vfs_cfg* cfg) {
-    log_assert(!fs_cfg_inited);
+    // log_assert(!fs_cfg_inited);
     fs_numa_socket = cfg->numa_socket;
     fs_cpu_num = cfg->cpu_num;
     log_assert(fs_cpu_num <= FS_MAX_CPU_NUM);

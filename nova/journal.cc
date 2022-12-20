@@ -188,6 +188,7 @@ int nova_lite_journal_soft_init(struct super_block *sb)
 			continue;
 
 		/* We only allow up to two uncommited entries */
+		// TODO: why
 		temp = next_lite_journal(pair->journal_head);
 		if (pair->journal_tail == temp) {
 			nova_recover_lite_journal(sb, pair, 1);

@@ -185,7 +185,7 @@ static int nova_insert_range_node(struct nova_sb_info *sbi,
 	return 0;
 }
 
-inline int nova_insert_blocktree(struct nova_sb_info *sbi,
+int nova_insert_blocktree(struct nova_sb_info *sbi,
 	struct rb_root *tree, struct nova_range_node *new_node)
 {
 	int ret;
