@@ -2,6 +2,7 @@
 
 #include "finefs/super.h"
 #include "nova/super.h"
+#include "vfs/fs_cfg.h"
 
 typedef int (*init_fs_func_t)(struct super_block*, const std::string&, const std::string&,
                               vfs_cfg*);
@@ -16,8 +17,8 @@ ATTR_PRIORITY_ONE static std::unordered_map<std::string, init_fs_func_t> fs_init
 ATTR_PRIORITY_ONE const std::string ROOT_PREFIX = "/tmp/";
 
 static inline bool register_mounted_fs(const std::string& root, super_block* sb) {
-    auto it = vfs_root_2_sb.find(root);
-    if (it != vfs_root_2_sb.end()) return false;
+    // auto it = vfs_root_2_sb.find(root);
+    // if (it != vfs_root_2_sb.end()) return false;
     vfs_root_2_sb[root] = sb;
     return true;
 }
@@ -67,7 +68,7 @@ void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->bg_thread_cpu_id = 79;
 	cfg->measure_timing = 0;
 	cfg->start_fd = CFG_START_FD;
-	cfg->format = true;
+	cfg->format = false;
     cfg->log_block_occupy = 1.0/16;
     cfg->pmem_nt_threshold = 256;
 }
@@ -162,9 +163,10 @@ int fs_unmount(void** sb_, const std::string& root_path) {
     //     r_error("%s fail, %s is not a mounted fs.", __func__, root_path.c_str());
     //     return -1;
     // }
-
-    super_block* tmp = unregister_mounted_fs(sb->root_path);
-    log_assert(tmp == sb);
+    fs_register_thread(nullptr);
+    // 全局变量的析构顺序有问题
+    // super_block* tmp = unregister_mounted_fs(sb->root_path);
+    // log_assert(tmp == sb);
     dlog_assert(sb->root_path == root_path);
     rd_info("fs_unmount: %s\n", sb->root_path.c_str());
     sb->s_op->put_super(sb);

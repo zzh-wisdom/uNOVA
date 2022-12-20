@@ -17,6 +17,7 @@ int main(int argc, char* argv[]) {
 
     vfs_cfg fs_cfg;
     vfs_cfg_default_init(&fs_cfg);
+    fs_cfg.format = true;
 
     // numa环境
     SetSocketAndPolicy(fs_cfg.numa_socket, 1);
@@ -27,6 +28,11 @@ int main(int argc, char* argv[]) {
     super_block* sb = nullptr;
     ret = fs_mount((void**)&sb, dev_name, root_path, &fs_cfg);
     log_assert(ret == 0);
+
+    if(argc > 1) { // 重置文件系统
+        fs_unmount((void**)&sb, root_path);
+        return 0;
+    }
 
     fs_register_thread(nullptr);
 
