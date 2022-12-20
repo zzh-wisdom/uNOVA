@@ -351,70 +351,70 @@ static inline void set_default_opts(struct nova_sb_info *sbi) {
     sbi->map_id = 0;
 }
 
-// static void nova_root_check(struct super_block *sb, struct nova_inode *root_pi)
-// {
-// 	if (!S_ISDIR(le16_to_cpu(root_pi->i_mode)))
-// 		nova_warn("root is not a directory!\n");
-// }
+static void nova_root_check(struct super_block *sb, struct nova_inode *root_pi)
+{
+	if (!S_ISDIR(le16_to_cpu(root_pi->i_mode)))
+		r_warning("root is not a directory!\n");
+}
 
-// int nova_check_integrity(struct super_block *sb,
-// 			  struct nova_super_block *super)
-// {
-// 	struct nova_super_block *super_redund;
+int nova_check_integrity(struct super_block *sb,
+			  struct nova_super_block *super)
+{
+	struct nova_super_block *super_redund;
 
-// 	super_redund =
-// 		(struct nova_super_block *)((char *)super + NOVA_SB_SIZE);
+	super_redund =
+		(struct nova_super_block *)((char *)super + NOVA_SB_SIZE);
 
-// 	/* Do sanity checks on the superblock */
-// 	if (le32_to_cpu(super->s_magic) != NOVA_SUPER_MAGIC) {
-// 		if (le32_to_cpu(super_redund->s_magic) != NOVA_SUPER_MAGIC) {
-// 			printk(KERN_ERR "Can't find a valid nova partition\n");
-// 			goto out;
-// 		} else {
-// 			nova_warn
-// 				("Error in super block: try to repair it with "
-// 				"the redundant copy");
-// 			/* Try to auto-recover the super block */
-// 			if (sb)
-// 				nova_memunlock_super(sb, super);
-// 			memcpy(super, super_redund,
-// 				sizeof(struct nova_super_block));
-// 			if (sb)
-// 				nova_memlock_super(sb, super);
-// 			nova_flush_buffer(super, sizeof(*super), false);
-// 			nova_flush_buffer((char *)super + NOVA_SB_SIZE,
-// 				sizeof(*super), false);
+	/* Do sanity checks on the superblock */
+	if (le32_to_cpu(super->s_magic) != NOVA_SUPER_MAGIC) {
+		if (le32_to_cpu(super_redund->s_magic) != NOVA_SUPER_MAGIC) {
+			r_error("Can't find a valid nova partition\n");
+			goto out;
+		} else {
+			rd_warning
+				("Error in super block: try to repair it with "
+				"the redundant copy");
+			/* Try to auto-recover the super block */
+			if (sb)
+				nova_memunlock_super(sb, super);
+			memcpy(super, super_redund,
+				sizeof(struct nova_super_block));
+			if (sb)
+				nova_memlock_super(sb, super);
+			nova_flush_buffer(super, sizeof(*super), false);
+			nova_flush_buffer((char *)super + NOVA_SB_SIZE,
+				sizeof(*super), false);
 
-// 		}
-// 	}
+		}
+	}
 
-// 	/* Read the superblock */
-// 	if (nova_calc_checksum((u8 *)super, NOVA_SB_STATIC_SIZE(super))) {
-// 		if (nova_calc_checksum((u8 *)super_redund,
-// 					NOVA_SB_STATIC_SIZE(super_redund))) {
-// 			printk(KERN_ERR "checksum error in super block\n");
-// 			goto out;
-// 		} else {
-// 			nova_warn
-// 				("Error in super block: try to repair it with "
-// 				"the redundant copy");
-// 			/* Try to auto-recover the super block */
-// 			if (sb)
-// 				nova_memunlock_super(sb, super);
-// 			memcpy(super, super_redund,
-// 				sizeof(struct nova_super_block));
-// 			if (sb)
-// 				nova_memlock_super(sb, super);
-// 			nova_flush_buffer(super, sizeof(*super), false);
-// 			nova_flush_buffer((char *)super + NOVA_SB_SIZE,
-// 				sizeof(*super), false);
-// 		}
-// 	}
+	/* Read the superblock */
+	if (nova_calc_checksum((u8 *)super, NOVA_SB_STATIC_SIZE(super))) {
+		if (nova_calc_checksum((u8 *)super_redund,
+					NOVA_SB_STATIC_SIZE(super_redund))) {
+			r_error("checksum error in super block\n");
+			goto out;
+		} else {
+			r_warning
+				("Error in super block: try to repair it with "
+				"the redundant copy");
+			/* Try to auto-recover the super block */
+			if (sb)
+				nova_memunlock_super(sb, super);
+			memcpy(super, super_redund,
+				sizeof(struct nova_super_block));
+			if (sb)
+				nova_memlock_super(sb, super);
+			nova_flush_buffer(super, sizeof(*super), false);
+			nova_flush_buffer((char *)super + NOVA_SB_SIZE,
+				sizeof(*super), false);
+		}
+	}
 
-// 	return 1;
-// out:
-// 	return 0;
-// }
+	return 1;
+out:
+	return 0;
+}
 
 static struct inode *nova_alloc_inode(struct super_block *sb) {
     rdv_proc("%s", __func__);
@@ -787,33 +787,34 @@ static int nova_fill_super(struct super_block *sb, bool format) {
     }
 
     // 恢复
-    // nova_dbg_verbose("checking physical address 0x%016llx for nova image\n",
-    // 	  (u64)sbi->phys_addr);
+    rd_info("checking physical address 0x%016llx for nova image\n",
+    	  (u64)sbi->virt_addr);
 
-    // super = nova_get_super(sb);
+    super = nova_get_super(sb);
 
-    // if (nova_check_integrity(sb, super) == 0) {
-    // 	nova_dbg("Memory contains invalid nova %x:%x\n",
-    // 			le32_to_cpu(super->s_magic), NOVA_SUPER_MAGIC);
-    // 	goto out;
-    // }
+    // 检查magic和校验和
+    if (nova_check_integrity(sb, super) == 0) {
+    	rd_info("Memory contains invalid nova %x:%x\n",
+    			le32_to_cpu(super->s_magic), NOVA_SUPER_MAGIC);
+    	goto out;
+    }
 
-    // if (nova_lite_journal_soft_init(sb)) {
-    // 	retval = -EINVAL;
-    // 	printk(KERN_ERR "Lite journal initialization failed\n");
-    // 	goto out;
-    // }
+    if (nova_lite_journal_soft_init(sb)) {
+    	retval = -EINVAL;
+    	r_error("Lite journal initialization failed\n");
+    	goto out;
+    }
 
-    // blocksize = le32_to_cpu(super->s_blocksize);
-    // nova_set_blocksize(sb, blocksize);
+    blocksize = le32_to_cpu(super->s_blocksize);
+    nova_set_blocksize(sb, blocksize);
 
-    // nova_dbg_verbose("blocksize %lu\n", blocksize);
+    r_info("blocksize %lu\n", blocksize);
 
-    // /* Read the root inode */
-    // root_pi = nova_get_inode_by_ino(sb, NOVA_ROOT_INO);
+    /* Read the root inode */
+    root_pi = nova_get_inode_by_ino(sb, NOVA_ROOT_INO);
 
-    // /* Check that the root inode is in a sane state */
-    // nova_root_check(sb, root_pi);
+    /* Check that the root inode is in a sane state */
+    nova_root_check(sb, root_pi);
 
     /* Set it all up.. */
 setup_sb:
@@ -828,8 +829,8 @@ setup_sb:
     /* If the FS was not formatted on this mount, scan the meta-data after
      * truncate list has been processed */
     if ((sbi->s_mount_opt & NOVA_MOUNT_FORMAT) == 0) {
-        fatal << "TODO: recovery";
-        // nova_recovery(sb);
+        info << "nova recovery...";
+        nova_recovery(sb);
     }
 
     root_i = nova_iget(sb, NOVA_ROOT_INO);

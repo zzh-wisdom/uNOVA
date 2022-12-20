@@ -160,5 +160,25 @@ int main(int argc, char* argv[]) {
     log_assert(ret == 0);
 
     fs_unmount((void**)&sb, root_path);
+
+    fs_cfg.format = false;
+    ret = fs_mount((void**)&sb, dev_name, root_path, &fs_cfg);
+    log_assert(ret == 0);
+    ret = vfs_mkdir("/tmp/nova/files", 0);
+    log_assert(ret != 0);
+    ret = vfs_mkdir("/tmp/nova/dir1", 0);
+    log_assert(ret != 0);
+    ret = vfs_mkdir("/tmp/nova/dir1/d1", 0);
+    log_assert(ret != 0);
+    ret = vfs_mkdir("/tmp/nova/dir1/d2", 0);
+    log_assert(ret != 0);
+    fd = vfs_open("/tmp/nova/files/f1", O_RDWR, 666);
+    log_assert(fd > 0);
+    vfs_close(fd);
+
+    ret = vfs_ls("/tmp/nova/");
+    log_assert(ret == 0);
+    fs_unmount((void**)&sb, root_path);
+
     return 0;
 }

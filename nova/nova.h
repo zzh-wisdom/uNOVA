@@ -32,6 +32,7 @@
 #include "util/rbtree.h"
 #include "util/log.h"
 #include "util/radix-tree.h"
+#include "util/crc.h"
 
 #define PAGE_SHIFT	12
 #define PAGE_SIZE	(1UL << PAGE_SHIFT)
@@ -274,16 +275,16 @@ static inline __le32 nova_mask_flags(umode_t mode, __le32 flags)
 		return flags & cpu_to_le32(NOVA_OTHER_FLMASK);
 }
 
-// static inline int nova_calc_checksum(u8 *data, int n)
-// {
-// 	u16 crc = 0;
+static inline int nova_calc_checksum(u8 *data, int n)
+{
+	u16 crc = 0;
 
-// 	crc = crc16(~0, (__u8 *)data + sizeof(__le16), n - sizeof(__le16));
-// 	if (*((__le16 *)data) == cpu_to_le16(crc))
-// 		return 0;
-// 	else
-// 		return 1;
-// }
+	crc = crc16(~0, (__u8 *)data + sizeof(__le16), n - sizeof(__le16));
+	if (*((__le16 *)data) == cpu_to_le16(crc))
+		return 0;
+	else
+		return 1;
+}
 
 struct nova_range_node_lowhigh {
 	__le64 range_low;  // 保存到NVM时，高1bytes保存cpuid
@@ -895,7 +896,7 @@ extern int nova_new_log_blocks(struct super_block *sb, struct nova_inode *pi,
 extern unsigned long nova_count_free_blocks(struct super_block *sb);
 int nova_search_inodetree(struct nova_sb_info *sbi,
 	unsigned long ino, struct nova_range_node **ret_node);
-inline int nova_insert_blocktree(struct nova_sb_info *sbi,
+int nova_insert_blocktree(struct nova_sb_info *sbi,
 	struct rb_root *tree, struct nova_range_node *new_node);
 int nova_insert_inodetree(struct nova_sb_info *sbi,
 	struct nova_range_node *new_node, int cpu);
@@ -1027,8 +1028,8 @@ extern struct super_block *nova_read_super(struct super_block *sb, void *data,
 	int silent);
 extern int nova_statfs(struct dentry *d, struct kstatfs *buf);
 extern int nova_remount(struct super_block *sb, int *flags, char *data);
-// int nova_check_integrity(struct super_block *sb,
-// 	struct nova_super_block *super);
+int nova_check_integrity(struct super_block *sb,
+	struct nova_super_block *super);
 // void *nova_ioremap(struct super_block *sb, phys_addr_t phys_addr,
 // 	ssize_t size);
 

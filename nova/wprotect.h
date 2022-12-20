@@ -28,6 +28,7 @@
 #include "nova/nova.h"
 
 #include "util/log.h"
+#include "util/cpu.h"
 
 /* nova_memunlock_super() before calling! */
 // 同步冗余的super block
@@ -35,12 +36,10 @@ static inline void nova_sync_super(struct nova_super_block *ps)
 {
 	u16 crc = 0;
 
-	// r_error("%s should not run.\n", __func__);
-	// ps->s_wtime = cpu_to_le32(get_seconds());
-	ps->s_wtime = cpu_to_le32(0);
+	ps->s_wtime = cpu_to_le32(GetTsSec());
 	ps->s_sum = 0;
-	// crc = crc16(~0, (__u8 *)ps + sizeof(__le16),
-	// 		NOVA_SB_STATIC_SIZE(ps) - sizeof(__le16));
+	crc = crc16(~0, (__u8 *)ps + sizeof(__le16),
+			NOVA_SB_STATIC_SIZE(ps) - sizeof(__le16));
 	ps->s_sum = cpu_to_le16(crc);
 	/* Keep sync redundant super block */
 	memcpy((void *)ps + NOVA_SB_SIZE, (void *)ps,
