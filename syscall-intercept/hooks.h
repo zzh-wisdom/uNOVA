@@ -67,6 +67,7 @@ extern struct hook_operations* hook_op;
 extern struct hook_operations hook_op_native;
 extern struct hook_operations hook_op_nova;
 extern struct hook_operations hook_op_finefs;
+extern int hook_start_fd;
 
 void init_is_hook_flag();
 

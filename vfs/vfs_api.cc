@@ -68,7 +68,7 @@ void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->bg_thread_cpu_id = 79;
 	cfg->measure_timing = 0;
 	cfg->start_fd = CFG_START_FD;
-	cfg->format = false;
+	cfg->format = true;
     cfg->log_block_occupy = 1.0/16;
     cfg->pmem_nt_threshold = 256;
 }
@@ -476,7 +476,7 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags* o
 
 // SYSCALL_DEFINE3(open
 int vfs_open(const char* filename, int flags, mode_t mode) {
-    r_info("%s: %s", __func__, filename);
+    r_info("cpu-%d, %s: %s", get_processor_id(), __func__, filename);
     // log_assert((flags & O_TRUNC) == 0);  // TODO: 不支持
     struct open_flags op;
     int fd = build_open_flags(flags, mode, &op);
@@ -570,9 +570,9 @@ int vfs_stat(const char* path, struct stat* buf) {
             return -ENOENT;
         }
         child = get_dentry_by_hash(parent, last, false, true);
+        dentry_unref(parent);
         if (child == nullptr) {
             rd_error("%s fail, file %s not exist.", __func__, path + name_start);
-            dentry_unref(parent);
             return -ENOENT;
         }
         dlog_assert(child->d_inode);

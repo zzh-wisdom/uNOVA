@@ -177,6 +177,7 @@ void destroy_super(struct super_block *sb) {
 
     d_put_recursive(sb->s_root);
     int ret = dentry_unref(sb->s_root);
+    printf("ret: %d\n", ret);
     dlog_assert(ret == 0);
     FREE(sb);
 }
@@ -355,6 +356,7 @@ struct inode *iget_or_alloc(struct super_block *sb, unsigned long ino) {
 
 again:
     inode = inode_get_by_ino(sb, ino);
+    dlog_assert(inode == nullptr);
     if (inode == nullptr) goto alloc;
     spin_lock(&inode->i_lock);
     if (inode->i_state == 1) {
@@ -494,13 +496,21 @@ struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name) {
  * Allocates a dentry. It returns %NULL if there is insufficient memory
  * available. On a success the dentry is returned. The name passed in is
  * copied and the copy passed in may be reused after this call.
- * 返回的dentry已经引用
+ * 返回的dentry已经引用, 如果是新建的，会持有锁
  */
-struct dentry *d_alloc(struct dentry *parent, const struct qstr *name) {
+struct dentry *d_alloc(struct dentry *parent, const struct qstr *name, bool *is_new) {
     struct dentry *dentry = __d_alloc(parent->d_sb, name);
-    if (!dentry) return NULL;
+    log_assert(dentry);
+    // if (!dentry) return NULL;
     dentry->d_flags |= DCACHE_RCUACCESS;
-    dentry_insert_child(parent, dentry);
+    *is_new = true;
+    struct dentry* ret = dentry_insert_child(parent, dentry);
+    if(ret) {
+        dlog_assert(dentry->d_count == 1);
+        d_delete(dentry);
+        dentry = ret;
+        *is_new = false;
+    }
     return dentry;
 }
 
@@ -695,8 +705,12 @@ void d_delete(struct dentry *dentry) {
     struct inode *inode = dentry->d_inode;
     struct dentry *parent = dentry->d_parent;
     // 父母中删除
-    struct dentry *tmp = dentry_delete_child(parent, &dentry->d_name, false);
-    dlog_assert(tmp == dentry);
+    if(parent && parent != dentry) {
+        struct dentry *tmp = dentry_delete_child(parent, &dentry->d_name, false);
+        dlog_assert(tmp == dentry);
+    } else {
+        dentry->d_parent = nullptr;
+    }
 
     // spin_lock(&inode->i_lock);
     // we should be the only user,
@@ -719,25 +733,30 @@ int do_open(dentry *parent, qstr name, struct open_flags *op) {
     file *file;
     inode_lock(dir);
 
-    dentry *cur = get_dentry_by_hash(parent, name, true, true);
-    if (cur->d_inode && is_dir(cur)) {
-        r_error("%s fail, %s exist and is a dir.", __func__, name.name);
-        goto out;
-    }
-    if (cur->d_inode) {  // 文件已经存在
-        goto succ;
-    }
-
-    if (!(op->open_flag & O_CREAT)) {
+    bool is_create = (op->open_flag & O_CREAT);
+    dentry *cur = get_dentry_by_hash(parent, name, is_create, true);
+    if(cur) {
+        if (cur->d_inode && is_dir(cur)) {
+            r_error("%s fail, %s exist and is a dir.", __func__, name.name);
+            goto err1;
+        }
+        if(cur->d_inode) { // 文件已经存在
+            goto succ;
+        }
+    } else { // 不创建文件
         r_error("open fail, %s not exist. open flag: %d", name.name, op->open_flag);
         goto err;
     }
 
+    // 创建文件
+    dlog_assert(cur->d_inode == nullptr);
     rd_info("create file:%s hash %d, inode->mode: %d\n", cur->d_name.name, cur->d_name.hash, op->mode);
     // 需要新建文件
     ret = dir->i_op->create(dir, cur, op->mode, op->open_flag & O_EXCL);
     if (ret != 0) {
         r_error("dir->i_op->create %s fail, ret = %d", name.name, ret);
+        dentry_unref(cur);
+        d_delete(cur);
         goto err;
     }
 
@@ -745,15 +764,11 @@ succ:
     fd = vfs_get_fd();
     file = file_alloc(fd, op->open_flag, cur);
     vfs_file_insert(file);
-out:
+err1:
     dentry_unref(cur);
+err:
     inode_unlock(dir);
     return fd;
-err:
-    dentry_unref(cur);
-    d_delete(cur);
-    inode_unlock(dir);
-    return -1;
 }
 
 int do_close(int fd) {

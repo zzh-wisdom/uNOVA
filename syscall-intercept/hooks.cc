@@ -381,7 +381,7 @@ void init_is_hook_flag() {
     is_hook_flags[SYS_getdents64] = 1;
 }
 
-thread_local static int reentrance_flag = false;
+// thread_local static int reentrance_flag = false;
 
 int wrapper_hook(long syscall_number, long a0, long a1, long a2, long a3, long a4, long a5,
                  long *res) {
@@ -392,8 +392,14 @@ int wrapper_hook(long syscall_number, long a0, long a1, long a2, long a3, long a
     // if(syscall_number == __NR_mprotect) return -1;
     // if(syscall_number == __NR_munmap) return -1;
     if(is_hook_flags[syscall_number] != 1) return -1;
+    if((syscall_number == 257) && (a0 == 4294967196ul)  // a1=140737351986384
+        && (1) && (a2==524288) && (a3==0)) return -1;
+    if((syscall_number == __NR_openat) && a0 < 10000 && a0 != AT_FDCWD) return -1;
+    if((syscall_number == __NR_read) && a0 < 10000) return -1;
+    if((syscall_number == __NR_close) && a0 < 10000) return -1;
 
     int was_hooked = -1;
+    thread_local static int reentrance_flag = false; // 这个变量也需要分配的，所以在新建线程时可能会出现问题
     // 防止重复进入
     if (reentrance_flag) {
         return -1;

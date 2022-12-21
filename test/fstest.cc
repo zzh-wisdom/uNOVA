@@ -58,10 +58,15 @@ int main(int argc, char* argv[]) {
         printf("syscall Disable!\n");
     }
 
-    pthread_t thread_h;
-    ret = pthread_create(&thread_h, nullptr, simple_job, nullptr);
-    assert(ret == 0);
-    pthread_join(thread_h, nullptr);
+    pthread_t thread_hs[32];
+    for(int i = 0; i < 32; ++i) {
+        ret = pthread_create(&thread_hs[i], nullptr, simple_job, nullptr);
+        assert(ret == 0);
+    }
+
+    for(int i = 0; i < 32; ++i) {
+        pthread_join(thread_hs[i], nullptr);
+    }
 
     // Create topdir
     ret = mkdir(dir1.c_str(), mkdir_flag);
@@ -91,7 +96,7 @@ int main(int argc, char* argv[]) {
     assert(fd1 > 0);
     printf("open %s, fd = %d\n", files_f1.c_str(), fd1);
     int fd2 = open(files_f1.c_str(), O_RDWR | O_CREAT, 666);  // 要sudo
-    // printf("errno=%d\n", errno); // EACCES
+    printf("errno=%d\n", errno); // EACCES
     assert(fd2 > 0);
     printf("open %s, fd = %d\n", files_f1.c_str(), fd2);
     ret = close(fd1);
@@ -104,7 +109,7 @@ int main(int argc, char* argv[]) {
     assert(ret == 0);
     printf("open %s, fd = %d\n", files_f2.c_str(), fd1);
 
-    // 读写测试
+    // // 读写测试
     int fd_w = open(files_f1.c_str(), O_RDWR | O_CREAT, 0);
     assert(fd_w > 0);
     int fd_r = open(files_f1.c_str(), O_RDWR | O_CREAT, 0);
