@@ -711,7 +711,7 @@ struct dentry {
 };
 
 struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name);
-struct dentry *d_alloc(struct dentry *parent, const struct qstr *name);
+struct dentry *d_alloc(struct dentry *parent, const struct qstr *name, bool *is_new);
 void d_put(struct dentry *parent);
 void d_put_recursive(struct dentry *parent);
 int d_show(const char* path, struct dentry *parent);
@@ -775,16 +775,17 @@ static force_inline dentry *dentry_get_root(struct super_block *sb) {
     return sb->s_root;
 }
 
-static force_inline void dentry_insert_child(dentry *parent, dentry *child) {
+// 插入成功返回nullptr
+// 否则返回相同名字的dentry
+// 返回的已经引用
+static force_inline dentry* dentry_insert_child(dentry *parent, dentry *child) {
+    dentry* ret = nullptr;
     spin_lock(&parent->d_lock);
     /*
      * don't need child lock because it is not subject
      * to concurrency here
      */
     // __dget_dlock(parent);
-    dentry_ref(parent);
-    dentry_ref(child);
-    child->d_parent = parent;
     struct qstr *name = &child->d_name;
     auto it = parent->d_subdirs.find(name->hash);
     struct list_head *head = nullptr;
@@ -792,15 +793,28 @@ static force_inline void dentry_insert_child(dentry *parent, dentry *child) {
         struct dentry *tmp = nullptr;
         head = &parent->d_subdirs[name->hash];
         list_for_each_entry(tmp, head, d_child) {
-            log_assert(tmp->d_name.len != name->len ||
-                       strncmp(tmp->d_name.name, name->name, name->len) != 0);
+            if(tmp->d_name.len == name->len &&
+                       strncmp(tmp->d_name.name, name->name, name->len) == 0) {
+                ret = tmp;
+                dentry_ref(ret);
+                break;
+            }
         }
     } else {
         head = &parent->d_subdirs[name->hash];
         INIT_LIST_HEAD(head);
     }
-    list_add(&child->d_child, head);
+    if(ret == nullptr) {
+        list_add(&child->d_child, head);
+        // 后续还要初始化，因此需要加锁
+        spin_lock(&child->d_lock);
+        dlog_assert(child->d_inode == nullptr);
+        child->d_parent = parent;
+        dentry_ref(parent);
+        dentry_ref(child);
+    }
     spin_unlock(&parent->d_lock);
+    return ret;
 }
 
 // 并取消对父母的引用
@@ -1147,6 +1161,7 @@ out:
 }
 
 // 返回的dentry已经被引用
+// 对于非创建的调用方式，存在则返回非null
 static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool create, bool lock) {
     if (strncmp(qs.name, ".", 1) == 0) {
         dentry_ref(parent);
@@ -1157,27 +1172,47 @@ static force_inline dentry *get_dentry_by_hash(dentry *parent, qstr qs, bool cre
         return parent->d_parent;
     }
     dentry *child = dentry_get_child(parent, qs, lock);
-    if (child) return child;
+    if (child) {
+        // 可能还在初始化中
+        spin_lock(&child->d_lock);
+        log_assert(child->d_inode); // 有可能为null的
+        spin_unlock(&child->d_lock);
+        return child;
+    }
     rd_warning("%s not in dentry hash, lookup from nvm", qs.name);
     // if (create == false) return nullptr; // TODO: 恢复时需要完善
 
-    child = d_alloc(parent, &qs);
+    bool is_new = true;
+    child = d_alloc(parent, &qs, &is_new);
     if (unlikely(!child)) {
         r_error("no memory\n");
         return nullptr;
     }
-    struct inode *dir = parent->d_inode;
-    dentry *old = dir->i_op->lookup(dir, child, 0);
-    if (unlikely(old)) {
-        // r_fatal("unexpected!, 还需要将child从parent的map中删除");
-        // dentry_unref(child);
-        // child = old;
+    if(is_new) {
+        struct inode *dir = parent->d_inode;
+        dentry *old = dir->i_op->lookup(dir, child, 0);
+        if (unlikely(old)) {
+        //     r_fatal("unexpected!, 还需要将child从parent的map中删除");
+        //     dentry_unref(child);
+        //     child = old;
+        }
+        if(child->d_inode) { // 初始化完成
+            spin_unlock(&child->d_lock);
+        } else if(create == false) {
+            spin_unlock(&child->d_lock);
+            dentry_unref(child);
+            d_delete(child);
+            return nullptr;
+        } else {
+            dlog_assert(child->d_inode == nullptr);
+            spin_unlock(&child->d_lock);
+        }
+    } else {
+        spin_lock(&child->d_lock);
+        log_assert(child->d_inode); // 有可能为null的
+        spin_unlock(&child->d_lock);
     }
-    if(child->d_inode == nullptr && create == false) {
-        dentry_unref(child);
-        d_delete(child);
-        return nullptr;
-    }
+
     return child;
 }
 
