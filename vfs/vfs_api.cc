@@ -476,7 +476,7 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags* o
 
 // SYSCALL_DEFINE3(open
 int vfs_open(const char* filename, int flags, mode_t mode) {
-    r_info("cpu-%d, %s: %s", get_processor_id(), __func__, filename);
+    rd_info("cpu-%d, %s: %s", get_processor_id(), __func__, filename);
     // log_assert((flags & O_TRUNC) == 0);  // TODO: 不支持
     struct open_flags op;
     int fd = build_open_flags(flags, mode, &op);

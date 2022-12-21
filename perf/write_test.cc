@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) {
         void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
     	assert(handle);
     } else {
-        exit(-1);
+        // exit(-1);
     }
 
     std::string mntdir;
@@ -51,8 +51,8 @@ int main(int argc, char* argv[]) {
         mntdir = "/tmp/nova";
     } else if (strcmp(argv[1], "finefs") == 0) {
         mntdir = "/tmp/finefs";
-    } else {
-        exit(-1);
+    } else if(strcmp(argv[1], "ext4") == 0){
+        mntdir = "/mnt/pmem2/test";
     }
     int bs = atoi(argv[2]);
     uint64_t OP = atoi(argv[3]);
@@ -71,10 +71,10 @@ int main(int argc, char* argv[]) {
     int fd;
 
     ret = mkdir(dir1.c_str(), mkdir_flag);
-    assert(ret == 0);
-    fd = open(dir1_file.c_str(), O_RDWR | O_CREAT, 666);
+    assert(ret == 0 || errno == EEXIST);
+    fd = open(dir1_file.c_str(), O_RDWR | O_CREAT | O_DIRECT, 666);
     assert(fd > 0);
-    void* buf = malloc(bs);
+    void* buf = aligned_alloc(4096, bs);
     memset(buf, 0x3f, bs);
 
     // load append
@@ -106,7 +106,7 @@ int main(int argc, char* argv[]) {
            OP / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
 
     // read
-    void* read_buf = malloc(bs);
+    void* read_buf = aligned_alloc(4096, bs);
     uint64_t start_ns = GetTsNsec();
     for(int i = 0; i < OP; ++i) {
         if(i % bs_num == 0) {

@@ -121,3 +121,14 @@ add_executable(perf_write perf/write_test.cc)
 target_link_libraries(perf_write
     pthread syscall_intercept dl
 )
+
+file(GLOB MYFILEBENCH_SRC
+    ${PROJECT_SOURCE_DIR}/myfilebench/filebench.cc
+    ${UTIL_SRC}
+)
+add_executable(fileserver myfilebench/fileserver.cc ${MYFILEBENCH_SRC})
+target_link_libraries(fileserver
+    pthread syscall_intercept dl
+    glog numa pmem2
+)
+

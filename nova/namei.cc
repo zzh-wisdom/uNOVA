@@ -51,7 +51,7 @@ static struct dentry *nova_lookup(struct inode *dir, struct dentry *dentry,
 	}
 
 	ino = nova_inode_by_name(dir, &dentry->d_name, &de);
-	r_info("cpu-%d, %s: ino %lu, name %s", get_processor_id(),
+	rd_info("cpu-%d, %s: ino %lu, name %s", get_processor_id(),
 		__func__, ino, dentry->d_name.name);
 	if (ino) {
 		// 从NVM重建该inode

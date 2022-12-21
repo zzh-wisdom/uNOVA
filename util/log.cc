@@ -6,6 +6,7 @@ static bool is_init = false;
 
 void InitLog(const char* argv0, LogCfg* cfg) {
     if(is_init) return;
+    is_init = true;
     FLAGS_logtostderr = cfg->is_log_to_stderr;
     FLAGS_v = cfg->vlog_level;
     FLAGS_minloglevel = cfg->min_log_level;
