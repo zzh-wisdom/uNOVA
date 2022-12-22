@@ -144,3 +144,9 @@ target_link_libraries(varmail
     pthread syscall_intercept dl
     glog numa pmem2
 )
+
+add_executable(webproxy myfilebench/webproxy.cc ${MYFILEBENCH_SRC})
+target_link_libraries(webproxy
+    pthread syscall_intercept dl
+    glog numa pmem2
+)
