@@ -126,8 +126,15 @@ file(GLOB MYFILEBENCH_SRC
     ${PROJECT_SOURCE_DIR}/myfilebench/filebench.cc
     ${UTIL_SRC}
 )
+
 add_executable(fileserver myfilebench/fileserver.cc ${MYFILEBENCH_SRC})
 target_link_libraries(fileserver
+    pthread syscall_intercept dl
+    glog numa pmem2
+)
+
+add_executable(webserver myfilebench/webserver.cc ${MYFILEBENCH_SRC})
+target_link_libraries(webserver
     pthread syscall_intercept dl
     glog numa pmem2
 )

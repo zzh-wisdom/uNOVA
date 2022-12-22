@@ -900,7 +900,7 @@ enum alloc_type {
 #define MMAP_ADDR(p) ((p) & (PAGE_MASK))
 
 static inline void finefs_update_tail(struct finefs_inode *pi, u64 new_tail) {
-    log_assert(0);
+    // log_assert(0);
     timing_t update_time;
 
     FINEFS_START_TIMING(update_tail_t, update_time);

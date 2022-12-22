@@ -806,14 +806,20 @@ ssize_t do_write(int fd, const char *buf, size_t count) {
     }
     log_assert(inode_is_valid(file->f_inode));
     loff_t pos = file_pos_read(file);
+    if(file->f_flags & O_APPEND) {
+        inode_lock(file->f_inode);
+        pos = file->f_inode->i_size;
+    }
     rd_info("%s src_buf=%p, count=%lu, pos=%ld", __func__, buf, count, pos);
-
     ssize_t ret = -1;
     if (file->f_op->read)
         ret = file->f_op->write(file, buf, count, &pos);
     else
         ret = EINVAL;
     if (ret >= 0) file_pos_write(file, pos);
+    if(file->f_flags & O_APPEND) {
+        inode_unlock(file->f_inode);
+    }
     return ret;
 }
 

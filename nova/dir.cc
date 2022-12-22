@@ -417,7 +417,7 @@ int nova_rebuild_dir_inode_tree(struct super_block *sb,
 	int ret;
 
 	NOVA_START_TIMING(rebuild_dir_t, rebuild_time);
-	r_info("Rebuild dir %lu tree", ino);
+	rd_info("Rebuild dir %lu tree", ino);
 
 	sih->pi_addr = pi_addr;
 
@@ -427,7 +427,7 @@ int nova_rebuild_dir_inode_tree(struct super_block *sb,
 		log_assert(0);
 	}
 
-	r_info("Log head 0x%lx, tail 0x%lx",
+	rd_info("Log head 0x%lx, tail 0x%lx",
 				curr_p, pi->log_tail);
 
 	sih->log_pages = 1;

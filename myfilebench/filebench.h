@@ -28,10 +28,10 @@ static int cpu_num = 0;
 
 static inline void SetEnv() {
     SetSocketAndPolicy(numa_socket, 1);
-    for(int i = 26; i < 40; ++i) {
+    for(int i = 24; i < 40; ++i) {
 		cpu_ids[cpu_num++] = i;
 	}
-	for(int i = 60; i < 78; ++i) {
+	for(int i = 60; i < 76; ++i) {
 		cpu_ids[cpu_num++] = i;
 	}
     srand(time(nullptr));

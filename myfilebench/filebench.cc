@@ -11,7 +11,7 @@ int InitFileSet(string dir, int files, size_t file_size, size_t iosize, const ch
             // printf("dir %s, file %d: %s\n", dir.c_str(), i, name);
             string tmp_file = dir + string(name);
             int fd = open(tmp_file.c_str(), OPEN_CREAT_FLAG, CREATE_MODE);
-            assert(fd > 0);
+            log_assert(fd > 0);
             FileWrite(fd, buf, iosize, file_size);
             close(fd);
         }
@@ -23,7 +23,7 @@ int InitFileSet(string dir, int files, size_t file_size, size_t iosize, const ch
         // printf("dir %s, dir %d: %s\n", dir.c_str(), i, name);
         string tmp_dir = dir + string(name);
         ret = mkdir(tmp_dir.c_str(), MKDIR_FLAG);
-        assert(ret == 0 || errno == EEXIST);
+        log_assert(ret == 0 || errno == EEXIST);
         depth = InitFileSet(tmp_dir, (files+DIR_WIDTH-1)/DIR_WIDTH, file_size, iosize, buf);
     }
     return depth + 1;
