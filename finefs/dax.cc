@@ -18,7 +18,7 @@
 
 #include "util/cpu.h"
 
-static force_inline size_t finefs_page_write_entry_read(finefs_file_page_entry* page_entry,
+static force_inline size_t finefs_page_write_entry_read(super_block* sb, finefs_file_page_entry* page_entry,
 	char* buf, size_t nr, u64 pos)
 {
 	u64 bytes = FINEFS_BLOCK_SIZE;
@@ -43,7 +43,7 @@ static force_inline size_t finefs_page_write_entry_read(finefs_file_page_entry* 
 			bytes = cur->file_off - pos;
 			if(bytes > nr) bytes = nr;
 			if(has_page) {
-				__copy_to_user(buf, page_data, bytes);
+				finefs_copy_nvm_to_user(sb, buf, page_data, bytes);
 			} else {
 				__clear_user(buf, bytes);
 			}
@@ -57,7 +57,7 @@ static force_inline size_t finefs_page_write_entry_read(finefs_file_page_entry* 
 		u32 off = pos - cur->file_off;
 		bytes = cur->bytes - off;
 		if(bytes > nr) bytes = nr;
-		__copy_to_user(buf, cur->nvm_data+off, bytes);
+		finefs_copy_nvm_to_user(sb, buf, cur->nvm_data+off, bytes);
 		buf += bytes;
 		page_data += bytes;
 		pos += bytes;
@@ -108,7 +108,7 @@ static force_inline size_t finefs_page_write_entry_read(finefs_file_page_entry* 
 				bytes = FINEFS_BLOCK_SIZE;
 				if(unlikely(bytes > nr)) bytes = nr;
 			}
-			__copy_to_user(buf, page_data, bytes);
+			finefs_copy_nvm_to_user(sb, buf, page_data, bytes);
 		} else {
 			bytes = FINEFS_BLOCK_SIZE;
 			if(unlikely(bytes > nr)) bytes = nr;
@@ -170,7 +170,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 	while (len) {
 		unsigned long nr;  // 实际读的字节数
 		page_entry = finefs_get_page_entry(sb, si, index);
-		nr = finefs_page_write_entry_read(page_entry, buf, len, pos);
+		nr = finefs_page_write_entry_read(sb, page_entry, buf, len, pos);
 		copied += nr;
 		offset += nr;
 		index += offset >> FINEFS_BLOCK_SHIFT;
@@ -426,7 +426,7 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 		((1 << (size_bits - 1)) < bytes || bytes <= (SLAB_MIN_SIZE >> 1)));
 
 	kmem = finefs_get_block(sb, slab_off);
-	pmem_memcpy(kmem, buf, bytes, false);
+	finefs_copy_to_nvm(sb, kmem, buf, bytes, false);
 
 	curr_entry = finefs_get_append_head(sb, pi, sih, tail, entry_size, &extended, false);
     if (curr_entry == 0) {
@@ -607,7 +607,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 		/* Now copy from user buf */
 		FINEFS_START_TIMING(memcpy_w_nvmm_t, memcpy_time);
 		// 写入更改的数据区间
-		pmem_memcpy(kmem, buf, bytes, false);
+		finefs_copy_to_nvm(sb, kmem, buf, bytes, false);
 		FINEFS_END_TIMING(memcpy_w_nvmm_t, memcpy_time);
 
 		page_entry_data.is_old = 0;

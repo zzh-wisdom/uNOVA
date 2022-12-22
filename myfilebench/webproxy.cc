@@ -7,7 +7,7 @@
 // #include <glog/logging.h>
 
 string dir = "/tmp/nova";
-int nfiles = 32*32*32*16; // 32*32*32
+const int nfiles = 32*32*32*16; // 32*32*32
 const int dir_width = 32;
 const int files_per_dir = 32*32*16;
 const size_t file_size = 32*1024;
@@ -131,7 +131,6 @@ int main(int argc, char* argv[]) {
     log_assert(threads <= cpu_num);
     memset(bufs, 0x3f, sizeof(bufs));
     op_num = (op_num + threads - 1) / threads * threads;
-    nfiles = (nfiles + threads - 1) / threads * threads;
     for(int i = 0; i < threads; ++i) {
         bufs[i] = (char*)aligned_alloc(4096, iosize);
     }

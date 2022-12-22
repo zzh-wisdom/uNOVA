@@ -34,6 +34,7 @@
 #include "util/radix-tree.h"
 #include "util/rbtree.h"
 #include "util/util.h"
+#include "util/ticket_lock.h"
 #include "vfs/vfs.h"
 
 #define PAGE_SHIFT_2M 21
@@ -221,6 +222,10 @@ struct slab_heap {
     }
 };
 
+struct finefs_config {
+    bool limit_nvm_rw_threads;
+};
+
 /*
  * FINEFS super-block data in memory
  */
@@ -239,6 +244,7 @@ struct finefs_sb_info {
     unsigned long num_blocks;  // 整个NVM的page的个数
     unsigned long log_pages;   // 用于log的page个数
 
+    finefs_config config;
     /*
      * Backing store option:
      * 1 = no load, 2 = no store,
@@ -264,6 +270,9 @@ struct finefs_sb_info {
 
     int cpus;  // 在线的cpu个数
     // struct proc_dir_entry *s_proc;  // 系统的文件目录
+
+    ticket_semaphore_t read_sem;
+    ticket_semaphore_t write_sem;
 
     /* ZEROED page for cache page initialized */
     // void *zeroed_page;  // 缓存第一page？
@@ -1133,6 +1142,28 @@ static inline void finefs_memcpy_atomic(void *dst, const void *src, u8 size) {
         default:
             rd_info("error: memcpy_atomic called with %d bytes\n", size);
             BUG();
+    }
+}
+
+static force_inline void finefs_copy_nvm_to_user(super_block *sb, void *dst, const void *src, unsigned int size) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    if(sbi->config.limit_nvm_rw_threads && size >= FINEFS_LIMIT_NVM_THREAD_SIZE) {
+        ticket_semaphore_wait(&sbi->read_sem, FINEFS_NVM_READ_MAX_THREADS);
+    }
+    __copy_to_user(dst, src, size);
+    if(sbi->config.limit_nvm_rw_threads && size >= FINEFS_LIMIT_NVM_THREAD_SIZE) {
+        ticket_semaphore_release(&sbi->read_sem);
+    }
+}
+
+static force_inline void finefs_copy_to_nvm(super_block* sb, void *pmem, const void *src, unsigned int size, bool fence) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    if(sbi->config.limit_nvm_rw_threads && size >= FINEFS_LIMIT_NVM_THREAD_SIZE) {
+        ticket_semaphore_wait(&sbi->write_sem, FINEFS_NVM_WRITE_MAX_THREADS);
+    }
+    pmem_memcpy(pmem, src, size, fence);
+    if(sbi->config.limit_nvm_rw_threads && size >= FINEFS_LIMIT_NVM_THREAD_SIZE) {
+        ticket_semaphore_release(&sbi->write_sem);
     }
 }
 

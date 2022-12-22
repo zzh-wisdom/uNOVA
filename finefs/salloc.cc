@@ -164,7 +164,7 @@ static inline void finefs_free_or_goto_next_page(slab_free_list* slab_list, slab
     } else {
         dlog_assert(slab_list->page_num == 0);
         slab_list->cur_page = nullptr;
-        r_error("slab_list->cur_page set null, slab_list->page_num = %u", slab_list->page_num);
+        rd_info("slab_list->cur_page set null, slab_list->page_num = %u", slab_list->page_num);
         slab_list->next_slab_idx = 0;
     }
     rd_info("%s: page_num: %u, cur_page_off: %lu, next_slab_idx:%u", __func__, slab_list->page_num,

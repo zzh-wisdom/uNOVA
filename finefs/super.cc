@@ -750,7 +750,7 @@ static struct super_operations finefs_sops = {
                                   // .show_options	= finefs_show_options,
 };
 
-static int finefs_fill_super(struct super_block *sb, double log_block_occupy, bool format) {
+static int finefs_fill_super(struct super_block *sb, struct vfs_cfg *cfg) {
     struct finefs_super_block *super;
     struct finefs_inode *root_pi;
     struct finefs_sb_info *sbi = NULL;
@@ -784,6 +784,12 @@ static int finefs_fill_super(struct super_block *sb, double log_block_occupy, bo
 
     random = rand();
     atomic_set(&sbi->next_generation, random);
+
+    sbi->config.limit_nvm_rw_threads = cfg->limit_nvm_rw_threads;
+
+    // 初始化信号量
+    ticket_semaphore_init(&sbi->read_sem);
+    ticket_semaphore_init(&sbi->write_sem);
 
     /* Init with default values */
     sbi->shared_free_list.block_free_tree = RB_ROOT;
@@ -820,7 +826,7 @@ static int finefs_fill_super(struct super_block *sb, double log_block_occupy, bo
     // 	goto out;
 
     // 设置选项
-    if (format) {
+    if (cfg->format) {
         set_opt(sbi->s_mount_opt, FORMAT);
     }
 
@@ -845,7 +851,7 @@ static int finefs_fill_super(struct super_block *sb, double log_block_occupy, bo
     /* Init a new finefs instance */
     u64 log_tail;
     if (sbi->s_mount_opt & FINEFS_MOUNT_FORMAT) {  // 重新初始化挂载
-        root_pi = finefs_init(sb, sbi->initsize, log_block_occupy,  &log_tail);
+        root_pi = finefs_init(sb, sbi->initsize, cfg->log_block_occupy,  &log_tail);
         if (!root_pi) goto out;
         super = finefs_get_super(sb);
         goto setup_sb;
@@ -1039,7 +1045,7 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
     // if (rc)
     // 	goto out2;
 
-    rc = finefs_fill_super(sb, cfg->log_block_occupy, cfg->format);
+    rc = finefs_fill_super(sb, cfg);
     if (rc) {
         r_error("%s fail, rc: %d.\n", "finefs_fill_super", rc);
         goto out;

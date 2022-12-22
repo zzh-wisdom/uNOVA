@@ -732,7 +732,7 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
         cur_ptr += bytes;
         last_pos += bytes;
         dlog_assert(last_pos == cur->file_off);
-        pmem_memcpy(cur_ptr, cur->nvm_data, cur->bytes, false);
+        finefs_copy_to_nvm(sb, cur_ptr, cur->nvm_data, cur->bytes, false);
         cur_ptr += cur->bytes;
         last_pos += cur->bytes;
 

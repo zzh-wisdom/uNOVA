@@ -1234,8 +1234,9 @@ struct vfs_cfg {
     int bg_thread_cpu_id;
     int measure_timing;
     int start_fd;
-	bool format;
     double log_block_occupy;
+	bool format;
+    bool limit_nvm_rw_threads;
 
     int pmem_nt_threshold;
 };
