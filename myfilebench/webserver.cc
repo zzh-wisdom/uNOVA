@@ -7,11 +7,15 @@
 // #include <glog/logging.h>
 
 string dir = "/tmp/nova";
-int nfiles = 32*32*32*32;  // 32*32*32*32  16GB
-const size_t file_size = 16384; // 16KB
+int nfiles = 32*32*32*8;  // 16GB
+const int dir_width = 32;
+const int files_per_dir = 8;
+const size_t file_size = 64*1024;
 const size_t iosize = 4096;
-size_t meanappendsize = 16384;
+size_t meanappendsize = 64*1024;
 const int append_rand_bs_bits = 12;
+
+// sudo ./webserver nova 2 200000
 
 char *bufs[MAX_CPU_NUM];
 const string log_file_name = "logfile.dat";
@@ -55,7 +59,7 @@ void* webserver_job(void* arg) {
     for(uint64_t i = 0; i < job_arg->op_num; ++i) {
 
         for(int j = 0; j < read_file_num; ++j) {
-            dir_path = GetDirPath(dir, depth, file_idx, &read_file_i);
+            dir_path = GetDirPath(dir, dir_width, depth, file_idx, &read_file_i);
             rd_info("dir_path %s, read_file_i %d", dir_path.c_str(), read_file_i);
 
             tmp_file_name = dir_path + "/" + GetFileName(read_file_i);
@@ -120,7 +124,7 @@ int main(int argc, char* argv[]) {
         bufs[i] = (char*)aligned_alloc(4096, iosize);
     }
 
-    int depth = InitFileSet(dir, nfiles, file_size, iosize, bufs[0]);
+    int depth = InitFileSet(dir, nfiles, dir_width, file_size, iosize, bufs[0], files_per_dir);
     printf("fileset depth:%d\n", depth);
     string logfile = dir + "/" + log_file_name;
     printf("create logfile %s\n", logfile.c_str());
@@ -132,7 +136,7 @@ int main(int argc, char* argv[]) {
         job_args[i].log_fd = log_fd;
         job_args[i].op_num = op_num / threads;
         job_args[i].dir = dir + "/" + string(GetFileName(i));
-        job_args[i].nfiles = nfiles / DIR_WIDTH;
+        job_args[i].nfiles = nfiles / dir_width;
         job_args[i].fileset_depth = depth - 1;
         job_args[i].rw_bytes = 0;
     }

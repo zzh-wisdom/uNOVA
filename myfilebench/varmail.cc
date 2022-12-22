@@ -7,15 +7,15 @@
 // #include <glog/logging.h>
 
 string dir = "/tmp/nova";
-const int nfiles = 32*32*32*4;
+int nfiles = 32*32*32*16; // 32*32*32
 const int dir_width = 32;
-const int files_per_dir = 4;
-const size_t file_size = 128*1024;
+const int files_per_dir = 32*32*16;
+const size_t file_size = 32*1024;
 const size_t iosize = 4096;
-size_t meanappendsize = 128*1024;
+size_t meanappendsize = 32*1024;
 const int append_rand_bs_bits = 12;
 
-// sudo ./fileserver nova 4 200000
+// sudo ./varmail nova 2 400000
 
 char *bufs[MAX_CPU_NUM];
 
@@ -36,11 +36,11 @@ pthread_t thread_hds[MAX_CPU_NUM];
 
 const string create_file_name = "newfile.dat";
 
-void* fileserver_job(void* arg) {
+void* varmail_job(void* arg) {
     job_arg_t* job_arg = (job_arg_t*)arg;
     int thread_idx = job_arg->thread_idx;
     CoreBind(pthread_self(), cpu_ids[thread_idx]);
-    printf("fileserver thread %d: cpu_id=%d, dir=%s, op_num=%lu, nfiles=%d\n",
+    printf("varmail thread %d: cpu_id=%d, dir=%s, op_num=%lu, nfiles=%d\n",
         thread_idx, cpu_ids[thread_idx],
         job_arg->dir.c_str(), job_arg->op_num, job_arg->nfiles);
     string &dir = job_arg->dir;
@@ -48,62 +48,64 @@ void* fileserver_job(void* arg) {
     uint64_t &rw_bytes = job_arg->rw_bytes;
     int t_nfiles = job_arg->nfiles;
     string dir_path;
-    string new_file;
     string tmp_file;
     size_t append_size;
     struct stat st;
+    size_t read_bytes;
     int ret;
     int file_idx;
+    int file_i;
     int fd;
     for(uint64_t i = 0; i < job_arg->op_num; ++i) {
         file_idx = i % t_nfiles;
-        int write_file_i;
-        dir_path = GetDirPath(dir, dir_width, depth, file_idx, &write_file_i);
-        int read_file_i = (write_file_i + 1) % files_per_dir;
-        rd_info("dir_path %s, write_file_i %d\n", dir_path.c_str(), write_file_i);
+        dir_path = GetDirPath(dir, dir_width, depth, file_idx, &file_i);
+        tmp_file = dir_path + "/" + GetFileName(file_i);
 
-        new_file = dir_path + "/" + create_file_name;
-        rd_info("open %s\n", new_file.c_str());
-        // create
-        fd = open(new_file.c_str(), OPEN_CREAT_FLAG, CREATE_MODE);
+        rd_info("unlink %s", tmp_file.c_str());
+        // 删除文件
+        ret = unlink(tmp_file.c_str());
+        log_assert(ret == 0);
+        // 创建文件
+        fd = open(tmp_file.c_str(), OPEN_CREAT_FLAG, CREATE_MODE);
         log_assert(fd > 0);
-        // write whole
-        FileWrite(fd, bufs[thread_idx], iosize, file_size);
-        rw_bytes += file_size;
-        // close
-        close(fd);
-
-        // open
-        tmp_file = dir_path + "/" + GetFileName(write_file_i);
-        rd_info("open %s\n", tmp_file.c_str());
-        fd = open(tmp_file.c_str(), OPEN_APPEND_FLAG, 0);
-        log_assert(fd > 0);
-        // append write
+        // append
         append_size = GetRandSize(meanappendsize, append_rand_bs_bits);
         rd_info("append_size: %lu\n", append_size);
         FileWrite(fd, bufs[thread_idx], iosize, append_size);
         rw_bytes += append_size;
+        // sync
+        fsync(fd);
         // close
         close(fd);
 
         // open
-        tmp_file = dir_path + "/" + GetFileName(read_file_i);
-        rd_info("open %s\n", tmp_file.c_str());
+        file_i = (file_i + 1) % files_per_dir;
+        tmp_file = dir_path + "/" + GetFileName(file_i);
         fd = open(tmp_file.c_str(), OPEN_FLAG, 0);
         log_assert(fd > 0);
         // read whole
-        FileRead(fd, bufs[thread_idx], iosize, file_size);
-        rw_bytes += file_size;
+        read_bytes = FileReadWhole(fd, bufs[thread_idx], iosize);
+        rw_bytes += read_bytes;
+        // append
+        append_size = GetRandSize(meanappendsize, append_rand_bs_bits);
+        rd_info("append_size: %lu\n", append_size);
+        FileWrite(fd, bufs[thread_idx], iosize, append_size);
+        rw_bytes += append_size;
+        // sync
+        fsync(fd);
         // close
         close(fd);
 
-        // delete
-        ret = unlink(new_file.c_str());
-        log_assert(ret == 0);
-
-        // stat
-        ret = stat(tmp_file.c_str(), &st);
-        log_assert(ret == 0);
+        // open
+        file_i = (file_i + 1) % files_per_dir;
+        tmp_file = dir_path + "/" + GetFileName(file_i);
+        fd = open(tmp_file.c_str(), OPEN_FLAG, 0);
+        log_assert(fd > 0);
+        // read whole
+        read_bytes = FileReadWhole(fd, bufs[thread_idx], iosize);
+        rw_bytes += read_bytes;
+        // close
+        close(fd);
     }
     return nullptr;
 }
@@ -141,6 +143,7 @@ int main(int argc, char* argv[]) {
     log_assert(threads <= cpu_num);
     memset(bufs, 0x3f, sizeof(bufs));
     op_num = (op_num + threads - 1) / threads * threads;
+    nfiles = (nfiles + threads - 1) / threads * threads;
     for(int i = 0; i < threads; ++i) {
         bufs[i] = (char*)aligned_alloc(4096, iosize);
     }
@@ -159,7 +162,7 @@ int main(int argc, char* argv[]) {
 
     uint64_t start_us = GetTsUsec();
     for(int i = 0; i < threads; ++i) {
-        int ret = pthread_create(&thread_hds[i], nullptr, fileserver_job, &job_args[i]);
+        int ret = pthread_create(&thread_hds[i], nullptr, varmail_job, &job_args[i]);
         log_assert(ret == 0);
     }
     for(int i = 0; i < threads; ++i) {
@@ -171,7 +174,7 @@ int main(int argc, char* argv[]) {
     for(int i = 0; i < threads; ++i) {
         rw_bytes_sum += job_args[i].rw_bytes;
     }
-    printf("run %0.2lf s, rw_bytes_sum: %lu B, fileserver, bandwidth: %0.2lf MB/s, kops: %0.2lf kops\n",
+    printf("run %0.2lf s, rw_bytes_sum: %lu B, varmail, bandwidth: %0.2lf MB/s, kops: %0.2lf kops\n",
         interval_sec, rw_bytes_sum, rw_bytes_sum / 1024 / 1024 / interval_sec,
         op_num / 1000 / interval_sec);
 

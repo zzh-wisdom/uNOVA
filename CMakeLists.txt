@@ -139,3 +139,8 @@ target_link_libraries(webserver
     glog numa pmem2
 )
 
+add_executable(varmail myfilebench/varmail.cc ${MYFILEBENCH_SRC})
+target_link_libraries(varmail
+    pthread syscall_intercept dl
+    glog numa pmem2
+)
