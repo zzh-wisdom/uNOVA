@@ -453,6 +453,16 @@ void finefs_apply_link_change_entry(struct finefs_inode *pi,
 // 	return err;
 // }
 
+static force_inline void  finefs_sih_add_delete_dentry(super_block* sb, finefs_inode_info_header *sih, u64 entry_p) {
+    // spin_lock(&sih->h_entry_lock);
+    dlog_assert(S_ISDIR(sih->i_mode));
+    sih->h_setattr_entry_p[sih->cur_setattr_idx++] = entry_p;
+    if(sih->cur_setattr_idx == FINEFS_INODE_META_FLUSH_BATCH) {
+        finefs_sih_setattr_entry_gc(sb, sih);
+    }
+    // spin_unlock(&sih->h_entry_lock);
+}
+
 // 删除文件
 static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
     struct inode *inode = dentry->d_inode;
@@ -463,7 +473,6 @@ static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
     struct finefs_inode *pidir;
     u64 pidir_tail = 0, pi_tail = 0;
     u64 dentry_p;
-    void *entry;
     int invalidate = 0;
     timing_t unlink_time;
 
@@ -496,8 +505,7 @@ static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
     pdir_sih->h_log_tail = pidir_tail;
     FINEFS_I(inode)->header.h_log_tail = pi_tail;
 
-    // entry = finefs_get_block(sb, dentry_p);
-    // log_entry_set_invalid(sb, pdir_sih, entry, false);
+    finefs_sih_add_delete_dentry(sb, pdir_sih, dentry_p);
 
     FINEFS_END_TIMING(unlink_t, unlink_time);
     return 0;
@@ -615,6 +623,8 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     u64 pidir_tail = 0, pi_tail = 0;
     struct finefs_inode_info *si = FINEFS_I(inode);
     struct finefs_inode_info_header *child_sih = &si->header;
+    struct finefs_inode_info_header *pdir_sih;
+    u64 dentry_p;
     int err = -ENOTEMPTY;
     timing_t rmdir_time;
 
@@ -645,6 +655,7 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     // 先从父母inode中删除孩子，并写log
     err = finefs_remove_dentry(dentry, -1, 0, &pidir_tail);
     if (err) goto end_rmdir;
+    dentry_p = pidir_tail - CACHELINE_SIZE;
 
     /*inode->i_version++; */
     clear_nlink(inode);
@@ -660,8 +671,11 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     // TODO: 只是模拟记录version得journal，但并未真正实现
     finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, 1);
 
-    FINEFS_I(dir)->header.h_log_tail = pidir_tail;
-    FINEFS_I(inode)->header.h_log_tail = pi_tail;
+    pdir_sih = &FINEFS_I(dir)->header;
+    pdir_sih->h_log_tail = pidir_tail;
+    child_sih->h_log_tail = pi_tail;
+
+    finefs_sih_add_delete_dentry(sb, pdir_sih, dentry_p);
 
     FINEFS_END_TIMING(rmdir_t, rmdir_time);
     return err;

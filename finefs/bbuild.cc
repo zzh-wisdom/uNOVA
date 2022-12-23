@@ -720,7 +720,7 @@ void finefs_init_header(struct super_block *sb,
     struct finefs_inode_info_header *sih, struct finefs_inode *pi,
     u16 i_mode)
 {
-    spin_lock_init(&sih->tree_lock);
+    // spin_lock_init(&sih->tree_lock);
     INIT_RADIX_TREE(&sih->tree, GFP_ATOMIC);
     new (&sih->cachelines_to_flush) std::unordered_set<void*>();
     // 创建目录和文件时，占用内存过大，导致kill
@@ -748,7 +748,7 @@ void finefs_init_header(struct super_block *sb,
         sih->h_ts = 1;
     }
 
-    spin_lock_init(&sih->h_entry_lock);
+    // spin_lock_init(&sih->h_entry_lock);
     sih->h_can_just_drop = true;
     sih->cur_setattr_idx = 0;
     sih->last_link_change = 0;

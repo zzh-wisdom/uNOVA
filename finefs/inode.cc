@@ -1829,22 +1829,9 @@ static u64 finefs_append_setattr_entry(struct super_block *sb, struct finefs_ino
     return new_tail;
 }
 
-static void finefs_sih_setattr_entry_gc(super_block* sb, finefs_inode_info_header *sih) {
-    r_info("%s: cur_setattr_idx: %d, flush cachelins: %u",
-        __func__, sih->cur_setattr_idx, sih->cachelines_to_flush.size());
-    log_assert(0);
-    dlog_assert(sih->cur_setattr_idx == FINEFS_INODE_META_FLUSH_BATCH);
-
-    finefs_sih_bitmap_cache_flush(sih, true);
-    finefs_sih_flush_setattr_entry(sb, sih, false);
-    sih->h_can_just_drop = true;
-    sih->h_setattr_entry_p[0] = sih->h_setattr_entry_p[sih->cur_setattr_idx - 1];
-    sih->cur_setattr_idx = 1;
-}
-
 static void finefs_sih_add_attr_entry(super_block* sb, finefs_inode_info_header *sih, u64 entry_p, bool is_shrink) {
     log_assert(!is_shrink);
-    spin_lock(&sih->h_entry_lock);
+    // spin_lock(&sih->h_entry_lock);
     if(sih->cur_setattr_idx == 0) {
         sih->h_setattr_entry_p[0] = entry_p;
         ++sih->cur_setattr_idx;
@@ -1863,7 +1850,7 @@ static void finefs_sih_add_attr_entry(super_block* sb, finefs_inode_info_header 
             finefs_sih_setattr_entry_gc(sb, sih);
         }
     }
-    spin_unlock(&sih->h_entry_lock);
+    // spin_unlock(&sih->h_entry_lock);
 }
 
 int finefs_notify_change(struct dentry *dentry, struct iattr *attr) {
@@ -2532,6 +2519,7 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
 
     curr = FINEFS_LOG_BLOCK_OFF(curr_tail);
     curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
+    dlog_assert(curr_page->page_tail.page_link.next_page_ == 0);
     finefs_log_set_next_page(sb, curr_page, new_block, 1);
     sih->log_pages += num_pages - freed_pages;
     // pi->i_blocks += num_pages - freed_pages;

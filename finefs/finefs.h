@@ -316,7 +316,7 @@ struct finefs_range_node {
 // 这是针对某个inode， 包含管理的一些统计信息
 struct finefs_inode_info_header {
     // 文件数据是按照blocknr来索引的？感觉还是红黑树，或者跳表好
-    spinlock_t tree_lock;
+    // spinlock_t tree_lock;
     struct radix_tree_root tree; /* Dir name entry tree root 或者文件数据*/
     // set是inode独享的，后台gc不会修改它，因此它不会出现冲突
     std::unordered_set<void *> cachelines_to_flush;
@@ -377,9 +377,9 @@ struct finefs_inode_info_header {
     // 注意，ftruncate时，如果设置的size比当前文件的大小要大，
     // 那么应用后，是可以直接丢弃该entry的，因为它不影响任何的write entry
     // 而不需要放在batch队列
-    spinlock_t h_entry_lock;
-    u64 h_setattr_entry_p[FINEFS_INODE_META_FLUSH_BATCH];
-    bool h_can_just_drop;  // h_setattr_entry_p中的entry可否直接丢弃
+    // spinlock_t h_entry_lock;
+    u64 h_setattr_entry_p[FINEFS_INODE_META_FLUSH_BATCH]; // setattr / delete dentry
+    bool h_can_just_drop;  // h_setattr_entry_p中的entry可否直接丢弃（对于dentry总是不可以）
     int cur_setattr_idx;   /* Last setattr entry index*/
     u64 last_link_change;  /* Last link change entry index */
 };
@@ -1662,6 +1662,19 @@ static force_inline void finefs_sih_flush_setattr_entry(super_block* sb,
         void *entry = finefs_get_block(sb, sih->h_setattr_entry_p[i]);
         log_entry_set_invalid(sb, sih, entry, false);
     }
+}
+
+// 留下最后一个
+static force_inline void finefs_sih_setattr_entry_gc(super_block* sb, finefs_inode_info_header *sih) {
+    rd_info("%s: cur_setattr_idx: %d, flush cachelins: %u",
+        __func__, sih->cur_setattr_idx, sih->cachelines_to_flush.size());
+    dlog_assert(sih->cur_setattr_idx == FINEFS_INODE_META_FLUSH_BATCH);
+
+    finefs_sih_bitmap_cache_flush(sih, true);
+    finefs_sih_flush_setattr_entry(sb, sih, false);
+    sih->h_can_just_drop = true;
+    sih->h_setattr_entry_p[0] = sih->h_setattr_entry_p[sih->cur_setattr_idx - 1];
+    sih->cur_setattr_idx = 1;
 }
 
 static force_inline void finefs_sih_flush_link_change_entry(super_block* sb,
