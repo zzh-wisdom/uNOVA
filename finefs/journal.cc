@@ -36,7 +36,7 @@ static u64 next_lite_journal(u64 curr_p)
 	size_t size = sizeof(struct finefs_lite_journal_entry);
 
 	/* One page holds 64 entries with cacheline size */
-	if ((curr_p & (FINEFS_BLOCK_SIZE - 1)) + size >= FINEFS_BLOCK_SIZE)  // 回环
+	if ((curr_p & (FINEFS_BLOCK_SIZE - 1)) + size >= FINEFS_BLOCK_SIZE/2)  // 回环
 		return (curr_p & FINEFS_BLOCK_MASK);
 
 	return curr_p + size;
@@ -103,12 +103,12 @@ u64 finefs_create_lite_transaction(struct super_block *sb,
 		entry = (struct finefs_lite_journal_entry *)finefs_get_block(sb,
 							temp);
 //		finefs_print_lite_transaction(dram_entry2);
-		memcpy_to_pmem_nocache(entry, dram_entry2, size); // 这里的每一次拷贝都有fence
+		memcpy_to_pmem_nocache(entry, dram_entry2, size);
 	}
 
 	new_tail = next_lite_journal(temp);
 	pair->journal_tail = new_tail;
-	finefs_flush_buffer(&pair->journal_head, CACHELINE_SIZE, 1); //所以至少两个fence，最多三个fence
+	finefs_flush_buffer(&pair->journal_head, CACHELINE_SIZE, 1);
 
 	return new_tail;
 }

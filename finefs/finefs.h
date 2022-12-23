@@ -1014,12 +1014,17 @@ u64 finefs_slab_alloc(super_block *sb, size_t size, int *s_bits);
 void finefs_slab_free(super_block *sb, u64 nvm_off, size_t size);
 
 /*
+ * // 弃用
  * The first block contains super blocks and reserved inodes;
  * The second block contains pointers to inode tables.
  * The third block contains pointers to file log.
  * The forth block contains pointers to dir log.
+ *
+ * The first block contains super blocks and reserved inodes;
+ * The second block contains pointers to journal pages.
+ * The third block contains pointers to inode tables.
  */
-#define RESERVED_BLOCKS 4
+#define RESERVED_BLOCKS 3
 
 struct inode_map {
     mutex_t inode_table_mutex;
@@ -1037,7 +1042,6 @@ struct ptr_pair {
 
 static inline struct ptr_pair *finefs_get_journal_pointers(struct super_block *sb, int cpu) {
     struct finefs_sb_info *sbi = FINEFS_SB(sb);
-    log_assert(0);
     if (cpu >= sbi->cpus) return NULL;
 
     return (struct ptr_pair *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE) +
@@ -1053,7 +1057,7 @@ static inline struct inode_table *finefs_get_inode_table(struct super_block *sb,
 
     if (cpu >= sbi->cpus) return NULL;
 
-    return (struct inode_table *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE) +
+    return (struct inode_table *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE * 2) +
                                   cpu * CACHELINE_SIZE);
 }
 

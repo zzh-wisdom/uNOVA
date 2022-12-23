@@ -383,10 +383,10 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
 
 
     // 初始化并恢复journal
-    // if ((ret = finefs_lite_journal_hard_init(sb)) < 0) {
-    //     r_error("Lite journal hard initialization failed, ret %d\n", ret);
-    //     return nullptr;
-    // }
+    if ((ret = finefs_lite_journal_hard_init(sb)) < 0) {
+        r_error("Lite journal hard initialization failed, ret %d\n", ret);
+        return nullptr;
+    }
 
     // 初始化已经使用的inode列表，主要是处理预留的inode
     if (finefs_init_inode_inuse_list(sb) < 0) return nullptr;

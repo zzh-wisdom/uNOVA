@@ -159,11 +159,14 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
     // unlock_new_inode(inode);
 
     pi = (struct finefs_inode *)finefs_get_block(sb, pi_addr);
-    err = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
-    if (err) goto out_err;
-    // finefs_lite_transaction_for_new_inode(sb, pi, pidir, pidir_tail);
+    // 这个本来是用于per thread log的，不过这个设计已经被放弃
+    // err = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
+    // if (err) goto out_err;
 
-    PERSISTENT_BARRIER();
+    // TODO: 只是模拟记录entry version，并未真正实现
+    finefs_lite_transaction_for_new_inode(sb, pi, pidir, pidir_tail);
+
+    // PERSISTENT_BARRIER();
     FINEFS_I(dir)->header.h_log_tail = pidir_tail;
     FINEFS_I(inode)->header.h_log_tail = pi_tail;
 
@@ -340,7 +343,7 @@ static void finefs_lite_transaction_for_time_and_link(struct super_block *sb,
     }
     PERSISTENT_BARRIER();
 
-    finefs_commit_lite_transaction(sb, journal_tail, cpu);
+    finefs_commit_lite_transaction(sb, journal_tail, cpu); // 三次fence
     spin_unlock(&sbi->journal_locks[cpu]);
     FINEFS_END_TIMING(link_trans_t, trans_time);
 }
@@ -454,10 +457,13 @@ void finefs_apply_link_change_entry(struct finefs_inode *pi,
 static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
     struct inode *inode = dentry->d_inode;
     struct super_block *sb = dir->i_sb;
+    finefs_inode_info_header *pdir_sih;
     int retval = -ENOMEM;
     struct finefs_inode *pi = finefs_get_inode(sb, inode);
     struct finefs_inode *pidir;
     u64 pidir_tail = 0, pi_tail = 0;
+    u64 dentry_p;
+    void *entry;
     int invalidate = 0;
     timing_t unlink_time;
 
@@ -470,6 +476,7 @@ static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
     rd_info("%s: inode %lu, dir %lu", __func__, inode->i_ino, dir->i_ino);
     retval = finefs_remove_dentry(dentry, 0, 0, &pidir_tail);
     if (retval) goto out;
+    dentry_p = pidir_tail - CACHELINE_SIZE;
 
     inode->i_ctime = dir->i_ctime;
 
@@ -482,11 +489,15 @@ static int finefs_unlink(struct inode *dir, struct dentry *dentry) {
     retval = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
     if (retval) goto out;
 
-    // finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, invalidate);
+    // TODO: 只是模拟记录entry version。并未真正实现
+    finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, invalidate);
 
-    PERSISTENT_BARRIER();
-    FINEFS_I(dir)->header.h_log_tail = pidir_tail;
+    pdir_sih = &FINEFS_I(dir)->header;
+    pdir_sih->h_log_tail = pidir_tail;
     FINEFS_I(inode)->header.h_log_tail = pi_tail;
+
+    // entry = finefs_get_block(sb, dentry_p);
+    // log_entry_set_invalid(sb, pdir_sih, entry, false);
 
     FINEFS_END_TIMING(unlink_t, unlink_time);
     return 0;
@@ -499,7 +510,7 @@ out:
 static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
     struct super_block *sb = dir->i_sb;
     struct inode *inode;
-    struct finefs_inode *pi;
+    struct finefs_inode *pi, *pidir;
     finefs_inode_info_header* p_sih = &FINEFS_I(dir)->header;
     struct finefs_inode_info_header *child_sih = NULL;
     u64 pi_addr = 0;
@@ -545,15 +556,15 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
     /* Build the dir tree */
     finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, child_sih);
 
-    // pidir = finefs_get_inode(sb, dir);
+    pidir = finefs_get_inode(sb, dir);
     dir->i_blocks = p_sih->h_blocks;
     inc_nlink(dir);
     d_instantiate(dentry, inode);
     // unlock_new_inode(inode);
 
-    // finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
+    // TODO: 这里只是模拟记录旧的entry version
+    finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
 
-    PERSISTENT_BARRIER();
     FINEFS_I(dir)->header.h_log_tail = tail;
     inode_unref(inode);
 out:
@@ -646,7 +657,9 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     err = finefs_append_link_change_entry(sb, pi, inode, 0, &pi_tail);
     if (err) goto end_rmdir;
 
-    // finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, 1);
+    // TODO: 只是模拟记录version得journal，但并未真正实现
+    finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, 1);
+
     FINEFS_I(dir)->header.h_log_tail = pidir_tail;
     FINEFS_I(inode)->header.h_log_tail = pi_tail;
 
