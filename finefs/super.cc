@@ -343,7 +343,7 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
         return nullptr;
     }
 
-    r_info("max file name len %d", (unsigned int)FINEFS_NAME_LEN);
+    r_info("max file name len %d", (unsigned int)FINEFS_MAX_NAME_LEN);
 
     super = finefs_get_super(sb);
 

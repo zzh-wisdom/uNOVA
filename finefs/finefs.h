@@ -662,6 +662,11 @@ static inline void finefs_log_page_tail_init(struct super_block *sb,
     finefs_log_set_next_page(sb, curr_page, next_page, fence);
 }
 
+static force_inline u64 finefs_log_page_version(super_block* sb, u64 curr_p) {
+    u64 cur_page = curr_p & FINEFS_LOG_MASK;
+    return finefs_log_page_addr(sb, cur_page)->page_tail.log_version;
+}
+
 static force_inline bool finefs_log_page_tail_remain_init(struct super_block *sb,
                                                           struct finefs_inode_log_page *curr_page) {
     return (curr_page->page_tail.valid_num == FINEFS_LOG_ENTRY_VALID_NUM_INIT) &&
@@ -831,19 +836,25 @@ static force_inline void finefs_set_entry_type(void *p, enum finefs_entry_type t
  */
 struct finefs_dentry {
     u8 entry_type;
-    u8 name_len;         /* length of the dentry name */
+    u8 name_len;         /* length of the dentry name = 32时，表示文件名存储在别处, 0 表示删除*/
     __le16 links_count;  // 自身的link count
     __le32 mtime;        /* For both mtime and ctime */
     union {
-        __le64 name_off__;              // TODO: 变长文件名
-        char name[FINEFS_NAME_LEN + 1]; /* File name */
+        struct {
+            __le64 name_off__;
+            __le64 name_len__;
+        };
+        __le64 name_hash;        // 用于文件的删除
+        char name[FINEFS_INLINE_NAME_LEN + 1]; /* File name */
     } __attribute((__packed__));
     __le64 ino;         /* inode no pointed to by this entry, 0表示该dentry被删除*/
-    __le64 finefs_ino;  // 所属于的ino
+    // __le64 finefs_ino;  // 所属于的ino
     __le64 entry_ts;
     // __le64	size;             // 目录不需要大小，去除
     __le64 entry_version;
 } __attribute((__packed__));
+
+// const int a = sizeof(finefs_dentry);
 
 #define FINEFS_DIR_PAD 8 /* Align to 8 bytes boundary */
 #define FINEFS_DIR_ROUND (FINEFS_DIR_PAD - 1)

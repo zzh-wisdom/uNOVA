@@ -36,7 +36,8 @@
 #define FINEFS_INODE_LEFT_SIZE 8  /* inode末尾需要预留的字节数，用来保存next指针 */
 #define FINEFS_INODE_BITS   7
 
-#define FINEFS_NAME_LEN 23
+#define FINEFS_INLINE_NAME_LEN 31
+#define FINEFS_MAX_NAME_LEN 2047
 
 /* ======================= size config ========================= */
 

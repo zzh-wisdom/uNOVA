@@ -117,6 +117,13 @@ target_link_libraries(perf_open
     pthread syscall_intercept dl
 )
 
+add_executable(perf_open_vary_name
+    perf/open_vary_name_test.cc
+    util/log.cc)
+target_link_libraries(perf_open_vary_name
+    pthread syscall_intercept dl glog
+)
+
 add_executable(perf_write perf/write_test.cc)
 target_link_libraries(perf_write
     pthread syscall_intercept dl

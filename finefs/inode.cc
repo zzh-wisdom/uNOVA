@@ -1756,7 +1756,8 @@ static void finefs_update_setattr_entry(struct inode *inode,
     entry->finefs_ino = cpu_to_le64(sih->ino);
     entry->entry_ts = cpu_to_le64(sih->h_ts++);
     barrier();
-    entry->entry_version = 0x1234;
+    entry->entry_version = finefs_log_page_version(inode->i_sb,
+        finefs_get_addr_off(inode->i_sb, entry));
 
     finefs_flush_buffer(p_entry, sizeof(struct finefs_setattr_logentry), 0);
 }
@@ -2711,7 +2712,7 @@ u64 finefs_append_file_write_entry(struct super_block *sb, struct finefs_inode *
 	dram_entry->entry_ts = cpu_to_le64(sih->h_ts++);
     memcpy(entry, dram_entry, sizeof(finefs_file_pages_write_entry) - sizeof(entry->entry_version));
     barrier();
-    entry->entry_version = 0x1234;
+    entry->entry_version = finefs_log_page_version(sb, curr_p);
     finefs_flush_buffer(entry, sizeof(struct finefs_file_pages_write_entry), 0);
     rdv_proc(
         "file %lu entry @ 0x%lx: pgoff %lu, num %u, "

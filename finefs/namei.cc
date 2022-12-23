@@ -39,7 +39,7 @@ static struct dentry *finefs_lookup(struct inode *dir, struct dentry *dentry, un
     timing_t lookup_time;
 
     FINEFS_START_TIMING(lookup_t, lookup_time);
-    if (dentry->d_name.len > FINEFS_NAME_LEN) {
+    if (dentry->d_name.len > FINEFS_MAX_NAME_LEN) {
         rd_error("%s: namelen %u exceeds limit", __func__, dentry->d_name.len);
         return nullptr;
     }
@@ -133,7 +133,7 @@ static int finefs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
     u64 ino;
     timing_t create_time;
 
-    log_assert(dentry->d_name.len <= FINEFS_NAME_LEN);
+    log_assert(dentry->d_name.len <= FINEFS_MAX_NAME_LEN);
 
     FINEFS_START_TIMING(create_t, create_time);
 
@@ -376,7 +376,7 @@ int finefs_append_link_change_entry(struct super_block *sb, struct finefs_inode 
     entry->finefs_ino = cpu_to_le64(sih->ino);
     entry->entry_ts = cpu_to_le64(sih->h_ts++);
     barrier();
-    entry->entry_version = 0x1234;
+    entry->entry_version = finefs_log_page_version(sb, curr_p);
     finefs_flush_buffer(entry, size, 0);
 
     *new_tail = curr_p + size;
@@ -532,7 +532,7 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
         r_error("i_nlink(%lu) > FINEFS_LINK_MAX(%lu)", dir->i_nlink, FINEFS_LINK_MAX);
         goto out;
     }
-    log_assert(dentry->d_name.len <= FINEFS_NAME_LEN);
+    log_assert(dentry->d_name.len <= FINEFS_MAX_NAME_LEN);
 
     ino = finefs_new_finefs_inode(sb, &pi_addr);
     if (ino == 0) {

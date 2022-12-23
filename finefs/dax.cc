@@ -465,7 +465,7 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 	small_entry->finefs_ino = cpu_to_le64(sih->ino);
 	small_entry->entry_ts = cpu_to_le64(sih->h_ts++);
 	barrier();
-	small_entry->entry_version = cpu_to_le64(0x1234);
+	small_entry->entry_version = finefs_log_page_version(sb, curr_entry);
     finefs_flush_buffer(small_entry, sizeof(struct finefs_file_small_write_entry), 0);
 
 	rdv_proc(
