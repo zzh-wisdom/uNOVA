@@ -278,7 +278,8 @@ struct finefs_sb_info {
     // void *zeroed_page;  // 缓存第一page？
 
     /* Per-CPU journal lock */
-    spinlock_t *journal_locks;
+    // spinlock_t *journal_locks;
+    journal_desc* journal_descs;
 
     /* Per-CPU inode map */
     struct inode_map *inode_maps;
@@ -662,6 +663,11 @@ static inline void finefs_log_page_tail_init(struct super_block *sb,
     finefs_log_set_next_page(sb, curr_page, next_page, fence);
 }
 
+static force_inline u64 finefs_log_page_version(super_block *sb, u64 curr) {
+    u64 cur_page = curr & FINEFS_LOG_MASK;
+    return finefs_log_page_addr(sb, cur_page)->page_tail.log_version;
+}
+
 static force_inline bool finefs_log_page_tail_remain_init(struct super_block *sb,
                                                           struct finefs_inode_log_page *curr_page) {
     return (curr_page->page_tail.valid_num == FINEFS_LOG_ENTRY_VALID_NUM_INIT) &&
@@ -951,6 +957,10 @@ static inline void finefs_update_volatile_tail(struct finefs_inode_info_header *
     // FINEFS_END_TIMING(update_tail_t, update_time);
 }
 
+static inline void finefs_update_volatile_tail_no_fence(struct finefs_inode_info_header *sih, u64 new_tail) {
+    sih->h_log_tail = new_tail;
+}
+
 static force_inline inode *finefs_get_vfs_inode_from_header(finefs_inode_info_header *sih) {
     finefs_inode_info *fi = container_of(sih, finefs_inode_info, header);
     return &fi->vfs_inode;
@@ -1030,18 +1040,19 @@ struct inode_map {
     int freed;
 };
 
-struct ptr_pair {
-    __le64 journal_head;
-    __le64 journal_tail;
-};
-
-static inline struct ptr_pair *finefs_get_journal_pointers(struct super_block *sb, int cpu) {
+static inline struct journal_header *finefs_get_journal_header(struct super_block *sb, int cpu) {
     struct finefs_sb_info *sbi = FINEFS_SB(sb);
-    log_assert(0);
     if (cpu >= sbi->cpus) return NULL;
 
-    return (struct ptr_pair *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE) +
+    return (struct journal_header *)((char *)finefs_get_block(sb, FINEFS_BLOCK_SIZE) +
                                cpu * CACHELINE_SIZE);
+}
+
+static inline journal_desc *finefs_get_journal_desc(struct super_block *sb, int cpu) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    if (cpu >= sbi->cpus) return NULL;
+
+    return &sbi->journal_descs[cpu];
 }
 
 struct inode_table {

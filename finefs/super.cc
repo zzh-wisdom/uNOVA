@@ -383,10 +383,10 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
 
 
     // 初始化并恢复journal
-    // if ((ret = finefs_lite_journal_hard_init(sb)) < 0) {
-    //     r_error("Lite journal hard initialization failed, ret %d\n", ret);
-    //     return nullptr;
-    // }
+    if ((ret = finefs_lite_journal_hard_init(sb)) < 0) {
+        r_error("Lite journal hard initialization failed, ret %d\n", ret);
+        return nullptr;
+    }
 
     // 初始化已经使用的inode列表，主要是处理预留的inode
     if (finefs_init_inode_inuse_list(sb) < 0) return nullptr;
@@ -712,7 +712,7 @@ static void finefs_put_super(struct super_block *sb) {
     FREE(sbi->data_free_lists);
     FREE(sbi->log_free_lists);
     FREE(sbi->slab_heaps);
-    FREE(sbi->journal_locks);
+    FREE(sbi->journal_descs);
 
     for (i = 0; i < sbi->cpus; i++) {
         inode_map = &sbi->inode_maps[i];
@@ -967,9 +967,9 @@ out:
         sbi->slab_heaps = NULL;
     }
 
-    if (sbi->journal_locks) {
-        FREE(sbi->journal_locks);
-        sbi->journal_locks = NULL;
+    if (sbi->journal_descs) {
+        FREE(sbi->journal_descs);
+        sbi->journal_descs = NULL;
     }
 
     if (sbi->inode_maps) {
@@ -1011,6 +1011,9 @@ int init_finefs_fs(struct super_block *sb, const std::string &dev_name, const st
         sizeof(struct finefs_dentry),
         sizeof(struct finefs_setattr_logentry), sizeof(struct finefs_link_change_entry),
         sizeof(struct finefs_inode_page_tail));
+
+    log_assert(sizeof(journal_header) <= CACHELINE_SIZE);
+    log_assert(sizeof(finefs_lite_journal_entry) == CACHELINE_SIZE);
 
     log_assert(sizeof(struct finefs_inode_log_page) == FINEFS_LOG_SIZE);
     log_assert(NEXT_PAGE <= LOG_ENTRY_TYPE_MASK);

@@ -90,7 +90,8 @@ static void finefs_lite_transaction_for_new_inode(struct super_block *sb, struct
     entry.values[1] = pi->valid;
 
     cpu = get_processor_id();
-    spin_lock(&sbi->journal_locks[cpu]);
+    // spin_lock(&sbi->journal_locks[cpu]);
+    spin_lock(&sbi->journal_descs[cpu].lock);
     // 返回journal后的新tail
     journal_tail = finefs_create_lite_transaction(sb, &entry, NULL, 1, cpu);
 
@@ -104,7 +105,51 @@ static void finefs_lite_transaction_for_new_inode(struct super_block *sb, struct
 
     // 提交事务
     finefs_commit_lite_transaction(sb, journal_tail, cpu);
-    spin_unlock(&sbi->journal_locks[cpu]);
+    spin_unlock(&sbi->journal_descs[cpu].lock);
+    FINEFS_END_TIMING(create_trans_t, trans_time);
+}
+
+static void finefs_lite_transaction_for_new_inode(struct super_block *sb, struct finefs_inode *pi,
+                                                  u64 p_dentry) {
+    struct finefs_sb_info *sbi = FINEFS_SB(sb);
+    struct finefs_lite_journal_entry entry;
+    int cpu;
+    u64 journal_tail;
+    timing_t trans_time;
+
+    FINEFS_START_TIMING(create_trans_t, trans_time);
+
+    finefs_dentry *dentry = (finefs_dentry*)finefs_get_block(sb, p_dentry);
+
+    /* Commit a lite transaction */
+    memset(&entry, 0, sizeof(struct finefs_lite_journal_entry));
+    entry.addr0 = p_dentry + CACHELINE_SIZE - sizeof(u64);
+    entry.type[0] = 8;
+    entry.values[0] = dentry->entry_version;
+
+    entry.addr1 = (u64)finefs_get_addr_off(sbi, &pi->valid);
+    entry.type[1] |= 1;
+    entry.values[1] = pi->valid;
+
+    cpu = get_processor_id();
+    // spin_lock(&sbi->journal_locks[cpu]);
+    spin_lock(&sbi->journal_descs[cpu].lock);
+    // 返回journal后的新tail
+    journal_tail = finefs_create_lite_transaction(sb, &entry, NULL, 1, cpu);
+
+    // 执行具体的事务
+    // 更新tail
+    // pidir->log_tail = pidir_tail;
+    // finefs_flush_buffer(&pidir->log_tail, CACHELINE_SIZE, 0);
+    dentry->entry_version = finefs_log_page_version(sb, p_dentry);
+    finefs_flush_cacheline(dentry, 0);
+    pi->valid = 1;
+    finefs_flush_buffer(&pi->valid, CACHELINE_SIZE, 0);
+    PERSISTENT_BARRIER();
+
+    // 提交事务
+    finefs_commit_lite_transaction(sb, journal_tail, cpu);
+    spin_unlock(&sbi->journal_descs[cpu].lock);
     FINEFS_END_TIMING(create_trans_t, trans_time);
 }
 
@@ -327,7 +372,7 @@ static void finefs_lite_transaction_for_time_and_link(struct super_block *sb,
     }
 
     cpu = get_processor_id();
-    spin_lock(&sbi->journal_locks[cpu]);
+    spin_lock(&sbi->journal_descs[cpu].lock);
     journal_tail = finefs_create_lite_transaction(sb, &entry, NULL, 1, cpu);
 
     // pi->log_tail = pi_tail;
@@ -341,7 +386,7 @@ static void finefs_lite_transaction_for_time_and_link(struct super_block *sb,
     PERSISTENT_BARRIER();
 
     finefs_commit_lite_transaction(sb, journal_tail, cpu);
-    spin_unlock(&sbi->journal_locks[cpu]);
+    spin_unlock(&sbi->journal_descs[cpu].lock);
     FINEFS_END_TIMING(link_trans_t, trans_time);
 }
 
@@ -499,9 +544,10 @@ out:
 static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
     struct super_block *sb = dir->i_sb;
     struct inode *inode;
-    struct finefs_inode *pi;
+    struct finefs_inode *pi, *pidir;
     finefs_inode_info_header* p_sih = &FINEFS_I(dir)->header;
     struct finefs_inode_info_header *child_sih = NULL;
+    u64 log_entry1;
     u64 pi_addr = 0;
     u64 tail = 0;
     u64 ino;
@@ -528,6 +574,7 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
         r_error("failed to add dir entry");
         goto out_err;
     }
+    log_entry1 = tail - CACHELINE_SIZE;
 
     inode = finefs_new_vfs_inode(TYPE_MKDIR, dir, pi_addr, ino, S_IFDIR | mode, sb->s_blocksize, 0,
                                  &dentry->d_name);
@@ -545,15 +592,16 @@ static int finefs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) 
     /* Build the dir tree */
     finefs_rebuild_dir_inode_tree(sb, pi, pi_addr, child_sih);
 
-    // pidir = finefs_get_inode(sb, dir);
+    pidir = finefs_get_inode(sb, dir);
     dir->i_blocks = p_sih->h_blocks;
     inc_nlink(dir);
     d_instantiate(dentry, inode);
     // unlock_new_inode(inode);
 
-    // finefs_lite_transaction_for_new_inode(sb, pi, pidir, tail);
+    // journal_tail = finefs_create_lite_transaction(sb, &entry, NULL, 1, cpu);
+    finefs_lite_transaction_for_new_inode(sb, pi, log_entry1);
 
-    PERSISTENT_BARRIER();
+    // PERSISTENT_BARRIER();
     FINEFS_I(dir)->header.h_log_tail = tail;
     inode_unref(inode);
 out:
@@ -647,6 +695,7 @@ static int finefs_rmdir(struct inode *dir, struct dentry *dentry) {
     if (err) goto end_rmdir;
 
     // finefs_lite_transaction_for_time_and_link(sb, pi, pidir, pi_tail, pidir_tail, 1);
+    PERSISTENT_BARRIER();
     FINEFS_I(dir)->header.h_log_tail = pidir_tail;
     FINEFS_I(inode)->header.h_log_tail = pi_tail;
 

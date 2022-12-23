@@ -1223,7 +1223,7 @@ int finefs_failure_recovery(struct super_block *sb) {
     struct finefs_sb_info *sbi = FINEFS_SB(sb);
     struct task_ring *ring;
     struct finefs_inode *pi;
-    struct ptr_pair *pair;
+    struct journal_header *pair;
     int ret;
     int i;
 

@@ -200,8 +200,8 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 	entry->ino = cpu_to_le64(ino);
 	entry->finefs_ino = cpu_to_le64(sih->ino);
 	entry->entry_ts = cpu_to_le64(sih->h_ts++);
-	barrier();
-	entry->entry_version = 0x1234;
+	// barrier();
+	// entry->entry_version = 0x1234;
 	finefs_flush_buffer(entry, sizeof(finefs_dentry), 0);
 
 	rdv_proc("new dir entry @ 0x%lx: p_ino: %lu, ino %lu, name len %u",
@@ -313,7 +313,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	dlog_assert(finefs_log_page_tail_remain_init(sb, finefs_log_page_addr(sb, pi->log_head.next_page_)));
 
 	de_entry = (struct finefs_dentry *)finefs_get_block(sb, new_block);
-	de_entry->entry_type = DIR_LOG;   // 中间log
+	de_entry->entry_type = TX_BEGIN_DIR_LOG;   // 中间log
 	de_entry->name_len = 1;
 	de_entry->links_count = 1;
 	de_entry->mtime = GetTsSec();
@@ -347,7 +347,7 @@ int finefs_append_dir_init_entries(struct super_block *sb,
 	sih->log_valid_bytes += FINEFS_DIR_LOG_REC_LEN(2);
 	curr_p += FINEFS_DIR_LOG_REC_LEN(2);
 
-	finefs_update_volatile_tail(sih, curr_p);
+	finefs_update_volatile_tail_no_fence(sih, curr_p);
 	return 0;
 }
 
@@ -529,12 +529,9 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 	}
 
 	// 用于新创建目录的内存索引重建
-
-	// 临时解决方法，未考虑恢复
 	int times = 0;
-	while (curr_p != pi->log_tail) {
-		++times;
-		if(times == 3) break;
+	while (times < 2) {
+		// if(times == 2) break;
 		if (goto_next_page(sb, curr_p)) {
 			curr_p = finefs_log_next_page(sb, curr_p);
 		}
@@ -544,6 +541,7 @@ int finefs_rebuild_dir_inode_tree(struct super_block *sb,
 			BUG();
 		}
 
+		++times;
 		addr = (void *)finefs_get_block(sb, curr_p);
 		type = finefs_get_entry_type(addr);
 		switch (type & LOG_ENTRY_TYPE_MASK) {
