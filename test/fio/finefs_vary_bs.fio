@@ -3,6 +3,7 @@
 [global]
 ; 目录需要事先存在
 directory=/tmp/finefs
+filename=fio-small-rw
 direct=1
 buffered=0
 thread=1
@@ -22,21 +23,31 @@ time_based
 runtime=20
 numjobs=1
 description=顺序写文件,单个线程单独一个文件,io大小变化
-size=3G
+size=3GB
 # overwrite=1
-rw=write
+
+# [load-4k]
+# wait_for_previous
+# rw=write
+# bs=4K
 
 # [seq-write-16B]
 # wait_for_previous
 # bs=16B
 
-# [seq-write-32B]
+[write-32B]
+wait_for_previous
+rw=write
+bs=32B
+
+# [read-32B]
 # wait_for_previous
+# rw=read
 # bs=32B
 
-[seq-write-64B]
-wait_for_previous
-bs=64B
+# [seq-write-64B]
+# wait_for_previous
+# bs=64B
 
 # [seq-write-128B]
 # wait_for_previous
