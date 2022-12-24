@@ -724,7 +724,7 @@ struct finefs_file_pages_write_entry;
 struct finefs_file_small_write_entry;
 
 struct finefs_file_small_entry {
-    u32 slab_bits;
+    // u32 slab_bits;
     u32 bytes;
     u64 file_off;
     const char *nvm_data;
@@ -1451,7 +1451,7 @@ static force_inline u64 finefs_less_page_alloc(struct super_block *sb, struct fi
         unsigned long blocknr = 0;
         finefs_new_data_blocks(sb, pi, &blocknr, 1, start_blk, zero, cow);
         nvm_off = finefs_get_block_off(sb, blocknr, pi->i_blk_type);
-        r_info("%s: size: %lu, one page: %lu", __func__, size, nvm_off);
+        rd_info("%s: size: %lu, one page: %lu", __func__, size, nvm_off);
         *s_bits = FINEFS_BLOCK_SHIFT;
     } else {
         nvm_off = finefs_slab_alloc(sb, size, s_bits);
@@ -1527,6 +1527,9 @@ int finefs_get_inode_address(struct super_block *sb, u64 ino, u64 *pi_addr, int 
 // 	struct finefs_inode *pi, loff_t new_size);
 // struct finefs_file_pages_write_entry *finefs_find_next_entry(struct super_block *sb,
 // 	struct finefs_inode_info_header *sih, pgoff_t pgoff);
+int finefs_file_page_entry_flush_slab(struct super_block *sb,
+    struct finefs_inode *pi, struct finefs_inode_info_header *sih,
+    finefs_file_page_entry* dram_page_entry, u64 *tail);
 struct finefs_file_page_entry *finefs_find_next_page_entry(struct super_block *sb,
                                                            struct finefs_inode_info_header *sih,
                                                            pgoff_t pgoff);
@@ -1620,7 +1623,7 @@ static force_inline void log_entry_set_invalid(struct super_block *sb,
     finefs_inode_page_tail *page_tail = (finefs_inode_page_tail *)FINEFS_LOG_TAIL((uintptr_t)entry);
     int entry_nr = FINEFS_LOG_ENTRY_NR(entry);
     dlog_assert((page_tail->bitmap >> (entry_nr)) & 1);
-    u32 remain_num = atomic_add_fetch(&page_tail->valid_num, -1);
+    u32 remain_num = --page_tail->valid_num;
     // bitmap_clear_bit_atomic
     bitmap_clear_bit(entry_nr, (unsigned long *)&(page_tail->bitmap));
     dlog_assert(((page_tail->bitmap >> (entry_nr)) & 1) == 0);
@@ -1658,7 +1661,7 @@ static force_inline void log_entry_set_invalid(struct super_block *sb,
 static force_inline void finefs_file_small_entry_set(super_block *sb,
                                                      finefs_file_small_entry *dram_entry,
                                                      finefs_file_small_write_entry *nvm_entry) {
-    dram_entry->slab_bits = nvm_entry->slab_bits;
+    // dram_entry->slab_bits = nvm_entry->slab_bits;
     dram_entry->bytes = nvm_entry->bytes;
     dram_entry->file_off = nvm_entry->file_off;
     dram_entry->nvm_data = (const char *)finefs_get_block(sb, nvm_entry->slab_off);

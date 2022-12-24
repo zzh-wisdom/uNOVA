@@ -1,0 +1,138 @@
+/* Test directories functionalities
+ *
+ */
+#include <dirent.h>
+#include <fcntl.h>
+#include <libsyscall_intercept_hook_point.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <cassert>
+#include <cerrno>
+#include <cstring>
+#include <iostream>
+#include <unordered_map>
+#include <vector>
+#include <dlfcn.h>
+
+#include "util/cpu.h"
+#include "util/log.h"
+
+const int MAX_FILE_PER_DIR=30000;
+
+std::string file_name_prefix;
+int name_len = 0;
+
+int main(int argc, char* argv[]) {
+    // #if FS_HOOK==1
+    //     printf("dlopen ./libnova_hook.so\n");
+    //     void *handle = dlopen("./libnova_hook.so", RTLD_NOW);
+    // 	assert(handle);
+    //     const std::string mntdir = "/tmp/nova";
+    // #else
+    //     printf("dlopen ./libfinefs_hook.so\n");
+    //     void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
+    // 	assert(handle);
+    //     const std::string mntdir = "/tmp/finefs";
+    // #endif
+    LogCfg log_cfg = {
+        .is_log_to_stderr = true,
+        .vlog_level = 0,
+        .min_log_level = 3,
+    };
+    InitLog(argv[0], &log_cfg);
+
+    log_assert(argc == 4);
+    if (strcmp(argv[1], "nova") == 0) {
+        printf("dlopen ./libnova_hook.so\n");
+        void *handle = dlopen("./libnova_hook.so", RTLD_NOW);
+    	assert(handle);
+    } else if (strcmp(argv[1], "finefs") == 0) {
+        printf("dlopen ./libfinefs_hook.so\n");
+        void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
+    	assert(handle);
+    } else {
+        exit(-1);
+    }
+
+    std::string mntdir;
+    if (strcmp(argv[1], "nova") == 0) {
+        mntdir = "/tmp/nova";
+    } else if (strcmp(argv[1], "finefs") == 0) {
+        mntdir = "/tmp/finefs";
+    } else {
+        exit(-1);
+    }
+    int files = atoi(argv[2]);
+    name_len = atoi(argv[3]);
+    log_assert(name_len >= 7);
+    file_name_prefix.append(name_len, '0');
+
+    int dir_num = (files + MAX_FILE_PER_DIR - 1) / MAX_FILE_PER_DIR;
+    printf("mnt %s, files: %d, dir_num: %d, name_len: %d\n",
+        mntdir.c_str(), files, dir_num, name_len);
+
+    int mkdir_flag = S_IRWXU | S_IRWXG | S_IRWXO;
+    int open_flag = O_RDWR | O_CREAT;
+    int ret;
+    uint64_t start_us, end_us;
+    double interval_s;
+
+    const std::string dir = mntdir + "/dir";
+    std::vector<std::string> p_dirs;
+    for(int i = 0; i < dir_num; ++i) {
+        p_dirs.push_back(dir + "-" + std::to_string(i));
+        ret = mkdir(p_dirs.back().c_str(), mkdir_flag);
+        assert(ret == 0);
+    }
+
+    int dir_idx;
+    int file_idx;
+    std::string file_name_suffix;
+    std::string file_name;
+
+    // 先创建文件
+    for(int i = 0; i < files/2; ++i) {
+        dir_idx = i % dir_num;
+        file_idx = i/dir_num;
+        file_name_suffix = std::to_string(file_idx);
+        file_name = p_dirs[dir_idx] + "/";
+        file_name += file_name_prefix.substr(0, name_len - file_name_suffix.size()) + file_name_suffix;
+        ret = open(file_name.c_str(), open_flag, 666);
+        log_assert(ret > 0);
+        close(ret);
+    }
+    printf("load over.\n");
+
+    start_us = GetTsUsec();
+    int unlink_idx = 0;
+    for(int i = files/2; i < files; ++i, ++unlink_idx) {
+        // 删除
+        dir_idx = unlink_idx % dir_num;
+        file_idx = unlink_idx / dir_num;
+        file_name_suffix = std::to_string(file_idx);
+        file_name = p_dirs[dir_idx] + "/";
+        file_name += file_name_prefix.substr(0, name_len - file_name_suffix.size()) + file_name_suffix;
+        ret = unlink(file_name.c_str());
+        log_assert(ret == 0);
+
+        // 创建
+        dir_idx = i % dir_num;
+        file_idx = i/dir_num;
+        file_name_suffix = std::to_string(file_idx);
+        file_name = p_dirs[dir_idx] + "/";
+        file_name += file_name_prefix.substr(0, name_len - file_name_suffix.size()) + file_name_suffix;
+        ret = open(file_name.c_str(), open_flag, 666);
+        log_assert(ret > 0);
+        close(ret);
+    }
+    end_us = GetTsUsec();
+    interval_s = (double)(end_us - start_us) / 1000 / 1000;
+    printf("open-unlink[1:1] bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
+           files * (64*2 + 128 + 64) / 1024.0 / 1024 / interval_s,
+           files / 1000.0 / interval_s, (end_us - start_us)*1.0 / files);
+
+    printf("Test pass\n");
+}

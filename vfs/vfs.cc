@@ -780,6 +780,7 @@ int do_close(int fd) {
 
 // 读不加锁，用户自己互斥 读写 和 写写
 ssize_t do_read(int fd, char *buf, size_t count) {
+    // r_info("%s count: %lu", __func__, count);
     ssize_t ret = -1;
     struct file *file = vfs_file_get(fd);
     if (file == nullptr) {
@@ -799,6 +800,7 @@ ssize_t do_read(int fd, char *buf, size_t count) {
 }
 
 ssize_t do_write(int fd, const char *buf, size_t count) {
+    // r_info("%s count: %lu", __func__, count);
     struct file *file = vfs_file_get(fd);
     if (file == nullptr) {
         rd_error("%s fail, fd %d is illegal.", __func__, fd);

@@ -18,7 +18,9 @@
 
 #include "util/cpu.h"
 
-static force_inline size_t finefs_page_write_entry_read(super_block* sb, finefs_file_page_entry* page_entry,
+static force_inline size_t finefs_page_write_entry_read(super_block* sb,
+	finefs_inode_info_header *sih,
+	finefs_file_page_entry* page_entry,
 	char* buf, size_t nr, u64 pos)
 {
 	u64 bytes = FINEFS_BLOCK_SIZE;
@@ -34,7 +36,7 @@ static force_inline size_t finefs_page_write_entry_read(super_block* sb, finefs_
 	finefs_file_small_entry *cur;
 	size_t written = 0;
 #ifdef FINEFS_SMALL_ENTRY_USE_LIST
-
+	int read_time = 0;
 	// TODO: 读跨越的small wrtie超过阈值，进行flush
 	list_for_each_entry(cur, &page_entry->small_write_head, entry) {
 		if(pos >= cur->file_off + cur->bytes)
@@ -63,7 +65,17 @@ static force_inline size_t finefs_page_write_entry_read(super_block* sb, finefs_
 		pos += bytes;
 		nr -= bytes;
 		written += bytes;
+		++read_time;
 		if(!nr) break;
+	}
+	if(read_time >= 4) {
+		rd_info("flush small write, read_time: %d, small writes: %d",
+			read_time, page_entry->num_small_write);
+		finefs_inode* pi = (struct finefs_inode *)finefs_get_block(sb, sih->pi_addr);
+		u64 tail = 0;
+		int ret = finefs_file_page_entry_flush_slab(sb, pi, sih, page_entry, &tail);
+		log_assert(ret == 0);
+		sih->h_log_tail = tail;
 	}
 #else
 	auto it = page_entry->file_off_2_small.lower_bound(pos);
@@ -170,7 +182,7 @@ do_dax_mapping_read(struct file *filp, char *buf,
 	while (len) {
 		unsigned long nr;  // 实际读的字节数
 		page_entry = finefs_get_page_entry(sb, si, index);
-		nr = finefs_page_write_entry_read(sb, page_entry, buf, len, pos);
+		nr = finefs_page_write_entry_read(sb, sih, page_entry, buf, len, pos);
 		copied += nr;
 		offset += nr;
 		index += offset >> FINEFS_BLOCK_SHIFT;

@@ -392,10 +392,10 @@ static force_inline void finefs_small_entry_remove(super_block* sb,
 		struct finefs_inode_info_header *sih,
 		finefs_file_small_entry* small_entry) {
 	finefs_file_small_write_entry *small_write_entry = small_entry->nvm_entry_p;
-	dlog_assert(small_write_entry);
-    u64 slab_off = finefs_get_addr_off(sb, small_entry->nvm_data);
-    slab_off &= MASK_FOR_BITS(small_entry->slab_bits);
-    size_t slab_size = 1ul << small_entry->slab_bits;
+	if(small_write_entry == nullptr) return;
+    dlog_assert(small_write_entry);
+    u64 slab_off = small_write_entry->slab_off;
+    size_t slab_size = 1 << small_write_entry->slab_bits;
     // 释放 nvm slab 空间
     finefs_less_page_free(sb, pi, slab_off, slab_size);
     log_entry_set_invalid(sb, sih, small_write_entry, true);
@@ -412,7 +412,7 @@ static void finefs_file_page_entry_clear(struct super_block *sb,
 #ifdef FINEFS_SMALL_ENTRY_USE_LIST
     list_for_each_entry_safe(cur, next, &dram_page_entry->small_write_head, entry) {
         dlog_assert(cur->nvm_data);
-        dlog_assert(cur->nvm_entry_p);
+        // dlog_assert(cur->nvm_entry_p);
         if(nvm_delete) {
             finefs_small_entry_remove(sb, pi, sih, cur);
         }
@@ -681,7 +681,7 @@ bool finefs_page_entry_is_right(super_block* sb, finefs_file_page_entry* page_en
 }
 
 // 听过东西可以写的
-static int finefs_file_page_entry_flush_slab(struct super_block *sb,
+int finefs_file_page_entry_flush_slab(struct super_block *sb,
     struct finefs_inode *pi, struct finefs_inode_info_header *sih,
     finefs_file_page_entry* dram_page_entry, u64 *tail)
 {
@@ -724,7 +724,7 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
 #ifdef FINEFS_SMALL_ENTRY_USE_LIST
     list_for_each_entry_safe(cur, next, &dram_page_entry->small_write_head, entry) {
         dlog_assert(cur->nvm_data);
-        dlog_assert(cur->nvm_entry_p);
+        // dlog_assert(cur->nvm_entry_p);
         bytes = cur->file_off - last_pos;
         if(is_new_page && bytes) {
             pmem_memset(cur_ptr, 0, bytes, false);
@@ -736,8 +736,10 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
         cur_ptr += cur->bytes;
         last_pos += cur->bytes;
 
-        mtime = cur->nvm_entry_p->mtime > mtime  ? cur->nvm_entry_p->mtime : mtime;
-        file_size = cur->nvm_entry_p->size > file_size ? cur->nvm_entry_p->size : file_size;
+        if(cur->nvm_entry_p) {
+            mtime = cur->nvm_entry_p->mtime > mtime  ? cur->nvm_entry_p->mtime : mtime;
+            file_size = cur->nvm_entry_p->size > file_size ? cur->nvm_entry_p->size : file_size;
+        }
     }
 #else
     for(auto p : dram_page_entry->file_off_2_small) {
@@ -779,7 +781,7 @@ static int finefs_file_page_entry_flush_slab(struct super_block *sb,
 	page_entry_data.size = cpu_to_le64(file_size);
     PERSISTENT_BARRIER();
     inode* inode = finefs_get_vfs_inode_from_header(sih);
-    dlog_assert(cur_tail != 0);
+    // dlog_assert(cur_tail != 0);
 	u64 curr_entry = finefs_append_file_write_entry(sb, pi, inode,
 							&page_entry_data, cur_tail);
 	if (curr_entry == 0) {
@@ -875,7 +877,20 @@ static inline int finefs_file_page_entry_apply_slab(struct super_block *sb,
         }
         // 中间覆盖
         if(start > cur->file_off && end < cur->file_off + cur->bytes) {
-            r_fatal("TODO: small write entry split");
+            // 处理后半部分
+            finefs_file_small_entry* new_cur = finefs_alloc_small_entry(sb);
+            new_cur->bytes = cur->file_off + cur->bytes - end;
+            new_cur->file_off = end;
+            new_cur->nvm_data = cur->nvm_data + (end - cur->file_off);
+            // 由于所有的小写entry是同时flush的，所以这里将nvm_entry_p=0没有问题
+            // 不会造成nvm entry泄漏或者重复释放
+            new_cur->nvm_entry_p = 0;
+            // new_cur->slab_bits = 0;
+
+            // 处理前半部分
+            cur->bytes = start - cur->file_off;
+            list_add(&new_cur->entry, &cur->entry);
+            break;
         }
     }
     cur = finefs_alloc_small_entry(sb);
@@ -1281,6 +1296,7 @@ static int finefs_free_inode(struct inode *inode, struct finefs_inode_info_heade
         // finefs_print_inode_log(sb, inode);
     }
 
+    r_info("%s ino: %lu, log_pages: %lu", __func__, sih->ino, sih->log_pages);
     finefs_free_inode_log(sb, pi, sih);
 
     err = finefs_free_inuse_inode(sb, pi->finefs_ino);

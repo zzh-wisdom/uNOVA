@@ -74,8 +74,8 @@ int main(int argc, char* argv[]) {
     assert(ret == 0 || errno == EEXIST);
     fd = open(dir1_file.c_str(), O_RDWR | O_CREAT | O_DIRECT, 666);
     assert(fd > 0);
-    void* buf = aligned_alloc(4096, bs);
-    memset(buf, 0x3f, bs);
+    void* buf = aligned_alloc(4096, bs < 4096 ? 4096 : bs);
+    memset(buf, 0x3f, bs < 4096 ? 4096 : bs);
 
     // load append
     start_us = GetTsUsec();
@@ -106,7 +106,9 @@ int main(int argc, char* argv[]) {
            OP / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
 
     // read
-    void* read_buf = aligned_alloc(4096, bs);
+    void* read_buf = aligned_alloc(4096, bs < 4096 ? 4096 : bs);
+    // OP = OP * bs / 4096;
+    // bs = 4096;
     uint64_t start_ns = GetTsNsec();
     for(int i = 0; i < OP; ++i) {
         if(i % bs_num == 0) {

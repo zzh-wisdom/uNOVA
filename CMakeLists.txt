@@ -17,9 +17,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -DERPC_INFINIBAND=true -D_FIL
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
 # set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
-# add_compile_options(-g)
+add_compile_options(-g)
 add_definitions(-D NDEBUG)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3")
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3")
 
 set(INCLUDE_HEAD_LIST
     ${PROJECT_SOURCE_DIR}
@@ -121,6 +121,13 @@ add_executable(perf_open_vary_name
     perf/open_vary_name_test.cc
     util/log.cc)
 target_link_libraries(perf_open_vary_name
+    pthread syscall_intercept dl glog
+)
+
+add_executable(perf_open_mix_unlink
+    perf/open_mix_unlink_test.cc
+    util/log.cc)
+target_link_libraries(perf_open_mix_unlink
     pthread syscall_intercept dl glog
 )
 

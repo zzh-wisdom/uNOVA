@@ -3,10 +3,11 @@
 [global]
 ; 目录需要事先存在
 directory=/tmp/finefs
+filename=fio-small-rw
 direct=1
 buffered=0
 thread=1
-cpus_allowed=25-39,60-79
+cpus_allowed=20-25 #,60-79
 cpus_allowed_policy=split
 numa_cpu_nodes=1
 numa_mem_policy=bind:1
@@ -17,25 +18,23 @@ ioengine=sync
 create_fsync=1
 # create_only=1
 # 运行完负载后，删除文件
-unlink=1
-openfiles=1
-time_based
-runtime=30
+# unlink=1
 numjobs=1
 description=顺序写文件,单个线程单独一个文件,io大小变化
-size=3GB
-bs=4K
-
-# [append-4K]
-# wait_for_previous
-# overwrite=0
-# rw=write
-
-# [seq-write-4K]
-# wait_for_previous
+size=3G
 # overwrite=1
-# rw=write
 
-[seq-read-4K]
+[seq-write-4KB]
 wait_for_previous
-rw=randread
+bs=4K
+rw=write
+
+[rand-rw]
+wait_for_previous
+rw=randrw
+rwmixwrite=100
+# 4k/14:2k/14:1k/14:512B/14:256B/14:128B/14:64B/
+bssplit=1k/16:512B/16:256B/16:128B/16:64B/16:2k/
+time_based
+runtime=30
+unified_rw_reporting=1

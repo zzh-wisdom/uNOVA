@@ -536,7 +536,7 @@ int finefs_free_log_blocks(struct super_block *sb, struct finefs_inode *pi,
 // 从free list中分配空闲空间
 // btype
 // 按照指定的大小，分一个连续的空间，返回实际分配的block个数
-static unsigned long finefs_alloc_blocks_in_free_list(struct super_block *sb,
+static int finefs_alloc_blocks_in_free_list(struct super_block *sb,
 	struct free_list *free_list, unsigned short btype,
 	unsigned long num_blocks, unsigned long *new_blocknr)
 {
@@ -594,7 +594,7 @@ static unsigned long finefs_alloc_blocks_in_free_list(struct super_block *sb,
 	FINEFS_STATS_ADD(alloc_steps, step);
 
 	if (found == 0) {
-		r_error("%s not found.", __func__);
+		rd_error("%s not found.", __func__);
 		return -ENOSPC;
 	}
 
@@ -611,6 +611,7 @@ static int finefs_get_candidate_log_free_list(struct super_block *sb)
 
 	for (i = 0; i < sbi->cpus; i++) {
 		free_list = finefs_get_log_free_list(sb, i);
+		// printf("cpu: %d num_free_blocks: %lu\n", i, free_list->num_free_blocks);
 		if (free_list->num_free_blocks > num_free_blocks) {
 			cpuid = i;
 			num_free_blocks = free_list->num_free_blocks;
@@ -647,7 +648,7 @@ static int finefs_new_blocks_from_log_area(struct super_block *sb, unsigned long
 
 	struct free_list *free_list;
 	void *bp;
-	unsigned long ret_blocks = 0;
+	int ret_blocks = 0;
 	unsigned long new_blocknr = 0;
 	struct rb_node *temp;
 	struct finefs_range_node *first;
@@ -681,16 +682,28 @@ retry:
 		}
 	}
 
+	// 实际上，目前还未支持碎片化分配
 	ret_blocks = finefs_alloc_blocks_in_free_list(sb, free_list, btype,
 						num_blocks, &new_blocknr);
 
-	// 统计信息
-	if (atype == LOG) {
-		free_list->alloc_log_count++;
-		free_list->alloc_log_pages += ret_blocks;
-	} else if (atype == DATA) {
-		free_list->alloc_data_count++;
-		free_list->alloc_data_pages += ret_blocks;
+	if(ret_blocks > 0) {
+		// 统计信息
+		if (atype == LOG) {
+			free_list->alloc_log_count++;
+			free_list->alloc_log_pages += ret_blocks;
+		} else if (atype == DATA) {
+			free_list->alloc_data_count++;
+			free_list->alloc_data_pages += ret_blocks;
+		}
+	} else {
+		spin_unlock(&free_list->s_lock);
+		if (retried >= 1)
+			return -ENOSPC;
+		// 从其他cpu分配空闲空间
+		cpuid = finefs_get_candidate_log_free_list(sb);
+		rd_info("new log page from other cpuid: %d", cpuid);
+		retried++;
+		goto retry;
 	}
 
 	spin_unlock(&free_list->s_lock);
@@ -801,7 +814,7 @@ static int finefs_new_blocks(struct super_block *sb, unsigned long *blocknr,
 		if(ret_blocks > 0) {
 			return ret_blocks;
 		}
-		r_info("log area full, alloc from data area, cpuid: %d", cpuid);
+		r_fatal("log area full, alloc from data area, cpuid: %d", cpuid);
 		ret_blocks = finefs_new_blocks_from_data_area(sb, blocknr, num_blocks, btype, zero, atype, cpuid);
 		log_assert(zero == 0);
 		if(ret_blocks > 0) {

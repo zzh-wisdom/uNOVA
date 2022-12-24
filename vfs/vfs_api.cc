@@ -68,9 +68,9 @@ void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->bg_thread_cpu_id = 79;
 	cfg->measure_timing = 0;
 	cfg->start_fd = CFG_START_FD;
-    cfg->log_block_occupy = 1.0/16;
+    cfg->log_block_occupy = 1.0/64;
 	cfg->format = true;
-	cfg->limit_nvm_rw_threads = true;
+	cfg->limit_nvm_rw_threads = false;
     cfg->pmem_nt_threshold = 256;
 }
 

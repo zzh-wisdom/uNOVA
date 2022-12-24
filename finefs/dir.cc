@@ -113,7 +113,7 @@ static int finefs_remove_dir_radix_tree(struct super_block *sb,
 		dlog_assert(entry->name_len != 0);
 		if(entry->name_len == 32) { // 文件名存储在别处
 			log_assert(entry->name_off__ && entry->name_len__);
-			finefs_slab_free(sb, entry->name_off__, entry->name_len__);
+			finefs_slab_free(sb, entry->name_off__, entry->name_len__ + 1);
 		}
 		// /* No need to flush */
 		// entry->invalid = 1;  // 把旧的entry标记为无效，只是为了方便垃圾回收，不作用与原子性
