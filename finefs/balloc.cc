@@ -831,7 +831,7 @@ static int finefs_new_blocks(struct super_block *sb, unsigned long *blocknr,
 		if(ret_blocks > 0) {
 			return ret_blocks;
 		}
-		r_info("data area full, alloc from log area, cpuid: %d, ret_blocks: %d",
+		rd_info("data area full, alloc from log area, cpuid: %d, ret_blocks: %d",
 				cpuid, ret_blocks);
 		return finefs_new_blocks_from_log_area(sb, blocknr, num_blocks, btype, zero, atype, cpuid);
 	}

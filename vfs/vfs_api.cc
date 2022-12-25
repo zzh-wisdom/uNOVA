@@ -70,7 +70,7 @@ void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->start_fd = CFG_START_FD;
     cfg->log_block_occupy = 1.0/64;
 	cfg->format = true;
-	cfg->limit_nvm_rw_threads = false;
+	cfg->limit_nvm_rw_threads = true;
     cfg->pmem_nt_threshold = 256;
 }
 

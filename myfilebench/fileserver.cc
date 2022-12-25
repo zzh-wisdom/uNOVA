@@ -12,8 +12,8 @@ const int dir_width = 32;
 const int files_per_dir = 4;
 const size_t file_size = 128*1024;
 const size_t iosize = 4096;
-size_t meanappendsize = 128*1024;
-const int append_rand_bs_bits = 12;
+size_t meanappendsize = 16*1024;
+const int append_rand_bs_bits = 6;
 
 // sudo ./fileserver nova 4 200000
 
