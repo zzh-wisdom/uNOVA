@@ -20,7 +20,8 @@
 #include "util/cpu.h"
 #include "util/log.h"
 
-uint64_t FILE_SIZE = 2ul << 30; // 3GB
+const uint64_t FILE_SIZE = 1ul << 30; // 1GB
+const uint64_t FILE_4KB_NUM = FILE_SIZE >> 12;
 
 int main(int argc, char* argv[]) {
     assert(argc == 4);
@@ -58,6 +59,7 @@ int main(int argc, char* argv[]) {
     bs_num = std::min(bs_num, OP);
     OP = bs_num;
     printf("mnt %s, bs: %d, OP: %lu\n", mntdir.c_str(), bs, OP);
+    printf("file_size: %lu GB, page_num: %lu\n", FILE_SIZE >> 30, FILE_4KB_NUM);
 
     int mkdir_flag = S_IRWXU | S_IRWXG | S_IRWXO;
     int open_flag = O_RDWR | O_CREAT;
@@ -76,8 +78,8 @@ int main(int argc, char* argv[]) {
     memset(buf, 0x3f, bs < 4096 ? 4096 : bs);
 
     // load
-    uint64_t load_n = (OP * bs + 4095)/4096;
-    for(int i = 0; i < load_n; ++i) {
+    // uint64_t load_n = (OP * bs + 4095)/4096;
+    for(int i = 0; i < FILE_4KB_NUM; ++i) {
         ret = write(fd, buf, 4096);
         log_assert(ret == 4096);
     }

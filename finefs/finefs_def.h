@@ -334,7 +334,7 @@ static inline void finefs_flush_buffer(void *buf, uint32_t len, bool fence)
 #define	LOG_EXTEND_THRESHOLD	256
 
 // #define SMALL_ENTRY_FLUSH_THRESHOLD_FOR_READ 4
-#define SMALL_ENTRY_FLUSH_THRESHOLD_FOR_WRITE 16
+#define SMALL_ENTRY_FLUSH_THRESHOLD_FOR_WRITE 8
 
 #define FINEFS_SMALL_ENTRY_USE_LIST
 
