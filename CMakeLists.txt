@@ -136,6 +136,15 @@ target_link_libraries(perf_write
     pthread syscall_intercept dl
 )
 
+add_executable(small_rw
+    perf/small_rw_test.cc
+    util/log.cc
+    util/cpu.cc)
+target_link_libraries(small_rw
+    pthread syscall_intercept dl glog
+    numa
+)
+
 add_executable(small_write_seq
     perf/small_write_seq_test.cc
     util/log.cc

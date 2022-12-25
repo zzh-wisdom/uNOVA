@@ -87,7 +87,6 @@ int main(int argc, char* argv[]) {
 
     const int FILE_BS_NUM = FILE_SIZE / bs;
     // rand write
-    int bs_i = 0;
     size_t off;
     start_us = GetTsUsec();
     for(int i = 0; i < OP; ++i) {

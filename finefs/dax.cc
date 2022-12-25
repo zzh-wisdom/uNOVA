@@ -68,6 +68,7 @@ static force_inline size_t finefs_page_write_entry_read(super_block* sb,
 		++read_time;
 		if(!nr) break;
 	}
+	rd_info("read_time: %d, num_small_write: %d", read_time, page_entry->num_small_write);
 	if(read_time >= 4) {
 		rd_info("flush small write, read_time: %d, small writes: %d",
 			read_time, page_entry->num_small_write);

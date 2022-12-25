@@ -835,6 +835,7 @@ static inline int finefs_file_page_entry_apply_slab(struct super_block *sb,
     int ret = 0;
     if(dram_page_entry->num_small_write > SMALL_ENTRY_FLUSH_THRESHOLD_FOR_WRITE) {
         ret = finefs_file_page_entry_flush_slab(sb, pi, sih, dram_page_entry, tail);
+        log_assert(ret == 0);
         if(ret) return ret;
     }
     finefs_file_small_entry *last = nullptr;

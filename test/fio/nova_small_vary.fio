@@ -32,7 +32,7 @@ rw=write
 [rand-rw]
 wait_for_previous
 rw=randrw
-rwmixwrite=100
+rwmixwrite=25
 # 4k/14:2k/14:1k/14:512B/14:256B/14:128B/14:64B/
 bssplit=1k/16:512B/16:256B/16:128B/16:64B/16:2k/
 time_based
