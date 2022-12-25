@@ -1297,7 +1297,7 @@ static int finefs_free_inode(struct inode *inode, struct finefs_inode_info_heade
         // finefs_print_inode_log(sb, inode);
     }
 
-    r_info("%s ino: %lu, log_pages: %lu", __func__, sih->ino, sih->log_pages);
+    rd_info("%s ino: %lu, log_pages: %lu", __func__, sih->ino, sih->log_pages);
     finefs_free_inode_log(sb, pi, sih);
 
     err = finefs_free_inuse_inode(sb, pi->finefs_ino);

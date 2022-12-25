@@ -6,7 +6,7 @@ directory=/tmp/finefs
 direct=1
 buffered=0
 thread=1
-cpus_allowed=25-39,60-79
+cpus_allowed=20-39,60-71
 cpus_allowed_policy=split
 numa_cpu_nodes=1
 numa_mem_policy=bind:1
@@ -17,25 +17,41 @@ ioengine=sync
 create_fsync=1
 # create_only=1
 # 运行完负载后，删除文件
-unlink=1
+# unlink=1
 openfiles=1
-time_based
-runtime=30
-numjobs=1
 description=顺序写文件,单个线程单独一个文件,io大小变化
 size=3GB
 bs=4K
+rw=write
+numjobs=16
+
+time_based
+runtime=30
 
 # [append-4K]
 # wait_for_previous
 # overwrite=0
+
+[seq-write-4K]
+wait_for_previous
 # rw=write
+overwrite=0
 
 # [seq-write-4K]
 # wait_for_previous
+# rw=randwrite
 # overwrite=1
-# rw=write
+# time_based
+# runtime=30
 
-[seq-read-4K]
-wait_for_previous
-rw=randread
+# [seq-read-4K]
+# wait_for_previous
+# rw=read
+# time_based
+# runtime=30
+
+# [seq-read-4K]
+# wait_for_previous
+# rw=randread
+# time_based
+# runtime=30

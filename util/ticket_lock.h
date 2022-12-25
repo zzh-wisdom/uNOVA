@@ -232,6 +232,9 @@ static __inline__ void ticket_semaphore_wait(struct ticket_lock_t *lock, int thr
 static __inline__ void ticket_semaphore_release(struct ticket_lock_t *lock)
 {
     __ADD(1, &lock->tickets.head);
+#ifdef DEBUG
+    printf("Thread [%llu] releas the lock\n", (unsigned long long)pthread_self());
+#endif
 }
 
 #ifdef __cplusplus

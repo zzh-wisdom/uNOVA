@@ -59,10 +59,10 @@ void vfs_cfg_print(struct vfs_cfg* cfg) {
 void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->numa_socket = 1;
 	cfg->cpu_num = 0;
-	// for(int i = 26; i < 40; ++i) {
-	// 	cfg->cpu_ids[cfg->cpu_num++] = i;
-	// }
-	for(int i = 60; i < 80; ++i) {
+	for(int i = 20; i < 40; ++i) {
+		cfg->cpu_ids[cfg->cpu_num++] = i;
+	}
+	for(int i = 60; i < 72; ++i) {
 		cfg->cpu_ids[cfg->cpu_num++] = i;
 	}
 	cfg->bg_thread_cpu_id = 79;
@@ -70,7 +70,7 @@ void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->start_fd = CFG_START_FD;
     cfg->log_block_occupy = 1.0/64;
 	cfg->format = true;
-	cfg->limit_nvm_rw_threads = false;
+	cfg->limit_nvm_rw_threads = true;
     cfg->pmem_nt_threshold = 256;
 }
 
