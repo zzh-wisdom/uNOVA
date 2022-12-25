@@ -15,7 +15,7 @@ const size_t iosize = 4096;
 size_t meanappendsize = 32*1024;
 const int append_rand_bs_bits = 12;
 
-// sudo ./webproxy nova 1  400000
+// sudo ./webproxy nova 1 200000
 
 char *bufs[MAX_CPU_NUM];
 

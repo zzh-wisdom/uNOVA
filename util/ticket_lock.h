@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-//#define NUM_THREADS (65535)
+#define NUM_THREADS (65535)
 
 #if NUM_THREADS < 256
 #define MAX_THREADS (255)
@@ -207,13 +207,19 @@ static __inline__ void ticket_semaphore_init(struct ticket_lock_t *lock)
  * and wait till our turn comes. ( i.e till head == tail )
  * threshold = 1 相当于互斥锁
  */
-static __inline__ void ticket_semaphore_wait(struct ticket_lock_t *lock, int threshold)
+static __inline__ void ticket_semaphore_wait(struct ticket_lock_t *lock, __tickets threshold)
 {
     register struct _tickets inc = { .tail = 1 };
     inc = __XADD(inc, &lock->tickets);
+    // __tickets tail, head;
+    // tail = __atomic_fetch_add(&lock->tickets.tail, 1, __ATOMIC_SEQ_CST);
+    // __atomic_fetch_add(&lock->tickets, inc, __ATOMIC_SEQ_CST);
     do
     {
+        // head = __atomic_load_n(&lock->tickets.head, __ATOMIC_SEQ_CST);
+        // break;
         if((inc.tail - inc.head) < threshold) break;
+        // if((tail - head) < threshold) break;
         //loop
         __RELAX();
         inc.head = __ACCESS_ONCE(lock->tickets.head);
@@ -232,6 +238,7 @@ static __inline__ void ticket_semaphore_wait(struct ticket_lock_t *lock, int thr
 static __inline__ void ticket_semaphore_release(struct ticket_lock_t *lock)
 {
     __ADD(1, &lock->tickets.head);
+    // __atomic_fetch_add(&lock->tickets.head, 1, __ATOMIC_SEQ_CST);
 #ifdef DEBUG
     printf("Thread [%llu] releas the lock\n", (unsigned long long)pthread_self());
 #endif
