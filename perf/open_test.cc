@@ -47,9 +47,6 @@ int main(int argc, char* argv[]) {
         // printf("dlopen ../../libnvmmio/src/libnvmmio.so\n");
         // void *handle = dlopen("../../libnvmmio/src/libnvmmio.so", RTLD_NOW);
     	// assert(handle);
-    } else {
-        printf("error\n");
-        exit(-1);
     }
 
     std::string mntdir;
@@ -58,6 +55,8 @@ int main(int argc, char* argv[]) {
     } else if (strcmp(argv[1], "finefs") == 0) {
         mntdir = "/tmp/finefs";
     } else if(strcmp(argv[1], "libnvmmio") == 0) {
+        mntdir = "/mnt/pmem2";
+    } else if(strcmp(argv[1], "ext4") == 0) {
         mntdir = "/mnt/pmem2";
     } else if(strcmp(argv[1], "ext4") == 0) {
         mntdir = "/mnt/pmem2";

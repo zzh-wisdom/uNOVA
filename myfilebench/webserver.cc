@@ -7,9 +7,9 @@
 // #include <glog/logging.h>
 
 string dir = "/tmp/nova";
-int nfiles = 32*32*32*8;  // 16GB
+int nfiles = 32*32;  // 16GB // *32*8
 const int dir_width = 32;
-const int files_per_dir = 8;
+const int files_per_dir = 32;
 const size_t file_size = 64*1024;
 const size_t iosize = 4096;
 size_t meanappendsize = 16*1024;
@@ -100,6 +100,8 @@ int main(int argc, char* argv[]) {
             dir = "/tmp/finefs";
         } else if(strcmp(argv[1], "ext4") == 0) {
             dir = "/mnt/pmem2/fileserver";
+        } else if(strcmp(argv[1], "libnvmmio") == 0) {
+            dir = "/mnt/pmem2";
         }
     }
 

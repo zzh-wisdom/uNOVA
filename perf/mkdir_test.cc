@@ -42,8 +42,6 @@ int main(int argc, char* argv[]) {
         printf("dlopen ./libfinefs_hook.so\n");
         void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
     	assert(handle);
-    } else {
-        exit(-1);
     }
 
     std::string mntdir;
@@ -51,7 +49,12 @@ int main(int argc, char* argv[]) {
         mntdir = "/tmp/nova";
     } else if (strcmp(argv[1], "finefs") == 0) {
         mntdir = "/tmp/finefs";
+    } else if(strcmp(argv[1], "libnvmmio") == 0) {
+        mntdir = "/mnt/pmem2";
+    } else if(strcmp(argv[1], "ext4") == 0) {
+        mntdir = "/mnt/pmem2";
     } else {
+        printf("error");
         exit(-1);
     }
     int files = atoi(argv[2]);
