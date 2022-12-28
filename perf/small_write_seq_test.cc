@@ -22,6 +22,9 @@
 
 const uint64_t FILE_SIZE = 1ul << 30; // 1GB
 const uint64_t FILE_4KB_NUM = FILE_SIZE >> 12;
+#define O_ATOMIC 01000000000
+
+// LD_PRELOAD=../../libnvmmio/src/libnvmmio.so numactl --cpunodebind=1 --membind=1  ./small_write_seq libnvmmio 128 1000000
 
 int main(int argc, char* argv[]) {
     assert(argc == 4);
@@ -52,6 +55,8 @@ int main(int argc, char* argv[]) {
         mntdir = "/tmp/finefs";
     } else if(strcmp(argv[1], "ext4") == 0){
         mntdir = "/mnt/pmem2/test";
+    } else if(strcmp(argv[1], "libnvmmio") == 0) {
+        mntdir = "/mnt/pmem2";
     }
     int bs = atoi(argv[2]);
     uint64_t OP = atoi(argv[3]);
@@ -62,7 +67,7 @@ int main(int argc, char* argv[]) {
     printf("file_size: %lu GB, page_num: %lu\n", FILE_SIZE >> 30, FILE_4KB_NUM);
 
     int mkdir_flag = S_IRWXU | S_IRWXG | S_IRWXO;
-    int open_flag = O_RDWR | O_CREAT;
+    const int open_flag = O_RDWR | O_CREAT | O_ATOMIC; // O_DIRECT
     int ret;
     uint64_t start_us, end_us;
     double interval_s;
@@ -72,17 +77,20 @@ int main(int argc, char* argv[]) {
 
     ret = mkdir(dir1.c_str(), mkdir_flag);
     log_assert(ret == 0 || errno == EEXIST);
-    fd = open(dir1_file.c_str(), O_RDWR | O_CREAT | O_DIRECT, 666);
+    fd = open(dir1_file.c_str(), open_flag, 666);
     log_assert(fd > 0);
     void* buf = aligned_alloc(4096, bs < 4096 ? 4096 : bs);
     memset(buf, 0x3f, bs < 4096 ? 4096 : bs);
 
     // load
-    // uint64_t load_n = (OP * bs + 4095)/4096;
+    uint64_t load_n = (OP * bs + 4095)/4096;
     for(int i = 0; i < FILE_4KB_NUM; ++i) {
         ret = write(fd, buf, 4096);
         log_assert(ret == 4096);
+        ret = fsync(fd);
+        log_assert(ret == 0);
     }
+    sleep(2);
 
     // seq write
     start_us = GetTsUsec();
@@ -93,6 +101,8 @@ int main(int argc, char* argv[]) {
         }
         ret = write(fd, buf, bs);
         log_assert(ret == bs);
+        ret = fsync(fd);
+        log_assert(ret == 0);
     }
     end_us = GetTsUsec();
     interval_s = (double)(end_us - start_us) / 1000 / 1000;

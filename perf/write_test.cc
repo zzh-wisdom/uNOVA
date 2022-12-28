@@ -19,7 +19,10 @@
 
 #include "util/cpu.h"
 
-const uint64_t FILE_SIZE = 2ul << 30; // 3GB
+const uint64_t FILE_SIZE = 1ul << 30; // 3GB
+#define O_ATOMIC 01000000000
+
+// LD_PRELOAD=../../libnvmmio/src/libnvmmio.so
 
 int main(int argc, char* argv[]) {
     // #if FS_HOOK==1
@@ -42,6 +45,10 @@ int main(int argc, char* argv[]) {
         printf("dlopen ./libfinefs_hook.so\n");
         void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
     	assert(handle);
+    } else if (strcmp(argv[1], "libnvmmio") == 0) {
+        // printf("dlopen ../../libnvmmio/src/libnvmmio.so\n");
+        // void *handle = dlopen("../../libnvmmio/src/libnvmmio.so", RTLD_NOW);
+    	// assert(handle);
     } else {
         // exit(-1);
     }
@@ -52,17 +59,19 @@ int main(int argc, char* argv[]) {
     } else if (strcmp(argv[1], "finefs") == 0) {
         mntdir = "/tmp/finefs";
     } else if(strcmp(argv[1], "ext4") == 0){
-        mntdir = "/mnt/pmem2/test";
+        mntdir = "/mnt/pmem2/";
+    } else if(strcmp(argv[1], "libnvmmio") == 0) {
+        mntdir = "/mnt/pmem2";
     }
     int bs = atoi(argv[2]);
     uint64_t OP = atoi(argv[3]);
     uint64_t bs_num = FILE_SIZE / bs;
     bs_num = std::min(bs_num, OP);
-    OP = bs_num;
+    // OP = bs_num;
     printf("mnt %s, bs: %d, OP: %lu\n", mntdir.c_str(), bs, OP);
 
     int mkdir_flag = S_IRWXU | S_IRWXG | S_IRWXO;
-    int open_flag = O_RDWR | O_CREAT;
+    const int open_flag = O_RDWR | O_CREAT | O_ATOMIC; // O_DIRECT
     int ret;
     uint64_t start_us, end_us;
     double interval_s;
@@ -72,7 +81,7 @@ int main(int argc, char* argv[]) {
 
     ret = mkdir(dir1.c_str(), mkdir_flag);
     assert(ret == 0 || errno == EEXIST);
-    fd = open(dir1_file.c_str(), O_RDWR | O_CREAT | O_DIRECT, 666);
+    fd = open(dir1_file.c_str(), open_flag, 666);
     assert(fd > 0);
     void* buf = aligned_alloc(4096, bs < 4096 ? 4096 : bs);
     memset(buf, 0x3f, bs < 4096 ? 4096 : bs);
@@ -82,12 +91,13 @@ int main(int argc, char* argv[]) {
     for(int i = 0; i < bs_num; ++i) {
         ret = write(fd, buf, bs);
         assert(ret == bs);
+        fsync(fd);
     }
     end_us = GetTsUsec();
     interval_s = (double)(end_us - start_us) / 1000 / 1000;
     printf("append bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
            bs_num * (bs) / 1024.0 / 1024 / interval_s,
-           bs_num / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
+           bs_num / 1000.0 / interval_s, (end_us - start_us)*1.0 / bs_num);
 
     // write
     start_us = GetTsUsec();
@@ -98,6 +108,7 @@ int main(int argc, char* argv[]) {
         }
         ret = write(fd, buf, bs);
         assert(ret == bs);
+        fsync(fd);
     }
     end_us = GetTsUsec();
     interval_s = (double)(end_us - start_us) / 1000 / 1000;
@@ -126,8 +137,8 @@ int main(int argc, char* argv[]) {
            OP / 1000.0 / interval_s, (end_ns - start_ns)*1.0 / OP);
 
     close(fd);
-    ret = unlink(dir1_file.c_str());
-    assert(ret == 0);
+    // ret = unlink(dir1_file.c_str());
+    // assert(ret == 0);
 
     printf("Test pass\n");
 }

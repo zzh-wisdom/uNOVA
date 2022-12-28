@@ -1659,11 +1659,11 @@ void finefs_dirty_inode(struct inode *inode, int flags) {
 
     /* only i_atime should have changed if at all.
      * we can do in-place atomic update */
-    finefs_memunlock_inode(sb, pi);
-    pi->i_atime = cpu_to_le32(inode->i_atime.tv_sec);
-    finefs_memlock_inode(sb, pi);
-    /* Relax atime persistency */
-    finefs_flush_buffer(&pi->i_atime, sizeof(pi->i_atime), 0);
+    // finefs_memunlock_inode(sb, pi);
+    // pi->i_atime = cpu_to_le32(inode->i_atime.tv_sec);
+    // finefs_memlock_inode(sb, pi);
+    // /* Relax atime persistency */
+    // finefs_flush_buffer(&pi->i_atime, sizeof(pi->i_atime), 0);
 }
 
 /*

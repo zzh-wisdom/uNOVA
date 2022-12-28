@@ -20,6 +20,7 @@
 #include "util/cpu.h"
 
 const int MAX_FILE_PER_DIR=30000;
+#define O_ATOMIC 01000000000
 
 int main(int argc, char* argv[]) {
     // #if FS_HOOK==1
@@ -42,7 +43,12 @@ int main(int argc, char* argv[]) {
         printf("dlopen ./libfinefs_hook.so\n");
         void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
     	assert(handle);
+    } else if (strcmp(argv[1], "libnvmmio") == 0) {
+        // printf("dlopen ../../libnvmmio/src/libnvmmio.so\n");
+        // void *handle = dlopen("../../libnvmmio/src/libnvmmio.so", RTLD_NOW);
+    	// assert(handle);
     } else {
+        printf("error\n");
         exit(-1);
     }
 
@@ -51,7 +57,12 @@ int main(int argc, char* argv[]) {
         mntdir = "/tmp/nova";
     } else if (strcmp(argv[1], "finefs") == 0) {
         mntdir = "/tmp/finefs";
+    } else if(strcmp(argv[1], "libnvmmio") == 0) {
+        mntdir = "/mnt/pmem2";
+    } else if(strcmp(argv[1], "ext4") == 0) {
+        mntdir = "/mnt/pmem2";
     } else {
+        printf("error\n");
         exit(-1);
     }
     int files = atoi(argv[2]);
@@ -59,7 +70,7 @@ int main(int argc, char* argv[]) {
     printf("mnt %s, files: %d, dir_num: %d\n", mntdir.c_str(), files, dir_num);
 
     int mkdir_flag = S_IRWXU | S_IRWXG | S_IRWXO;
-    int open_flag = O_RDWR | O_CREAT;
+    const int open_flag = O_RDWR | O_CREAT | O_ATOMIC;
     int ret;
     uint64_t start_us, end_us;
     double interval_s;

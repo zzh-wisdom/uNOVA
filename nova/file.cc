@@ -369,7 +369,7 @@ int nova_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	// } while (start < end);
 
 persist:
-	PERSISTENT_BARRIER();
+	// PERSISTENT_BARRIER();
 	NOVA_END_TIMING(fsync_t, fsync_time);
 
 	return ret;

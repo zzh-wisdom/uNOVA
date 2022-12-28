@@ -42,6 +42,10 @@ int main(int argc, char* argv[]) {
         printf("dlopen ./libfinefs_hook.so\n");
         void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
     	assert(handle);
+    } else if (strcmp(argv[1], "libnvmmio") == 0) {
+        printf("dlopen ../../libnvmmio/src/libnvmmio.so\n");
+        void *handle = dlopen("../../libnvmmio/src/libnvmmio.so", RTLD_NOW);
+    	assert(handle);
     } else {
         exit(-1);
     }
@@ -51,7 +55,10 @@ int main(int argc, char* argv[]) {
         mntdir = "/tmp/nova";
     } else if (strcmp(argv[1], "finefs") == 0) {
         mntdir = "/tmp/finefs";
+    } else if(strcmp(argv[1], "libnvmmio") == 0) {
+        mntdir = "/mnt/pmem2";
     } else {
+        printf("error\n");
         exit(-1);
     }
     int tmp = atoi(argv[2]);
