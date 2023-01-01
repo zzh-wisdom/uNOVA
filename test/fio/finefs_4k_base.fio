@@ -20,21 +20,21 @@ create_fsync=1
 # unlink=1
 openfiles=1
 description=顺序写文件,单个线程单独一个文件,io大小变化
-size=3GB
+size=1GB
 bs=4K
 rw=write
-numjobs=32
+numjobs=1
 
 # [append-4K]
 # wait_for_previous
 # overwrite=0
 
-# [seq-write-4K]
-# wait_for_previous
-# rw=write
-# overwrite=0
-# time_based
-# runtime=30
+[seq-write-4K]
+wait_for_previous
+rw=randwrite
+overwrite=1
+time_based
+runtime=60
 
 # [seq-read-4K]
 # wait_for_previous
@@ -56,14 +56,14 @@ numjobs=32
 # time_based
 # runtime=30
 
-[seq-read-4K]
-wait_for_previous
-rw=read
-time_based
-runtime=30
+# [seq-read-4K]
+# wait_for_previous
+# rw=read
+# time_based
+# runtime=30
 
-[seq-read-4K]
-wait_for_previous
-rw=randread
-time_based
-runtime=30
+# [seq-read-4K]
+# wait_for_previous
+# rw=randread
+# time_based
+# runtime=30

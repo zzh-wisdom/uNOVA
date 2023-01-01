@@ -218,6 +218,7 @@ struct finefs_inode {
 	// __le64	i_xattr;	/* Extended attribute block */
 
 	finefs_log_page_link log_head;
+	finefs_log_page_link log_head_gc;
 	// __le64	log_head;	/* Log head pointer */
 	__le64	log_tail;	/* Log tail pointer */
 
