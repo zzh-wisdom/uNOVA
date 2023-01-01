@@ -2778,7 +2778,7 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     // sih->h_log_tail;
     // pi->log_head;
     // pi->i_blocks;
-    finefs_gc_free_log_page(sb, sih);
+    // finefs_gc_free_log_page(sb, sih);
     checked_pages = sih->log_pages;
 
     curr = FINEFS_LOG_BLOCK_OFF(curr_tail);

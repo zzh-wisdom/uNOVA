@@ -135,7 +135,10 @@ static void finefs_set_blocksize(struct super_block *sb, unsigned long size) {
 
 static int finefs_get_block_info(struct super_block *sb, struct finefs_sb_info *sbi) {
     void *virt_addr = pmem2_map_get_address(sb->pmap);
-    long size = pmem2_map_get_size(sb->pmap);
+    long max_size = pmem2_map_get_size(sb->pmap);
+    long size = max_size;
+    // long size = 20ul << 30; // 20 G
+    // log_assert(size <= max_size);
 
     // sbi->s_bdev = sb->s_bdev;
 

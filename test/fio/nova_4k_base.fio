@@ -20,7 +20,7 @@ create_fsync=1
 # unlink=1
 # openfiles=1
 description=顺序写文件,单个线程单独一个文件,io大小变化
-size=3GB
+size=18GB
 bs=4K
 rw=write
 numjobs=1
@@ -41,7 +41,7 @@ wait_for_previous
 overwrite=1
 rw=randwrite
 time_based
-runtime=30
+runtime=60
 
 # [seq-read-4K]
 # wait_for_previous

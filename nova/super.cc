@@ -72,14 +72,17 @@ static void nova_set_blocksize(struct super_block *sb, unsigned long size) {
 
 static int nova_get_block_info(struct super_block *sb, struct nova_sb_info *sbi) {
     void *virt_addr = pmem2_map_get_address(sb->pmap);
-    long size = pmem2_map_get_size(sb->pmap);
+    long max_size = pmem2_map_get_size(sb->pmap);
+    long size = max_size;
+    // long size = 20ul << 30; // 20 G
+    // log_assert(size <= max_size);
 
     // sbi->s_bdev = sb->s_bdev;
 
     sbi->virt_addr = virt_addr;
     sbi->initsize = size;
 
-    rd_info("%s: dev=%s, virt_addr=%p, size=%ld", __func__, sb->dev_name.c_str(), sbi->virt_addr,
+    r_info("%s: dev=%s, virt_addr=%p, size=%ld", __func__, sb->dev_name.c_str(), sbi->virt_addr,
             size);
 
     return 0;
