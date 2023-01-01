@@ -722,7 +722,6 @@ void finefs_init_header(struct super_block *sb,
 {
     // spin_lock_init(&sih->tree_lock);
     INIT_RADIX_TREE(&sih->tree, GFP_ATOMIC);
-    new (&sih->cachelines_to_flush) std::unordered_set<void*>();
     // 创建目录和文件时，占用内存过大，导致kill
     // sih->cachelines_to_flush.reserve(FINEFS_BITMAP_CACHELINE_FLUSH_BATCH);
 
@@ -747,7 +746,10 @@ void finefs_init_header(struct super_block *sb,
         sih->h_slab_bytes = 0;
         sih->h_ts = 1;
     }
+    new (&sih->log_pages_to_free) std::unordered_set<u64>();
+    new (&sih->log_pages_to_gc) std::unordered_set<u64>();
 
+    new (&sih->cachelines_to_flush) std::unordered_set<void*>();
     // spin_lock_init(&sih->h_entry_lock);
     sih->h_can_just_drop = true;
     sih->cur_setattr_idx = 0;

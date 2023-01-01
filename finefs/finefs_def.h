@@ -345,4 +345,8 @@ static inline void finefs_flush_buffer(void *buf, uint32_t len, bool fence)
 #define FINEFS_NVM_WRITE_MAX_THREADS 4
 #define FINEFS_LIMIT_NVM_THREAD_SIZE 4096
 
+// log page gc
+#define FINEFS_LOG_PAGE_MIN_EFFECTIVE_RATIO_FOR_GC (0.3)
+#define FINEFS_LOG_EFFECTIVE_RATIO_TRIGGER_GC (0.5)
+
 #endif /* _LINUX_FINEFS_DEF_H */

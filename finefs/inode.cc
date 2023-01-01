@@ -246,7 +246,7 @@ static inline int finefs_free_contiguous_data_blocks(
 // 返回实质释放的page个数
 // sih == null，则no checkout
 static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct finefs_inode *pi,
-                                             struct finefs_inode_info_header *sih, u64 head) {
+                                             struct finefs_inode_info_header *sih, u64 head, u64 end) {
     struct finefs_inode_log_page *curr_page;
     unsigned long blocknr, start_blocknr = 0;
     u64 curr_block = head;
@@ -256,7 +256,7 @@ static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct fine
     bool check = sih != nullptr;
     u64 tail = sih ? sih->h_log_tail : 0;
 
-    while (curr_block) {
+    while (curr_block != end) {
         if (curr_block & FINEFS_LOG_UMASK) {
             r_error("%s: ERROR: invalid block %lu", __func__, curr_block);
             break;
@@ -328,6 +328,85 @@ static int finefs_free_contiguous_log_blocks(struct super_block *sb, struct fine
     }
 
     return freed;
+}
+
+// 优化前： 3512.64 kops
+// 优化后:  3739.36 kops
+static inline int finefs_gc_free_log_page(struct super_block *sb,
+                                            struct finefs_inode_info_header *sih)
+{
+    if(sih->log_pages_to_free.empty()) return 0;
+    r_info("%s log_pages=%u", __func__, sih->log_pages_to_free.size());
+
+    // finefs_inode_log_page* tail_page = finefs_log_page_addr(sb,
+    //     sih->h_log_tail & FINEFS_LOG_MASK);
+    log_assert(sih->log_pages_to_free.count(sih->h_log_tail & FINEFS_LOG_MASK) == 0);
+
+    std::unordered_set<u64> log_pages_had_gc;
+    std::unordered_map<u64, std::pair<u64, int> > pages_to_del;
+
+    for(auto page_p: sih->log_pages_to_free) {
+        if(log_pages_had_gc.count(page_p)) continue;
+        log_pages_had_gc.insert(page_p);
+        u64 start_p = page_p;
+        finefs_inode_log_page *first_page =
+            (finefs_inode_log_page*)finefs_get_block(sb, page_p);
+        finefs_inode_log_page *cur_page = first_page;
+        int num = 1;
+        u64 cur_page_p = page_p;
+        u64 next_page_p = cur_page->page_tail.page_link.next_page_;
+        while(1) {
+            if(sih->log_pages_to_free.count(next_page_p)) {
+                if(log_pages_had_gc.count(next_page_p)) { // 后一个已经处理
+                    auto iter = pages_to_del.find(next_page_p);
+                    log_assert(iter != pages_to_del.end());
+                    std::pair<u64, int> p = iter->second;
+                    u64 last_start = iter->first;
+                    p.second += num;
+                    pages_to_del[start_p] = p;
+                    pages_to_del.erase(last_start);
+                    break;
+                } else {
+                    log_pages_had_gc.insert(next_page_p);
+                    ++num;
+                    cur_page_p = next_page_p;
+                    cur_page = (finefs_inode_log_page*)finefs_get_block(sb, next_page_p);
+                    next_page_p = cur_page->page_tail.page_link.next_page_;
+                }
+            } else {
+                std::pair<u64, int> p = std::make_pair(cur_page_p, num);
+                pages_to_del[start_p] = p;
+                break;
+            }
+        }
+    }
+
+    finefs_inode *pi = (finefs_inode *)finefs_get_block(sb, sih->pi_addr);
+    int free_pages = 0;
+    for(auto p: pages_to_del) {
+        u64 start_p = p.first;
+        u64 end_p = p.second.first;
+        int free_num = p.second.second;
+        r_info("range delete log pages: %d, from %lu to %lu", free_num, start_p, end_p);
+        finefs_inode_log_page *start_page =
+            (finefs_inode_log_page*)finefs_get_block(sb, start_p);
+        finefs_inode_log_page *end_page =
+            (finefs_inode_log_page*)finefs_get_block(sb, end_p);
+        finefs_log_range_delete(sb, start_page, end_page);
+        sih->log_pages -= free_num;
+        sih->h_blocks -= free_num;
+        free_pages += free_num;
+
+        u64 d_head = start_p;
+        u64 d_end = end_page->page_tail.page_link.next_page_;
+        int freed = finefs_free_contiguous_log_blocks(sb, pi, sih, start_p, d_end);
+        log_assert(freed == free_num);
+    }
+
+    log_assert(log_pages_had_gc.size() == sih->log_pages_to_free.size());
+    log_assert(free_pages == sih->log_pages_to_free.size());
+    sih->log_pages_to_free.clear();
+    return free_pages;
 }
 
 // static int finefs_delete_cache_tree(struct super_block *sb,
@@ -1773,6 +1852,7 @@ static void finefs_update_setattr_entry(struct inode *inode,
     entry->finefs_ino = cpu_to_le64(sih->ino);
     entry->entry_ts = cpu_to_le64(sih->h_ts++);
     barrier();
+    // sfence();
     entry->entry_version = finefs_log_page_version(inode->i_sb,
         finefs_get_addr_off(inode->i_sb, entry));
 
@@ -2321,10 +2401,21 @@ static int finefs_gc_assign_new_entry(struct super_block *sb, struct finefs_inod
     return ret;
 }
 
+static int need_thorough_gc(struct super_block *sb, struct finefs_inode_info_header *sih,
+    unsigned long blocks, unsigned long checked_pages) {
+    if (blocks && (u64)(checked_pages * FINEFS_LOG_EFFECTIVE_RATIO_TRIGGER_GC) >= blocks)
+        return 1;
+    return 0;
+}
+
 /* Copy alive log entries to the new log and atomically replace the old log */
 static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_inode *pi,
                                         struct finefs_inode_info_header *sih, unsigned long blocks,
                                         unsigned long checked_pages) {
+    // log_assert(0);
+    finefs_gc_free_log_page(sb, sih);
+    return 0;
+
 //     struct finefs_inode_log_page *curr_page = NULL;
 //     size_t length;
 //     u64 ino = pi->finefs_ino;
@@ -2436,13 +2527,6 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
     return 0;
 }
 
-static int need_thorough_gc(struct super_block *sb, struct finefs_inode_info_header *sih,
-                            unsigned long blocks, unsigned long checked_pages) {
-    if (blocks && blocks * 2 < checked_pages) return 1;
-
-    return 0;
-}
-
 // #define FINEFS_LOG_TEST
 
 // new_block：新分配log page的第一个page的偏移
@@ -2459,7 +2543,7 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     int first_need_free = 0;
     unsigned short btype = pi->i_blk_type;
     unsigned long blocks;
-    unsigned long checked_pages = 0;
+    unsigned long checked_pages;
     int to_free_pages = 0;
     int freed_pages = 0;
     timing_t gc_time;
@@ -2476,7 +2560,7 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     return 0;
 #endif
 
-    rd_info("%s: log head 0x%lx, tail 0x%lx, new pages: %d", __func__, curr, curr_tail, num_pages);
+    r_info("%s: log head 0x%lx, tail 0x%lx, new pages: %d", __func__, curr, curr_tail, num_pages);
     // FINEFS_START_TIMING(fast_gc_t, gc_time);
     // while (1) {
     //     if (curr >> FINEFS_BLOCK_SHIFT == sih->h_log_tail >> FINEFS_BLOCK_SHIFT) {
@@ -2534,10 +2618,12 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     // sih->h_log_tail;
     // pi->log_head;
     // pi->i_blocks;
+    // finefs_gc_free_log_page(sb, sih);
+    checked_pages = sih->log_pages;
 
     curr = FINEFS_LOG_BLOCK_OFF(curr_tail);
     curr_page = (struct finefs_inode_log_page *)finefs_get_block(sb, curr);
-    dlog_assert(curr_page->page_tail.page_link.next_page_ == 0);
+    log_assert(curr_page->page_tail.page_link.next_page_ == 0);
     finefs_log_set_next_page(sb, curr_page, new_block, 1);
     sih->log_pages += num_pages - freed_pages;
     // pi->i_blocks += num_pages - freed_pages;
@@ -2556,23 +2642,22 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     //     finefs_free_log_blocks(sb, pi, finefs_get_blocknr(sb, curr, btype), 1);
     // }
 
-    // blocks = sih->log_valid_bytes / FINEFS_LOG_LAST_ENTRY;
-    // if (sih->log_valid_bytes % FINEFS_LOG_LAST_ENTRY) blocks++;
+    blocks = sih->log_valid_bytes / FINEFS_LOG_LAST_ENTRY;
+    if (sih->log_valid_bytes % FINEFS_LOG_LAST_ENTRY) blocks++;
 
     // FINEFS_END_TIMING(fast_gc_t, gc_time);
     dlog_assert(finefs_inode_log_page_num(sb, pi->log_head.next_page_) == sih->log_pages);
 
     // 有效率低于50%，开启彻底gc
-    // if (need_thorough_gc(sb, sih, blocks, checked_pages)) {
-    //     log_assert(0);
-    //     r_info(
-    //         "Thorough GC for inode %lu: checked pages %lu, "
-    //         "valid pages %lu",
-    //         sih->ino, checked_pages, blocks);
-    //     finefs_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
-    //     int log_page_num = finefs_inode_log_page_num(sb, pi->log_head);
-    //     log_assert(log_page_num == sih->log_pages);
-    // }
+    if (need_thorough_gc(sb, sih, blocks, checked_pages)) {
+        r_info(
+            "Thorough GC for inode %lu: checked pages %lu, "
+            "valid pages %lu, log_valid_bytes %lu",
+            sih->ino, checked_pages, blocks, sih->log_valid_bytes);
+        finefs_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
+        // int log_page_num = finefs_inode_log_page_num(sb, pi->log_head);
+        // log_assert(log_page_num == sih->log_pages);
+    }
 
     return 0;
 }
@@ -2760,7 +2845,7 @@ int finefs_free_inode_log(struct super_block *sb, struct finefs_inode *pi, struc
     finefs_log_link_init(&pi->log_head);
     finefs_flush_cacheline(&pi->log_head, 0);
 
-    freed = finefs_free_contiguous_log_blocks(sb, pi, sih, curr_block);
+    freed = finefs_free_contiguous_log_blocks(sb, pi, sih, curr_block, 0);
 
     rd_info("ino: %lu free inode %d log", pi->finefs_ino, freed);
     dlog_assert(freed == sih->log_pages);

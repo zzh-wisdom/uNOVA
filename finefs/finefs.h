@@ -318,8 +318,6 @@ struct finefs_inode_info_header {
     // 文件数据是按照blocknr来索引的？感觉还是红黑树，或者跳表好
     // spinlock_t tree_lock;
     struct radix_tree_root tree; /* Dir name entry tree root 或者文件数据*/
-    // set是inode独享的，后台gc不会修改它，因此它不会出现冲突
-    std::unordered_set<void *> cachelines_to_flush;
 
     // struct radix_tree_root cache_tree;	/* Mmap cache tree root */
     unsigned short i_mode; /* Dir or file? */
@@ -346,15 +344,9 @@ struct finefs_inode_info_header {
     unsigned int h_slabs;
     unsigned int h_slab_bytes;
     unsigned long h_ts;
-
-    // TODO: gc need lock，所以目前后台只负责删除inode的回收、log page的垃圾回收
-    //
-    // TODO:快速gc其实也可以放后台，用每个线程的set，标志当前线程导致失效的log page有哪些，
-    // 然后由后台线程统一回收，但我感觉没有太大的必要。
-
-    /*
-     * 后台gc时也会修改下面两个值，因此需要一个lock互斥
-     */
+    std::unordered_set<u64> log_pages_to_free;
+    // 有效率低于30%
+    std::unordered_set<u64> log_pages_to_gc;
 
     // 更新：
     // 注意set应该记录在每个inode中，write操作时也需要将
@@ -369,18 +361,18 @@ struct finefs_inode_info_header {
     // 2. 将前一个last_link_change entry失效
     // 3. 更新last idx
 
-    // batch设置为64，刚好一个page，而且需要通过锁管理，防止和后台gc竞争。
-
+    // batch设置为64
     // 随着操作的进行而修改
-    // 系统关闭时, 应用所有队列的log h_entry_p, 但保留最后一个
 
     // 注意，ftruncate时，如果设置的size比当前文件的大小要大，
     // 那么应用后，是可以直接丢弃该entry的，因为它不影响任何的write entry
     // 而不需要放在batch队列
     // spinlock_t h_entry_lock;
+    std::unordered_set<void *> cachelines_to_flush;
     u64 h_setattr_entry_p[FINEFS_INODE_META_FLUSH_BATCH]; // setattr / delete dentry
     bool h_can_just_drop;  // h_setattr_entry_p中的entry可否直接丢弃（对于dentry总是不可以）
     int cur_setattr_idx;   /* Last setattr entry index*/
+
     u64 last_link_change;  /* Last link change entry index */
 };
 
@@ -551,6 +543,7 @@ struct finefs_inode_page_tail {
 #define FINEFS_LOG_TAIL(p) (((p)&FINEFS_LOG_MASK) + FINEFS_LOG_LAST_ENTRY)
 #define FINEFS_LOG_LINK_PAGE_OFF (FINEFS_LOG_SIZE - sizeof(struct finefs_log_page_link))
 #define FINEFS_LOG_LINK_NVM_OFF(cur_p) (((cur_p)&FINEFS_LOG_MASK) + FINEFS_LOG_LINK_PAGE_OFF)
+#define FINEFS_LOG_PAGE_NUM_ENTRY ((FINEFS_LOG_SIZE >> CACHELINE_SHIFT) - 1)
 
 #define FINEFS_LOG_BLOCK_OFF(p) ((p)&FINEFS_LOG_MASK)
 #define FINEFS_LOG_ENTRY_LOC(p) ((p)&FINEFS_LOG_UMASK)
@@ -636,6 +629,15 @@ static force_inline void finefs_log_delete(struct super_block *sb,
     finefs_log_page_link *prev_link =
         finefs_log_link_addr(sb, curr_page->page_tail.page_link.prev_page_);
     finefs_link_set_next_page(sb, prev_link, curr_page->page_tail.page_link.next_page_, 1);
+}
+
+static force_inline void finefs_log_range_delete(struct super_block *sb,
+                                           struct finefs_inode_log_page *start_page,
+                                           struct finefs_inode_log_page *end_page) {
+    dlog_assert(!finefs_log_link_is_end(end_page->page_tail.page_link.prev_page_));
+    finefs_log_page_link *prev_link =
+        finefs_log_link_addr(sb, start_page->page_tail.page_link.prev_page_);
+    finefs_link_set_next_page(sb, prev_link, end_page->page_tail.page_link.next_page_, 1);
 }
 
 static inline void finefs_log_set_next_page(struct super_block *sb,
@@ -1350,7 +1352,7 @@ static inline struct finefs_inode *finefs_get_basic_inode(struct super_block *sb
                                                           u64 inode_number) {
     struct finefs_sb_info *sbi = FINEFS_SB(sb);
 
-    return (struct finefs_inode *)(sbi->virt_addr + FINEFS_SB_SIZE * 2 +
+    return (struct finefs_inode *)((char*)sbi->virt_addr + FINEFS_SB_SIZE * 2 +
                                    (inode_number - FINEFS_ROOT_INO) * FINEFS_INODE_SIZE);
 }
 
@@ -1616,6 +1618,10 @@ static force_inline bool log_entry_is_set_valid(void *entry) {
     return ((page_tail->bitmap >> (entry_nr)) & 1);
 }
 
+#define FINEFS_LOG_PAGE_NUM_EFFECTIVE_ENTRY \
+    (u64)(FINEFS_LOG_PAGE_NUM_ENTRY \
+    * FINEFS_LOG_PAGE_MIN_EFFECTIVE_RATIO_FOR_GC)
+
 // FIXME: THREADS
 static force_inline void log_entry_set_invalid(struct super_block *sb,
                                                struct finefs_inode_info_header *sih, void *entry,
@@ -1634,28 +1640,44 @@ static force_inline void log_entry_set_invalid(struct super_block *sb,
     dlog_assert(!is_write_entry ||
                 (finefs_get_entry_type(entry) & LOG_ENTRY_TYPE_MASK) == FILE_PAGES_WRITE ||
                 (finefs_get_entry_type(entry) & LOG_ENTRY_TYPE_MASK) == FILE_SMALL_WRITE);
-    if (remain_num == 0) {  // 此时是log回收，恢复时不可能会扫描到该log，因此不需要添加到set
-        finefs_inode_log_page *curr_page =
-            (finefs_inode_log_page *)((uintptr_t)entry & FINEFS_LOG_MASK);
-        rd_info("Delete log page: %lu", finefs_get_addr_off(sb, curr_page) >> FINEFS_LOG_SHIFT);
-        finefs_log_delete(sb, curr_page);
-        finefs_inode *pi = (struct finefs_inode *)finefs_get_block(sb, sih->pi_addr);
-        u64 curr_p = finefs_get_addr_off(sb, entry);
-        int ret = finefs_free_log_blocks(sb, pi, finefs_get_blocknr(sb, curr_p, pi->i_blk_type), 1);
-        dlog_assert(ret == 0);
-        sih->log_pages--;
-        sih->h_blocks--;
-    } else {  // 说明: 增加的时延不多，1%-2%不到
-        // if (is_write_entry) {
 
-        // }
-		sih->cachelines_to_flush.insert(page_tail);
-        if (sih->cachelines_to_flush.size() == FINEFS_BITMAP_CACHELINE_FLUSH_BATCH) {
-			// 对于单纯增大的ftruncate，到不了这里，因为page立即回收，最终循环使用两个page而已
-            rd_info("ino: %lu flush cacheline set.", sih->ino);
-            finefs_sih_bitmap_cache_flush(sih, false);
-        }
+    sih->cachelines_to_flush.insert(page_tail);
+    if (sih->cachelines_to_flush.size() == FINEFS_BITMAP_CACHELINE_FLUSH_BATCH) {
+        rd_info("ino: %lu flush cacheline set.", sih->ino);
+        finefs_sih_bitmap_cache_flush(sih, false);
     }
+
+    // 注意不要回收tail log page
+    u64 cur_page = finefs_get_addr_off(sb, page_tail) & FINEFS_LOG_MASK;
+    if(remain_num == 0) {
+        sih->log_pages_to_free.insert(cur_page);
+        log_assert(sih->log_pages_to_gc.erase(cur_page) == 1);
+    } else if(remain_num <= FINEFS_LOG_PAGE_NUM_EFFECTIVE_ENTRY) {
+        sih->log_pages_to_gc.insert(cur_page);
+    }
+
+    // if (remain_num == 0) {  // 此时是log回收，恢复时不可能会扫描到该log，因此不需要添加到set
+    //     finefs_inode_log_page *curr_page =
+    //         (finefs_inode_log_page *)((uintptr_t)entry & FINEFS_LOG_MASK);
+    //     rd_info("Delete log page: %lu", finefs_get_addr_off(sb, curr_page) >> FINEFS_LOG_SHIFT);
+    //     finefs_log_delete(sb, curr_page);
+    //     finefs_inode *pi = (struct finefs_inode *)finefs_get_block(sb, sih->pi_addr);
+    //     u64 curr_p = finefs_get_addr_off(sb, entry);
+    //     int ret = finefs_free_log_blocks(sb, pi, finefs_get_blocknr(sb, curr_p, pi->i_blk_type), 1);
+    //     dlog_assert(ret == 0);
+    //     sih->log_pages--;
+    //     sih->h_blocks--;
+    // } else {  // 说明: 增加的时延不多，1%-2%不到
+    //     // if (is_write_entry) {
+
+    //     // }
+	// 	sih->cachelines_to_flush.insert(page_tail);
+    //     if (sih->cachelines_to_flush.size() == FINEFS_BITMAP_CACHELINE_FLUSH_BATCH) {
+	// 		// 对于单纯增大的ftruncate，到不了这里，因为page立即回收，最终循环使用两个page而已
+    //         rd_info("ino: %lu flush cacheline set.", sih->ino);
+    //         finefs_sih_bitmap_cache_flush(sih, false);
+    //     }
+    // }
 }
 
 static force_inline void finefs_file_small_entry_set(super_block *sb,
