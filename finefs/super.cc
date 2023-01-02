@@ -384,7 +384,6 @@ static struct finefs_inode *finefs_init(struct super_block *sb, unsigned long si
     u64 end_us = GetTsUsec();
     r_info("init log area, threads: %d, spent %lu us", init_thread_num, end_us - start_us);
 
-
     // 初始化并恢复journal
     if ((ret = finefs_lite_journal_hard_init(sb)) < 0) {
         r_error("Lite journal hard initialization failed, ret %d\n", ret);

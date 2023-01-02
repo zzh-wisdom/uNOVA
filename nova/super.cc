@@ -45,7 +45,7 @@ static struct kmem_cache *nova_range_node_cachep;
 unsigned int nova_dbgmask = 0;
 
 int init_rangenode_cache(void) {
-    r_warning("TODO: 优化 kmem_cache");
+    rd_warning("TODO: 优化 kmem_cache");
     nova_range_node_cachep =
         kmem_cache_create(sizeof(struct nova_range_node), sizeof(struct nova_range_node));
     if (nova_range_node_cachep == NULL) return -ENOMEM;
@@ -82,7 +82,7 @@ static int nova_get_block_info(struct super_block *sb, struct nova_sb_info *sbi)
     sbi->virt_addr = virt_addr;
     sbi->initsize = size;
 
-    r_info("%s: dev=%s, virt_addr=%p, size=%ld", __func__, sb->dev_name.c_str(), sbi->virt_addr,
+    rd_info("%s: dev=%s, virt_addr=%p, size=%ld", __func__, sb->dev_name.c_str(), sbi->virt_addr,
             size);
 
     return 0;
@@ -95,7 +95,7 @@ static size_t nova_max_size(int bits) {
 
     if (res > MAX_LFS_FILESIZE) res = MAX_LFS_FILESIZE;
 
-    r_info("max file size %lu bytes\n", res);
+    rd_info("max file size %lu bytes\n", res);
     return res;
 }
 
@@ -309,9 +309,9 @@ static struct nova_inode *nova_init(struct super_block *sb, unsigned long size) 
     pi->nova_ino = NOVA_BLOCKNODE_INO;
     nova_flush_buffer(pi, CACHELINE_SIZE, 1);
 
-    pi = nova_get_inode_by_ino(sb, NOVA_INODELIST_INO);
-    pi->nova_ino = NOVA_INODELIST_INO;
-    nova_flush_buffer(pi, CACHELINE_SIZE, 1);
+    // pi = nova_get_inode_by_ino(sb, NOVA_INODELIST_INO);
+    // pi->nova_ino = NOVA_INODELIST_INO;
+    // nova_flush_buffer(pi, CACHELINE_SIZE, 1);
 
     nova_memunlock_range(sb, super, NOVA_SB_SIZE * 2);
     nova_sync_super(super);
@@ -811,7 +811,7 @@ static int nova_fill_super(struct super_block *sb, bool format) {
     blocksize = le32_to_cpu(super->s_blocksize);
     nova_set_blocksize(sb, blocksize);
 
-    r_info("blocksize %lu\n", blocksize);
+    rd_info("blocksize %lu\n", blocksize);
 
     /* Read the root inode */
     root_pi = nova_get_inode_by_ino(sb, NOVA_ROOT_INO);
@@ -915,7 +915,7 @@ int init_nova_fs(struct super_block *sb, const std::string &dev_name, const std:
     // if (arch_has_clwb())
     // 	support_clwb = 1;
 
-    r_info("Arch should have CLWB!");
+    rd_info("Arch should have CLWB!");
 
     rd_info(
         "Data structure size: inode %lu, log_page %lu, "

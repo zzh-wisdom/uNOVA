@@ -344,7 +344,7 @@ int nova_delete_file_tree(struct super_block *sb, struct nova_inode_info_header 
         }
     }
 
-    if (free_blocknr) {
+    if (free_blocknr && delete_nvmm) {
         nova_free_data_blocks(sb, pi, free_blocknr, num_free);
         freed += num_free;
     }

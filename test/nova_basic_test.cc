@@ -20,9 +20,7 @@ int main(int argc, char* argv[]) {
 
     vfs_cfg fs_cfg;
     vfs_cfg_default_init(&fs_cfg);
-    if(argc > 1) {
-        fs_cfg.format = true;
-    }
+    fs_cfg.format = true;
 
     // numa环境
     SetSocketAndPolicy(fs_cfg.numa_socket, 1);
@@ -41,10 +39,10 @@ int main(int argc, char* argv[]) {
 
     fs_register_thread(nullptr);
 
-    int tmp_fd = vfs_open("/tmp/nova/logfiles1/00000001/00000001", O_RDWR, 0);
-    log_assert(tmp_fd > 0);
-    fs_unmount((void**)&sb, root_path);
-    return 0;
+    // int tmp_fd = vfs_open("/tmp/nova/logfiles1/00000001/00000001", O_RDWR, 0);
+    // log_assert(tmp_fd > 0);
+    // fs_unmount((void**)&sb, root_path);
+    // return 0;
 
     ret = vfs_mkdir("/tmp/nova/dir1", 0);
     log_assert(ret == 0);
@@ -175,7 +173,8 @@ int main(int argc, char* argv[]) {
     ret = vfs_ls("/tmp/nova/");
     log_assert(ret == 0);
 
-    fs_unmount((void**)&sb, root_path);
+    // fs_unmount((void**)&sb, root_path);
+    // 测试不正常关闭的情况
 
     fs_cfg.format = false;
     ret = fs_mount((void**)&sb, dev_name, root_path, &fs_cfg);

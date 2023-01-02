@@ -4,6 +4,8 @@
 #include "nova/super.h"
 #include "vfs/fs_cfg.h"
 
+#include "util/cpu.h"
+
 typedef int (*init_fs_func_t)(struct super_block*, const std::string&, const std::string&,
                               vfs_cfg*);
 
@@ -69,7 +71,7 @@ void vfs_cfg_default_init(struct vfs_cfg* cfg) {
 	cfg->measure_timing = 0;
 	cfg->start_fd = CFG_START_FD;
     cfg->log_block_occupy = 1.0/64;
-	cfg->format = true;
+	cfg->format = 1;
 	cfg->limit_nvm_rw_threads = true;
     cfg->pmem_nt_threshold = 256;
 }
@@ -108,6 +110,7 @@ static force_inline std::string path_find_last_compo(const std::string& path) {
 }
 
 int fs_mount(void** sb_, const std::string& dev_name, const std::string& root_path, vfs_cfg* cfg) {
+    uint64_t start_us, end_us;
     int ret = 0;
     bool ret_bool;
     if (fs_root_valid(root_path) == false) {
@@ -137,12 +140,15 @@ int fs_mount(void** sb_, const std::string& dev_name, const std::string& root_pa
         r_error("%s fail.\n", "alloc_super");
         goto out1;
     }
-
+    printf("start fs mount...\n");
+    start_us = GetTsUsec();
     ret = ((it->second))(s, dev_name, root_path, cfg);
     if (ret) {
         r_error("init specify fs fail.");
         goto out2;
     }
+    end_us = GetTsUsec();
+    printf("fs_mount spent %lu us\n", end_us - start_us);
 
     ret_bool = register_mounted_fs(root_path, s);
     log_assert(ret_bool);

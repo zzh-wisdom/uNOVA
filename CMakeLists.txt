@@ -101,6 +101,28 @@ target_link_libraries(nova_basic_test
     glog pthread numa pmem2
 )
 
+add_executable(nova_recovery_test
+    test/nova_recovery_test.cc
+    ${UTIL_SRC}
+    ${VFS_SRC}
+    ${NOVA_SRC}
+    ${FINEFS_SRC}
+)
+target_link_libraries(nova_recovery_test
+    glog pthread numa pmem2
+)
+
+add_executable(nova_recovery_files
+    test/nova_recovery_files.cc
+    ${UTIL_SRC}
+    ${VFS_SRC}
+    ${NOVA_SRC}
+    ${FINEFS_SRC}
+)
+target_link_libraries(nova_recovery_files
+    glog pthread numa pmem2
+)
+
 #
 # perf test
 #

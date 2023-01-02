@@ -63,78 +63,78 @@ static int get_cpuid(struct nova_sb_info *sbi, unsigned long blocknr) {
     return cpuid;
 }
 
-// static int nova_failure_insert_inodetree(struct super_block *sb, unsigned long ino_low,
-//                                          unsigned long ino_high) {
-//     struct nova_sb_info *sbi = NOVA_SB(sb);
-//     struct inode_map *inode_map;
-//     struct nova_range_node *prev = NULL, *next = NULL;
-//     struct nova_range_node *new_node;
-//     unsigned long internal_low, internal_high;
-//     int cpu;
-//     struct rb_root *tree;
-//     int ret;
+static int nova_failure_insert_inodetree(struct super_block *sb, unsigned long ino_low,
+                                         unsigned long ino_high) {
+    struct nova_sb_info *sbi = NOVA_SB(sb);
+    struct inode_map *inode_map;
+    struct nova_range_node *prev = NULL, *next = NULL;
+    struct nova_range_node *new_node;
+    unsigned long internal_low, internal_high;
+    int cpu;
+    struct rb_root *tree;
+    int ret;
 
-//     if (ino_low > ino_high) {
-//         nova_err(sb, "%s: ino low %lu, ino high %lu", __func__, ino_low, ino_high);
-//         BUG();
-//     }
+    if (ino_low > ino_high) {
+        r_error("%s: ino low %lu, ino high %lu", __func__, ino_low, ino_high);
+        BUG();
+    }
 
-//     cpu = ino_low % sbi->cpus;
-//     if (ino_high % sbi->cpus != cpu) {
-//         nova_err(sb, "%s: ino low %lu, ino high %lu", __func__, ino_low, ino_high);
-//         BUG();
-//     }
+    cpu = ino_low % sbi->cpus;
+    if (ino_high % sbi->cpus != cpu) {
+        r_error("%s: ino low %lu, ino high %lu", __func__, ino_low, ino_high);
+        BUG();
+    }
 
-//     internal_low = ino_low / sbi->cpus;
-//     internal_high = ino_high / sbi->cpus;
-//     inode_map = &sbi->inode_maps[cpu];
-//     tree = &inode_map->inode_inuse_tree;
-//     mutex_lock(&inode_map->inode_table_mutex);
+    internal_low = ino_low / sbi->cpus;
+    internal_high = ino_high / sbi->cpus;
+    inode_map = &sbi->inode_maps[cpu];
+    tree = &inode_map->inode_inuse_tree;
+    mutex_lock(&inode_map->inode_table_mutex);
 
-//     ret = nova_find_free_slot(sbi, tree, internal_low, internal_high, &prev, &next);
-//     if (ret) {
-//         nova_dbg("%s: ino %lu - %lu already exists!: %d", __func__, ino_low, ino_high, ret);
-//         mutex_unlock(&inode_map->inode_table_mutex);
-//         return ret;
-//     }
+    ret = nova_find_free_slot(sbi, tree, internal_low, internal_high, &prev, &next);
+    if (ret) {
+        r_error("%s: ino %lu - %lu already exists!: %d", __func__, ino_low, ino_high, ret);
+        mutex_unlock(&inode_map->inode_table_mutex);
+        return ret;
+    }
 
-//     if (prev && next && (internal_low == prev->range_high + 1) &&
-//         (internal_high + 1 == next->range_low)) {
-//         /* fits the hole */
-//         rb_erase(&next->node, tree);
-//         inode_map->num_range_node_inode--;
-//         prev->range_high = next->range_high;
-//         nova_free_inode_node(sb, next);
-//         goto finish;
-//     }
-//     if (prev && (internal_low == prev->range_high + 1)) {
-//         /* Aligns left */
-//         prev->range_high += internal_high - internal_low + 1;
-//         goto finish;
-//     }
-//     if (next && (internal_high + 1 == next->range_low)) {
-//         /* Aligns right */
-//         next->range_low -= internal_high - internal_low + 1;
-//         goto finish;
-//     }
+    if (prev && next && (internal_low == prev->range_high + 1) &&
+        (internal_high + 1 == next->range_low)) {
+        /* fits the hole */
+        rb_erase(&next->node, tree);
+        inode_map->num_range_node_inode--;
+        prev->range_high = next->range_high;
+        nova_free_inode_node(sb, next);
+        goto finish;
+    }
+    if (prev && (internal_low == prev->range_high + 1)) {
+        /* Aligns left */
+        prev->range_high += internal_high - internal_low + 1;
+        goto finish;
+    }
+    if (next && (internal_high + 1 == next->range_low)) {
+        /* Aligns right */
+        next->range_low -= internal_high - internal_low + 1;
+        goto finish;
+    }
 
-//     /* Aligns somewhere in the middle */
-//     new_node = nova_alloc_inode_node(sb);
-//     NOVA_ASSERT(new_node);
-//     new_node->range_low = internal_low;
-//     new_node->range_high = internal_high;
-//     ret = nova_insert_inodetree(sbi, new_node, cpu);
-//     if (ret) {
-//         nova_err(sb, "%s failed", __func__);
-//         nova_free_inode_node(sb, new_node);
-//         goto finish;
-//     }
-//     inode_map->num_range_node_inode++;
+    /* Aligns somewhere in the middle */
+    new_node = nova_alloc_inode_node(sb);
+    log_assert(new_node);
+    new_node->range_low = internal_low;
+    new_node->range_high = internal_high;
+    ret = nova_insert_inodetree(sbi, new_node, cpu);
+    if (ret) {
+        r_error("%s failed", __func__);
+        nova_free_inode_node(sb, new_node);
+        goto finish;
+    }
+    inode_map->num_range_node_inode++;
 
-// finish:
-//     mutex_unlock(&inode_map->inode_table_mutex);
-//     return ret;
-// }
+finish:
+    mutex_unlock(&inode_map->inode_table_mutex);
+    return ret;
+}
 
 static void nova_destroy_range_node_tree(struct super_block *sb, struct rb_root *tree) {
     struct nova_range_node *curr;
@@ -218,8 +218,7 @@ static int nova_init_blockmap_from_inode(struct super_block *sb) {
         curr_p += sizeof(struct nova_range_node_lowhigh);
     }
 out:
-    // TODO
-    // nova_free_inode_log(sb, pi);
+    nova_free_inode_log(sb, pi);
     return ret;
 }
 
@@ -301,8 +300,7 @@ static int nova_init_inode_list_from_inode(struct super_block *sb) {
 
     rd_info("%s: %lu inode nodes", __func__, num_inode_node);
 out:
-    // TODO:
-    // nova_free_inode_log(sb, pi);
+    nova_free_inode_log(sb, pi);
     return ret;
 }
 
@@ -588,7 +586,8 @@ static void nova_update_4K_map(struct super_block *sb, struct scan_bitmap *bm,
     }
 }
 
-struct scan_bitmap *global_bm[64];
+// 最后一个用于主线程
+struct scan_bitmap *global_bm[65];
 
 static int nova_build_blocknode_map(struct super_block *sb, unsigned long initsize) {
     struct nova_sb_info *sbi = NOVA_SB(sb);
@@ -617,7 +616,7 @@ static int nova_build_blocknode_map(struct super_block *sb, unsigned long initsi
      * We are using free lists. Set 2M and 1G blocks in 4K map,
      * and use 4K map to rebuild block map.
      */
-    for (i = 0; i < sbi->cpus; i++) {
+    for (i = 0; i <= sbi->cpus; i++) {
         bm = global_bm[i];
         nova_update_4K_map(sb, bm, bm->scan_bm_2M.bitmap, bm->scan_bm_2M.bitmap_size * 8,
                            PAGE_SHIFT_2M - 12);
@@ -629,7 +628,7 @@ static int nova_build_blocknode_map(struct super_block *sb, unsigned long initsi
     num = final_bm->scan_bm_4K.bitmap_size / sizeof(unsigned long);
     if (final_bm->scan_bm_4K.bitmap_size % sizeof(unsigned long)) num++;
 
-    for (i = 0; i < sbi->cpus; i++) {
+    for (i = 0; i <= sbi->cpus; i++) {
         bm = global_bm[i];
         src = (unsigned long *)bm->scan_bm_4K.bitmap;
         dst = (unsigned long *)final_bm->scan_bm_4K.bitmap;
@@ -655,7 +654,7 @@ static void free_bm(struct super_block *sb) {
     struct scan_bitmap *bm;
     int i;
 
-    for (i = 0; i < sbi->cpus; i++) {
+    for (i = 0; i <= sbi->cpus; i++) {
         bm = global_bm[i];
         if (bm) {
             FREE(bm->scan_bm_4K.bitmap);
@@ -671,7 +670,7 @@ static int alloc_bm(struct super_block *sb, unsigned long initsize) {
     struct scan_bitmap *bm;
     int i;
 
-    for (i = 0; i < sbi->cpus; i++) {
+    for (i = 0; i <= sbi->cpus; i++) {
         bm = (scan_bitmap*)ZALLOC(sizeof(struct scan_bitmap));
         if (!bm) return -ENOMEM;
 
@@ -698,16 +697,20 @@ static int alloc_bm(struct super_block *sb, unsigned long initsize) {
 #define MAX_PGOFF 262144
 
 struct task_ring {
-    u64 addr[512];
+    int total_cpus;
+    int cpuid;
+    super_block *sb;
+    u64 addr[512]; // 存放要扫描的inode table
     int num;
     int inodes_used_count;
-    u64 *array;
+    u64 *array;  // 存放文件某个偏移范围的block有效情况
 };
 
 static struct task_ring *task_rings;
-static struct task_struct **threads;
+// static struct task_struct **threads;
+static pthread_t threads[64];
 // wait_queue_head_t finish_wq;
-int *finished;
+// int *finished;
 
 void nova_init_header(struct super_block *sb, struct nova_inode_info_header *sih, u16 i_mode) {
     INIT_RADIX_TREE(&sih->tree, GFP_ATOMIC);
@@ -765,8 +768,6 @@ int nova_rebuild_inode(struct super_block *sb, struct nova_inode_info *si, u64 p
     return 0;
 }
 
-#ifndef NOVA_CUT_OUT
-
 static int nova_traverse_dir_inode_log(struct super_block *sb, struct nova_inode *pi,
                                        struct scan_bitmap *bm) {
     struct nova_inode_log_page *curr_page;
@@ -775,11 +776,11 @@ static int nova_traverse_dir_inode_log(struct super_block *sb, struct nova_inode
 
     curr_p = pi->log_head;
     if (curr_p == 0) {
-        nova_err(sb, "Dir %lu log is NULL!", pi->nova_ino);
+        r_error("Dir %lu log is NULL!", pi->nova_ino);
         BUG();
     }
 
-    nova_dbg_verbose("Log head 0x%lx, tail 0x%lx", curr_p, pi->log_tail);
+    rdv_proc("Log head 0x%lx, tail 0x%lx", curr_p, pi->log_tail);
     BUG_ON(curr_p & (PAGE_SIZE - 1));
     set_bm(curr_p >> PAGE_SHIFT, bm, BM_4K);
 
@@ -882,10 +883,11 @@ static int nova_traverse_file_inode_log(struct super_block *sb, struct nova_inod
     btype = pi->i_blk_type;
     data_bits = blk_type_to_shift[btype];
 
+    // base等于0时，把所有的log page都标志了
 again:
     sih->i_size = 0;
     curr_p = pi->log_head;
-    nova_dbg_verbose("Log head 0x%lx, tail 0x%lx", curr_p, pi->log_tail);
+    rdv_proc("Log head 0x%lx, tail 0x%lx", curr_p, pi->log_tail);
     if (curr_p == 0 && pi->log_tail == 0) return 0;
 
     if (base == 0) {
@@ -903,7 +905,7 @@ again:
         }
 
         if (curr_p == 0) {
-            nova_err(sb, "File inode %lu log is NULL!", ino);
+            r_error("File inode %lu log is NULL!", ino);
             BUG();
         }
 
@@ -921,15 +923,15 @@ again:
             case FILE_WRITE:
                 break;
             default:
-                nova_dbg("%s: unknown type %d, 0x%lx", __func__, type, curr_p);
-                NOVA_ASSERT(0);
+                rd_info("%s: unknown type %d, 0x%lx", __func__, type, curr_p);
+                log_assert(0);
         }
 
         entry = (struct nova_file_write_entry *)addr;
         sih->i_size = entry->size;
 
         if (entry->num_pages != entry->invalid_pages) {
-            if (entry->pgoff < base + MAX_PGOFF && entry->pgoff + entry->num_pages > base)
+            if (entry->pgoff < base + MAX_PGOFF || entry->pgoff + entry->num_pages > base)
                 nova_set_ring_array(sb, sih, entry, ring, base);
         }
 
@@ -950,6 +952,7 @@ again:
 
     if (sih->i_size == 0) return 0;
 
+    // 所以它这是一个文件逐个1GB的处理
     last_blocknr = (sih->i_size - 1) >> data_bits;
     nova_set_file_bm(sb, sih, ring, bm, base, last_blocknr);
     if (last_blocknr >= base + MAX_PGOFF) {
@@ -966,20 +969,20 @@ static int nova_recover_inode_pages(struct super_block *sb, struct nova_inode_in
     unsigned long nova_ino;
 
     pi = (struct nova_inode *)nova_get_block(sb, pi_addr);
-    if (!pi) NOVA_ASSERT(0);
+    if (!pi) log_assert(0);
 
     if (pi->valid == 0) return 0;
 
     nova_ino = pi->nova_ino;
     ring->inodes_used_count++;
 
-    sih->i_mode = __le16_to_cpu(pi->i_mode);
+    sih->i_mode = le16_to_cpu(pi->i_mode);
     sih->ino = nova_ino;
 
-    nova_dbgv("%s: inode %lu, addr 0x%lx, head 0x%lx, tail 0x%lx", __func__, nova_ino, pi_addr,
+    rd_info("%s: inode %lu, addr 0x%lx, head 0x%lx, tail 0x%lx", __func__, nova_ino, pi_addr,
               pi->log_head, pi->log_tail);
 
-    switch (__le16_to_cpu(pi->i_mode) & S_IFMT) {
+    switch (le16_to_cpu(pi->i_mode) & S_IFMT) {
         case S_IFDIR:
             nova_traverse_dir_inode_log(sb, pi, bm);
             break;
@@ -1003,45 +1006,50 @@ static void free_resources(struct super_block *sb) {
     int i;
 
     if (task_rings) {
-        for (i = 0; i < sbi->cpus; i++) {
+        for (i = 0; i <= sbi->cpus; i++) {
             ring = &task_rings[i];
-            vfree(ring->array);
+            FREE(ring->array);
             ring->array = NULL;
         }
     }
 
-    kfree(task_rings);
-    kfree(threads);
-    kfree(finished);
+    FREE(task_rings);
+    // FREE(threads);
+    // kfree(finished);
 }
 
-static int failure_thread_func(void *data);
+static void* failure_thread_func(void *data);
 
 static int allocate_resources(struct super_block *sb, int cpus) {
     struct task_ring *ring;
     int i;
 
-    task_rings = kzalloc(cpus * sizeof(struct task_ring), GFP_KERNEL);
+    task_rings = (task_ring*)ZALLOC((cpus+1) * sizeof(struct task_ring));
     if (!task_rings) goto fail;
 
-    for (i = 0; i < cpus; i++) {
+    for (i = 0; i <= cpus; i++) {
         ring = &task_rings[i];
-        ring->array = vzalloc(sizeof(u64) * MAX_PGOFF);
+        ring->total_cpus = cpus;
+        ring->cpuid = i;
+        ring->sb = sb;
+        ring->array = (u64*)ZALLOC(sizeof(u64) * MAX_PGOFF);
         if (!ring->array) goto fail;
     }
 
-    threads = kzalloc(cpus * sizeof(struct task_struct *), GFP_KERNEL);
-    if (!threads) goto fail;
+    // threads = ZALLOC(cpus * sizeof(struct task_struct *));
+    // if (!threads) goto fail;
 
-    finished = kzalloc(cpus * sizeof(int), GFP_KERNEL);
-    if (!finished) goto fail;
+    // finished = kzalloc(cpus * sizeof(int), GFP_KERNEL);
+    // if (!finished) goto fail;
 
-    init_waitqueue_head(&finish_wq);
+    // init_waitqueue_head(&finish_wq);
 
-    for (i = 0; i < cpus; i++) {
-        threads[i] = kthread_create(failure_thread_func, sb, "recovery thread");
-        kthread_bind(threads[i], i);
-    }
+    // for (i = 0; i < cpus; i++) {
+    //     // threads[i] = kthread_create(failure_thread_func, sb, "recovery thread");
+    //     // kthread_bind(threads[i], i);
+    //     int ret = pthread_create(&threads[i], nullptr, failure_thread_func, &task_rings[i]);
+    //     log_assert(ret == 0);
+    // }
 
     return 0;
 
@@ -1054,9 +1062,10 @@ static void wait_to_finish(int cpus) {
     int i;
 
     for (i = 0; i < cpus; i++) {
-        while (finished[i] == 0) {
-            wait_event_interruptible_timeout(finish_wq, false, msecs_to_jiffies(1));
-        }
+        // while (finished[i] == 0) {
+        //     wait_event_interruptible_timeout(finish_wq, false, msecs_to_jiffies(1));
+        // }
+        pthread_join(threads[i], nullptr);
     }
 }
 
@@ -1081,17 +1090,17 @@ static inline int nova_failure_update_inodetree(struct super_block *sb, struct n
     return 0;
 }
 
-static int failure_thread_func(void *data) {
-    struct super_block *sb = data;
+static void* failure_thread_func(void *data) {
+    task_ring* ring = (task_ring*)data;
+    struct super_block *sb = ring->sb;
     struct nova_inode_info_header sih;
-    struct task_ring *ring;
     struct nova_inode *pi;
     unsigned long num_inodes_per_page;
     unsigned long ino_low, ino_high;
     unsigned long last_blocknr;
     unsigned int data_bits;
     u64 curr;
-    int cpuid = smp_processor_id();
+    int cpuid = ring->cpuid;
     unsigned long i;
     unsigned long max_size = 0;
     u64 pi_addr = 0;
@@ -1102,7 +1111,6 @@ static int failure_thread_func(void *data) {
     data_bits = blk_type_to_shift[pi->i_blk_type];
     num_inodes_per_page = 1 << (data_bits - NOVA_INODE_BITS);
 
-    ring = &task_rings[cpuid];
     nova_init_header(sb, &sih, 0);
 
     for (count = 0; count < ring->num; count++) {
@@ -1117,7 +1125,7 @@ static int failure_thread_func(void *data) {
 
         for (i = 0; i < num_inodes_per_page; i++) {
             pi_addr = curr + i * NOVA_INODE_SIZE;
-            pi = nova_get_block(sb, pi_addr);
+            pi = (nova_inode*)nova_get_block(sb, pi_addr);
             if (pi->valid) {
                 nova_recover_inode_pages(sb, &sih, ring, pi_addr, global_bm[cpuid]);
                 nova_failure_update_inodetree(sb, pi, &ino_low, &ino_high);
@@ -1134,10 +1142,10 @@ static int failure_thread_func(void *data) {
         nova_delete_file_tree(sb, &sih, 0, last_blocknr, false, false);
     }
 
-    finished[cpuid] = 1;
-    wake_up_interruptible(&finish_wq);
-    do_exit(ret);
-    return ret;
+    // finished[cpuid] = 1;
+    // wake_up_interruptible(&finish_wq);
+    // do_exit(ret);
+    return nullptr;
 }
 
 static int nova_failure_recovery_crawl(struct super_block *sb) {
@@ -1151,24 +1159,28 @@ static int nova_failure_recovery_crawl(struct super_block *sb) {
     int ret = 0;
     int cpuid;
     int ring_id;
+    int inode_tables = 0;
+    // int thread_num = sbi->cpus;
+    int thread_num = 4;
 
     ring_id = 0;
-    for (cpuid = 0; cpuid < sbi->cpus; cpuid++) {
+    for (cpuid = 0; cpuid < thread_num; cpuid++) {
         inode_table = nova_get_inode_table(sb, cpuid);
         if (!inode_table) return -EINVAL;
 
         curr = inode_table->log_head;
         while (curr) {
+            ++inode_tables;
             ring = &task_rings[ring_id];
             if (ring->num >= 512) {
-                nova_err(sb, "%s: ring size too small", __func__);
+                r_error("%s: ring size too small", __func__);
                 return -EINVAL;
             }
 
             ring->addr[ring->num] = curr;
             ring->num++;
 
-            ring_id = (ring_id + 1) % sbi->cpus;
+            ring_id = (ring_id + 1) % thread_num;
 
             curr_addr = (unsigned long)nova_get_block(sb, curr);
             /* Next page resides at the last 8 bytes */
@@ -1176,12 +1188,22 @@ static int nova_failure_recovery_crawl(struct super_block *sb) {
             curr = *(u64 *)(curr_addr);
         }
     }
+    rd_info("%s log_tables %lu to scan.", __func__, inode_tables);
 
-    for (cpuid = 0; cpuid < sbi->cpus; cpuid++) wake_up_process(threads[cpuid]);
+    for (cpuid = 0; cpuid < thread_num; cpuid++) {
+        // threads[i] = kthread_create(failure_thread_func, sb, "recovery thread");
+        // kthread_bind(threads[i], i);
+        int ret = pthread_create(&threads[cpuid], nullptr, failure_thread_func, &task_rings[cpuid]);
+        log_assert(ret == 0);
+    }
+
+    // for (cpuid = 0; cpuid < sbi->cpus; cpuid++) wake_up_process(threads[cpuid]);
 
     nova_init_header(sb, &sih, 0);
     /* Recover the root iode */
-    nova_recover_inode_pages(sb, &sih, &task_rings[0], root_addr, global_bm[1]);
+    nova_recover_inode_pages(sb, &sih, &task_rings[sbi->cpus], root_addr, global_bm[sbi->cpus]);
+
+    wait_to_finish(thread_num);
 
     return ret;
 }
@@ -1215,22 +1237,19 @@ int nova_failure_recovery(struct super_block *sb) {
     ret = allocate_resources(sb, sbi->cpus);
     if (ret) return ret;
 
+    // 改在这个函数启动多线程
     ret = nova_failure_recovery_crawl(sb);
 
-    wait_to_finish(sbi->cpus);
-
-    for (i = 0; i < sbi->cpus; i++) {
+    for (i = 0; i <= sbi->cpus; i++) {
         ring = &task_rings[i];
         sbi->s_inodes_used_count += ring->inodes_used_count;
     }
 
     free_resources(sb);
 
-    nova_dbg("Failure recovery total recovered %lu", sbi->s_inodes_used_count);
+    rd_info("Failure recovery total recovered %lu", sbi->s_inodes_used_count);
     return ret;
 }
-
-#endif
 
 /*********************** Recovery entrance *************************/
 
@@ -1257,16 +1276,15 @@ int nova_recovery(struct super_block *sb) {
     if (value) {
         r_info("NOVA: Normal shutdown");
     } else {
-        error << "TODO: Failure recovery";
-        // nova_dbg("NOVA: Failure recovery");
-        // ret = alloc_bm(sb, initsize);
-        // if (ret) goto out;
+        r_info("NOVA: Failure recovery");
+        ret = alloc_bm(sb, initsize);
+        if (ret) goto out;
 
-        // sbi->s_inodes_used_count = 0;
-        // ret = nova_failure_recovery(sb);
-        // if (ret) goto out;
+        sbi->s_inodes_used_count = 0;
+        ret = nova_failure_recovery(sb);
+        if (ret) goto out;
 
-        // ret = nova_build_blocknode_map(sb, initsize);
+        ret = nova_build_blocknode_map(sb, initsize);
     }
 
 out:

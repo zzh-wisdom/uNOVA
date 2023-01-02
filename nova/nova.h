@@ -160,7 +160,7 @@ static inline void nova_set_entry_type(void *p, enum nova_entry_type type)
 struct nova_file_write_entry {
 	/* ret of find_nvmm_block, the lowest byte is entry type */
 	__le64	block;   // 起始block的NVM偏移地址
-	__le64	pgoff;   // page 偏移
+	__le64	pgoff;   // page 偏移 编号
 	__le32	num_pages;  // 写的page个数
 	__le32	invalid_pages; // 为什么这两个不相等就是有效的，其他原因导致无效的page个数？
 	/* For both ctime and mtime */
