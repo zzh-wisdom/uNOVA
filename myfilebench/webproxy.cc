@@ -7,13 +7,13 @@
 // #include <glog/logging.h>
 
 string dir = "/tmp/nova";
-const int nfiles = 32*32; // *32*16
+const int nfiles = 32*32*32*16; // *32*16
 const int dir_width = 32;
-const int files_per_dir = 32; // *32*16
+const int files_per_dir = 32*32*16; //
 const size_t file_size = 32*1024;
 const size_t iosize = 4096;
 size_t meanappendsize = 16*1024;
-const int append_rand_bs_bits = 6;
+const int append_rand_bs_bits = 12;
 
 // sudo ./webproxy nova 1 200000
 
@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
         	log_assert(handle);
             dir = "/tmp/finefs";
         } else if(strcmp(argv[1], "ext4") == 0) {
-            dir = "/mnt/pmem2/fileserver";
+            dir = "/mnt/pmem0";
         } else if(strcmp(argv[1], "libnvmmio") == 0) {
             dir = "/mnt/pmem2";
         }
@@ -131,10 +131,10 @@ int main(int argc, char* argv[]) {
     printf("dir:%s, threads: %d, op_num: %lu\n", dir.c_str(), threads, op_num);
 
     log_assert(threads <= cpu_num);
-    memset(bufs, 0x3f, sizeof(bufs));
     op_num = (op_num + threads - 1) / threads * threads;
     for(int i = 0; i < threads; ++i) {
         bufs[i] = (char*)aligned_alloc(4096, iosize);
+        memset(bufs[i], 0x3f, 4096);
     }
 
     int depth = InitFileSet(dir, nfiles, dir_width, file_size, iosize, bufs[0], files_per_dir);

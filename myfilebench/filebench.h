@@ -16,10 +16,10 @@ using namespace std;
 #define O_ATOMIC 01000000000
 
 #define MKDIR_FLAG (S_IRWXU | S_IRWXG | S_IRWXO)
-#define OPEN_FLAG (O_RDWR | O_DIRECT | O_ATOMIC)
-#define OPEN_CREAT_FLAG (O_RDWR | O_CREAT | O_ATOMIC)
-#define OPEN_APPEND_FLAG (O_RDWR | O_APPEND | O_DIRECT | O_ATOMIC)
-#define CREATE_MODE (666)
+#define OPEN_FLAG (O_RDWR | O_DIRECT) // | O_DIRECT | O_ATOMIC
+#define OPEN_CREAT_FLAG (O_RDWR | O_CREAT | O_DIRECT) // O_ATOMIC
+#define OPEN_APPEND_FLAG (O_RDWR | O_APPEND | O_DIRECT) // | O_DIRECT | O_ATOMIC
+#define CREATE_MODE (0666)
 #define MAX_CPU_NUM 64
 
 static const int numa_socket = 1;

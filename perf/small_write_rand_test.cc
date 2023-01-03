@@ -53,7 +53,7 @@ int main(int argc, char* argv[]) {
     } else if (strcmp(argv[1], "finefs") == 0) {
         mntdir = "/tmp/finefs";
     } else if(strcmp(argv[1], "ext4") == 0){
-        mntdir = "/mnt/pmem2/test";
+        mntdir = "/mnt/pmem2";
     } else if(strcmp(argv[1], "libnvmmio") == 0) {
         mntdir = "/mnt/pmem2";
     }
@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
     printf("file_size: %lu GB, page_num: %lu\n", FILE_SIZE >> 30, FILE_4KB_NUM);
 
     int mkdir_flag = S_IRWXU | S_IRWXG | S_IRWXO;
-    const int open_flag = O_RDWR | O_CREAT | O_ATOMIC; // O_DIRECT
+    const int open_flag = O_RDWR | O_CREAT | O_DIRECT | O_ATOMIC; //
     int ret;
     uint64_t start_us, end_us;
     double interval_s;
@@ -86,10 +86,10 @@ int main(int argc, char* argv[]) {
     for(int i = 0; i < FILE_4KB_NUM; ++i) {
         ret = write(fd, buf, 4096);
         log_assert(ret == 4096);
-        ret = fsync(fd);
-        log_assert(ret == 0);
     }
-    sleep(2);
+    ret = fsync(fd);
+    log_assert(ret == 0);
+    printf("load over\n");
 
     const int FILE_BS_NUM = FILE_SIZE / bs;
     // rand write

@@ -188,6 +188,14 @@ target_link_libraries(small_write_rand
     numa
 )
 
+add_executable(mmap_write_seq
+    perf/mmap_write_seq_test.cc
+    ${UTIL_SRC})
+target_link_libraries(mmap_write_seq
+    pthread syscall_intercept dl glog
+    numa pmem2
+)
+
 file(GLOB MYFILEBENCH_SRC
     ${PROJECT_SOURCE_DIR}/myfilebench/filebench.cc
     ${UTIL_SRC}
