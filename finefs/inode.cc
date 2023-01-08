@@ -1543,7 +1543,7 @@ static int finefs_coalesce_log_pages(struct super_block *sb, unsigned long prev_
     return 0;
 }
 
-// #define LOG_ZERO
+#define LOG_ZERO
 
 /* Log block resides in NVMM */
 // 循环的方式分配,尽量分配连续的空间，共分配num_pages个页

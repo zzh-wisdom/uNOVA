@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unordered_map>
+#include <string>
 
 struct statfs;
 struct linux_dirent;
