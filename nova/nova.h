@@ -221,7 +221,10 @@ struct nova_setattr_logentry {
 	__le32	mtime;
 	__le32	ctime;
 	__le64	size;
+	u8 paddings[32];
 } __attribute((__packed__));
+
+// const int a = sizeof(struct nova_setattr_logentry);
 
 /* Do we need this to be 32 bytes? */
 struct nova_link_change_entry {

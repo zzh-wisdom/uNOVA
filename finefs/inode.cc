@@ -1855,6 +1855,7 @@ static void finefs_update_setattr_entry(struct inode *inode,
     entry->entry_ts = cpu_to_le64(sih->h_ts++);
     barrier();
     // sfence();
+    // entry->entry_version = 1;
     entry->entry_version = finefs_log_page_version(inode->i_sb,
         finefs_get_addr_off(inode->i_sb, entry));
 

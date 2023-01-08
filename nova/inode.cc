@@ -1345,6 +1345,8 @@ int nova_notify_change(struct dentry *dentry, struct iattr *attr)
 	/* We are holding i_mutex so OK to append the log */
 	new_tail = nova_append_setattr_entry(sb, pi, inode, attr, 0);
 
+    // PERSISTENT_BARRIER();
+	// pi->log_tail = new_tail;
 	nova_update_tail(pi, new_tail);
 
 	/* Only after log entry is committed, we can truncate size */
@@ -1845,11 +1847,18 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
     int freed_pages = 0;
     timing_t gc_time;
 
+    // rd_info("%s: cur_tail 0x%lx, num_pages: %d", __func__, curr_tail, num_pages);
+
+    // sih->log_pages += num_pages;
+    // curr = BLOCK_OFF(curr_tail);
+    // curr_page = (struct nova_inode_log_page *)nova_get_block(sb, curr);
+    // nova_set_next_page_address(sb, curr_page, new_block, 1);
+    // return 0;
+
     NOVA_START_TIMING(fast_gc_t, gc_time);
     curr = pi->log_head;
     sih->log_valid_bytes = 0;
 
-    rd_info("%s: log head 0x%lx, tail 0x%lx", __func__, curr, curr_tail);
     while (1) {
         if (curr >> PAGE_SHIFT == pi->log_tail >> PAGE_SHIFT) {
             /* Don't recycle tail page 不回收最后一个page，避免即修改head又修改tail，不能原子*/

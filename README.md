@@ -4,6 +4,8 @@ user space NOVA file system
 
 ## 设计
 
+细粒度数据管理的持久内存文件系统研究
+
 一种具有细粒度数据管理的持久内存文件系统
 A persistent memory file system with fine-grained data management
 

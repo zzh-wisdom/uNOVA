@@ -66,6 +66,7 @@
         "numbers": "cpp",
         "map": "cpp",
         "unordered_set": "cpp",
-        "cinttypes": "cpp"
+        "cinttypes": "cpp",
+        "fs_cfg.h": "c"
     }
 }
