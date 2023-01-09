@@ -90,6 +90,7 @@ int main(int argc, char* argv[]) {
     }
     ret = fsync(fd);
     log_assert(ret == 0);
+    sleep(2);
     printf("load over...\n");
 
     // seq write

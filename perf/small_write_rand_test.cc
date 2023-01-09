@@ -89,6 +89,7 @@ int main(int argc, char* argv[]) {
     }
     ret = fsync(fd);
     log_assert(ret == 0);
+    sleep(2);
     printf("load over\n");
 
     const int FILE_BS_NUM = FILE_SIZE / bs;
