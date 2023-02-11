@@ -239,7 +239,7 @@ const int a = sizeof(finefs_inode);
 // 用于分配innode table空间(每次2MB)的inode
 #define FINEFS_INODETABLE_INO	(2)	/* Temporaty inode table */
 // 用于分配 数据block
-#define FINEFS_BLOCKNODE_INO	(3)
+#define FINEFS_BLOCKNODE_INO	(3)  // 记录空间页面的范围
 // 用于分配slab page
 #define FINEFS_SLAB_PAGE_INO	(4)
 // 用于分配journal的空间（每次4KB）

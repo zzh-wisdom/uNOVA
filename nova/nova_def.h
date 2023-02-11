@@ -164,14 +164,12 @@ struct nova_super_block {
 /* The root inode follows immediately after the redundant super block */
 #define NOVA_ROOT_INO		(1)
 // 用于分配innode table空间(每次2MB)的inode
-#define NOVA_INODETABLE_INO	(2)	/* Temporaty inode table */
-// 用于分配 数据block ?
-#define NOVA_BLOCKNODE_INO	(3)
+#define NOVA_INODETABLE_INO	(2)	/* Temporaty inode table 用于分配inode table空间 */
+#define NOVA_BLOCKNODE_INO	(3)  // 用于保存空闲页面信息（重启）
 
 #define NOVA_INODELIST_INO	(4)
-// 用于分配journal的空间（每次4KB）
-#define NOVA_LITEJOURNAL_INO	(5)
-#define NOVA_INODELIST1_INO	(6)
+#define NOVA_LITEJOURNAL_INO	(5)  // 用于分配journal的空间（每次4KB）
+#define NOVA_INODELIST1_INO	(6)  // 保存已经使用的ino信息
 
 #define	NOVA_ROOT_INO_START	(NOVA_SB_SIZE * 2)
 
