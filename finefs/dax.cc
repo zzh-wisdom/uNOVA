@@ -459,7 +459,7 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 		else
 			entry_type = TX_END_FILE_SMALL_WRITE;
 
-		PERSISTENT_BARRIER(); // 这个也没有必要
+		// PERSISTENT_BARRIER(); // 这个也没有必要
 	}
 
 		// 写 log
@@ -638,7 +638,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 			else
 				entry_type = TX_END_FILE_PAGES_WRITE;
 
-			PERSISTENT_BARRIER();  // 没有必要！！！！！
+			// PERSISTENT_BARRIER(); // 没有必要！！！！！
 		}
 		finefs_set_entry_type((void *)&page_entry_data, entry_type);
 		if (pos + bytes > inode->i_size)

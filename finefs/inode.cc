@@ -971,6 +971,7 @@ static inline int finefs_file_page_entry_apply_slab(struct super_block *sb,
             // 处理前半部分
             cur->bytes = start - cur->file_off;
             list_add(&new_cur->entry, &cur->entry);
+            ++dram_page_entry->num_small_write;
             break;
         }
     }
@@ -2393,7 +2394,7 @@ static int finefs_gc_assign_new_entry(struct super_block *sb, struct finefs_inod
             ret = finefs_gc_assign_file_entry(sb, sih, old_entry, new_entry);
             break;
         case FILE_SMALL_WRITE:
-            r_fatal("TODO: gc FILE_SMALL_WRITE entry");
+            // r_fatal("TODO: gc FILE_SMALL_WRITE entry");
             break;
         case DIR_LOG:
             // 修改目录的dram radix tree 索引

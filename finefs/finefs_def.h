@@ -329,7 +329,7 @@ static inline void finefs_flush_buffer(void *buf, uint32_t len, bool fence)
 
 #define SLAB_PAGE_BATCH_EXTEND_THRESHOLD 16
 // 一个slab free list最多可以持有的page个数
-#define SLAB_PAGE_KEEP_THRESHOLD  16
+#define SLAB_PAGE_KEEP_THRESHOLD  32
 
 // log一次批量分配page的最大个数
 #define	LOG_EXTEND_THRESHOLD	256
