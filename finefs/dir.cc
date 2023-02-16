@@ -201,7 +201,7 @@ static u64 finefs_append_dir_inode_entry(struct super_block *sb,
 		BUG();
 
 	entry = (struct finefs_dentry *)finefs_get_block(sb, curr_p);
-	entry->entry_type = TX_BEGIN_DIR_LOG;
+	entry->entry_type = TX_BEGIN_DIR_LOG;  // 遗留问题
 	if(ino == 0) { // 删除
 		entry->name_len = 0;
 		entry->name_hash = dentry->d_name.hash;

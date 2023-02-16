@@ -971,6 +971,7 @@ static inline int finefs_file_page_entry_apply_slab(struct super_block *sb,
             // 处理前半部分
             cur->bytes = start - cur->file_off;
             list_add(&new_cur->entry, &cur->entry);
+            ++dram_page_entry->num_small_write;
             break;
         }
     }

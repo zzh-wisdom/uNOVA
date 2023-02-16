@@ -171,7 +171,8 @@ static inline void finefs_free_slab_page(struct slab_page *node) {
 #define SLAB_MIN_SIZE (1 << SLAB_MIN_BITS)
 #define SLAB_MAX_BITS (FINEFS_BLOCK_SHIFT - 1)
 #define SLAB_MAX_SIZE (1 << SLAB_MAX_BITS)
-#define SLAB_LEVELS (SLAB_MAX_SIZE - SLAB_MIN_SIZE + 1)
+#define SLAB_LEVELS (SLAB_MAX_BITS - SLAB_MIN_BITS + 1)
+const int a = SLAB_LEVELS;
 
 struct slab_page {
     unsigned long block_off;  // page 不能跨线程
@@ -183,12 +184,12 @@ struct slab_page {
 
 struct slab_free_list {
     u32 slab_bits;
-    u32 next_alloc_pages;  // 下一次分配的pages个数
-    u32 page_num;
-    u32 next_slab_idx;  // 下一次分配的page内slab序号
-    slab_page *cur_page;
-    struct list_head page_head;
-    std::map<u64, slab_page *> page_off_2_slab_page;
+    u32 next_alloc_pages;                             // 下一次分配的pages个数，指数级变长
+    u32 page_num;                                     // 当前链表中的page个数
+    u32 next_slab_idx;                                // 下一次分配的page内slab序号
+    slab_page *cur_page;                              // 当前用于分配空间的page
+    struct list_head page_head;                       // 管理将用于空间分配的page
+    std::map<u64, slab_page *> page_off_2_slab_page;  // page NVM偏移到内存结构的映射
 
     slab_free_list() {
         page_num = 0;
