@@ -801,7 +801,7 @@ struct finefs_file_pages_write_entry {
     __le32 num_pages;      // 写的page个数
     __le32 invalid_pages;  // 覆盖写导致无效的page个数？
     __le64 size;           // 文件的大小
-    __le64 finefs_ino;     // 所属于的ino
+    __le64 finefs_ino;     // 所属于的ino(不需要)
     __le64 entry_ts;
     __le64 entry_version;
 } __attribute((__packed__));
