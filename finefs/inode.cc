@@ -207,7 +207,7 @@ static inline int finefs_free_contiguous_data_blocks(
     if(entry == nullptr) return 0;
 
     if (entry->num_pages < entry->invalid_pages + num_pages) {
-        r_error(
+        rd_error(
             "%s: inode %lu, entry pgoff %lu, %lu pages, "
             "invalid %lu, try to free %lu, pgoff %lu",
             __func__, sih->ino, entry->pgoff, entry->num_pages, entry->invalid_pages, num_pages,
@@ -583,9 +583,9 @@ int finefs_delete_file_tree(struct super_block *sb, struct finefs_inode_info_hea
             /* We are finding a hole. Jump to the next entry. */
             page_entry_dram = finefs_find_next_page_entry(sb, sih, pgoff);
             if (!page_entry_dram) break;
-            entry = page_entry_dram->nvm_entry_p;
+            // entry = page_entry_dram->nvm_entry_p; file_pgoff
             pgoff++;
-            pgoff = pgoff > entry->pgoff ? pgoff : entry->pgoff;
+            pgoff = pgoff > page_entry_dram->file_pgoff ? pgoff : page_entry_dram->file_pgoff;
         }
     }
 
@@ -771,7 +771,9 @@ int finefs_file_page_entry_flush_slab(struct super_block *sb,
     bool is_new_page;
     finefs_file_small_entry *cur, *next;
     finefs_file_pages_write_entry* pages_write_entry = dram_page_entry->nvm_entry_p;
+    uint64_t pm_io_start, log_io_start;
 
+    STATISTICS_START_TIMING(pm_io_time, pm_io_start);
     if(pages_write_entry) {
         is_new_page = false;
         page_data = dram_page_entry->nvm_block_p;
@@ -845,10 +847,12 @@ int finefs_file_page_entry_flush_slab(struct super_block *sb,
         dlog_assert(last_pos < end_pos);
         pmem_memset(cur_ptr, 0, end_pos - last_pos, false);
     }
+    STATISTICS_END_TIMING(pm_io_time, pm_io_start);
 
     u64 cur_tail = *tail;
     finefs_file_pages_write_entry page_entry_data;
 
+    STATISTICS_START_TIMING(log_io_time, log_io_start);
     // 提交log
     page_entry_data.is_old = 0;
     page_entry_data.pgoff = cpu_to_le64(dram_page_entry->file_pgoff);
@@ -859,7 +863,7 @@ int finefs_file_page_entry_flush_slab(struct super_block *sb,
 	page_entry_data.mtime = cpu_to_le32(mtime);
 	finefs_set_entry_type((void *)&page_entry_data, TX_ATOMIC_FILE_PAGES_WRITE);
 	page_entry_data.size = cpu_to_le64(file_size);
-    PERSISTENT_BARRIER();
+    // PERSISTENT_BARRIER();
     inode* inode = finefs_get_vfs_inode_from_header(sih);
     // dlog_assert(cur_tail != 0);
 	u64 curr_entry = finefs_append_file_write_entry(sb, pi, inode,
@@ -873,6 +877,7 @@ int finefs_file_page_entry_flush_slab(struct super_block *sb,
     cur_tail = curr_entry + sizeof(struct finefs_file_pages_write_entry);
     *tail = cur_tail;
     PERSISTENT_BARRIER();  // 确保落盘
+    STATISTICS_END_TIMING(log_io_time, log_io_start);
 
     // 删除旧的small_write entry
     finefs_file_page_entry_clear(sb, pi, sih, dram_page_entry, true, true);
@@ -2445,7 +2450,7 @@ static u64 finefs_log_page_entry_move(super_block *sb, finefs_inode *pi,
         new_curr += entry_size;
         ++num_entry_gc;
     }
-    log_assert(num_entry_gc == log_page->page_tail.valid_num);
+    // log_assert(num_entry_gc == log_page->page_tail.valid_num);
     return new_curr;
 }
 
@@ -2502,8 +2507,8 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
         goto out;
     }
 
-    r_info("%s num_pages_to_gc=%u, new alloc pages=%d", __func__,
-        sih->log_pages_to_gc.size(), allocated);
+    // r_info("%s num_pages_to_gc=%u, new alloc pages=%d", __func__,
+    //     sih->log_pages_to_gc.size(), allocated);
 
     // 先将setattr entry gc
     finefs_sih_setattr_entry_gc(sb, sih);
@@ -2556,7 +2561,7 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
     next = FINEFS_LOG_NEXT_PAGE(curr_page);
     if (next)  {
         // 多分配的空间进行释放
-        log_assert(0);
+        // log_assert(0);
         finefs_free_contiguous_log_blocks(sb, pi, nullptr ,next, 0);
     }
     // 将多余空间的entry对应的bitmap设置为0
@@ -2582,8 +2587,8 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
         u64 start_p = p.first;
         u64 end_p = p.second.first;
         int free_num = p.second.second;
-        r_info("%s: range delete log pages: %d, from %lu to %lu",
-            __func__, free_num, start_p, end_p);
+        // r_info("%s: range delete log pages: %d, from %lu to %lu",
+        //     __func__, free_num, start_p, end_p);
         finefs_inode_log_page *start_page =
             (finefs_inode_log_page*)finefs_get_block(sb, start_p);
         finefs_inode_log_page *end_page =
@@ -2812,10 +2817,10 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
 
     // 有效率低于50%，开启彻底gc
     if (need_thorough_gc(sb, sih, blocks, checked_pages)) {
-        r_info(
-            "Thorough GC for inode %lu: checked pages %lu, "
-            "valid pages %lu, log_valid_bytes %lu",
-            sih->ino, checked_pages, blocks, sih->log_valid_bytes);
+        // r_info(
+        //     "Thorough GC for inode %lu: checked pages %lu, "
+        //     "valid pages %lu, log_valid_bytes %lu",
+        //     sih->ino, checked_pages, blocks, sih->log_valid_bytes);
         finefs_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
         // int log_page_num = finefs_inode_log_page_num(sb, pi->log_head);
         // log_assert(log_page_num == sih->log_pages);

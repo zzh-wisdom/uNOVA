@@ -23,13 +23,13 @@ runtime=20
 # numjobs=1
 description=顺序写文件,单个线程单独一个文件,io大小变化
 size=3G
-# overwrite=1
+overwrite=1
 rw=write
 bs=4K
 
-[seq-write-1]
-wait_for_previous
-numjobs=1
+# [seq-write-1]
+# wait_for_previous
+# numjobs=1
 
 # [seq-write-2]
 # wait_for_previous
@@ -59,6 +59,6 @@ numjobs=1
 # wait_for_previous
 # numjobs=16
 
-# [seq-write-32]
-# wait_for_previous
-# numjobs=32
+[seq-write-32]
+wait_for_previous
+numjobs=32

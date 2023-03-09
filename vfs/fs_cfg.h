@@ -65,6 +65,7 @@ static force_inline void *pmem_memcpy(void *pmem, const void *src, unsigned int 
 #endif
 
     flags = fence ?: (flags | PMEM2_F_MEM_NODRAIN);
+    // return memcpy(pmem, src, size);
     return pmem_memcpy_func(pmem, src, size, flags);
 }
 

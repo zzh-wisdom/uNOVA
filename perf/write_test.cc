@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
     } else if(strcmp(argv[1], "ext4") == 0){
         mntdir = "/mnt/pmem2/";
     } else if(strcmp(argv[1], "libnvmmio") == 0) {
-        mntdir = "/mnt/pmem2";
+        mntdir = "/mnt/pmem0";
     }
     int bs = atoi(argv[2]);
     uint64_t OP = atoi(argv[3]);

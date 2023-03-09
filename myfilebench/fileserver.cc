@@ -7,13 +7,13 @@
 // #include <glog/logging.h>
 
 string dir = "/tmp/nova";
-const int nfiles = 32*32*32; // *4
+const int nfiles = 32*32*32*4;
 const int dir_width = 32;
-const int files_per_dir = 32;
+const int files_per_dir = 32*4;
 const size_t file_size = 128*1024;
 const size_t iosize = 4096;
 size_t meanappendsize = 16*1024;
-const int append_rand_bs_bits = 12;
+const int append_rand_bs_bits = 6;
 
 // sudo ./fileserver nova 4 200000
 
@@ -123,7 +123,7 @@ int main(int argc, char* argv[]) {
         } else if(strcmp(argv[1], "ext4") == 0) {
             dir = "/mnt/pmem0";
         } else if(strcmp(argv[1], "libnvmmio") == 0) {
-            dir = "/mnt/pmem2";
+            dir = "/mnt/pmem0";
         }
     }
 

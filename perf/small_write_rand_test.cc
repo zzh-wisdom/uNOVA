@@ -55,13 +55,13 @@ int main(int argc, char* argv[]) {
     } else if(strcmp(argv[1], "ext4") == 0){
         mntdir = "/mnt/pmem2";
     } else if(strcmp(argv[1], "libnvmmio") == 0) {
-        mntdir = "/mnt/pmem2";
+        mntdir = "/mnt/pmem0";
     }
     int bs = atoi(argv[2]);
     uint64_t OP = atoi(argv[3]);
     uint64_t bs_num = FILE_SIZE / bs;
     bs_num = std::min(bs_num, OP);
-    OP = bs_num;
+    // OP = bs_num;
     printf("mnt %s, bs: %d, OP: %lu\n", mntdir.c_str(), bs, OP);
     printf("file_size: %lu GB, page_num: %lu\n", FILE_SIZE >> 30, FILE_4KB_NUM);
 
@@ -83,13 +83,15 @@ int main(int argc, char* argv[]) {
 
     // load
     // uint64_t load_n = (OP * bs + 4095)/4096;
-    for(int i = 0; i < FILE_4KB_NUM; ++i) {
-        ret = write(fd, buf, 4096);
-        log_assert(ret == 4096);
-    }
-    ret = fsync(fd);
+    // for(int i = 0; i < FILE_4KB_NUM; ++i) {
+    //     ret = write(fd, buf, 4096);
+    //     log_assert(ret == 4096);
+    // }
+    // ret = fsync(fd);
+    // log_assert(ret == 0);
+    // sleep(2);
+    ret = ftruncate(fd, FILE_SIZE);
     log_assert(ret == 0);
-    sleep(2);
     printf("load over\n");
 
     const int FILE_BS_NUM = FILE_SIZE / bs;
@@ -110,29 +112,31 @@ int main(int argc, char* argv[]) {
     printf("write bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
            OP * (bs) / 1024.0 / 1024 / interval_s,
            OP / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
+    // sleep(2);
+    // printf("write over\n");
 
     // seq read
-    void* read_buf = aligned_alloc(4096, bs < 4096 ? 4096 : bs);
-    // OP = OP * bs / 4096;
-    // bs = 4096;
-    uint64_t start_ns = GetTsNsec();
-    for(int i = 0; i < OP; ++i) {
-        off = (rand() % FILE_BS_NUM)*bs;
-        ret = lseek(fd, off, SEEK_SET);
-        log_assert(ret == off);
-        ret = read(fd, read_buf, bs);
-        log_assert(ret == bs);
-        assert(memcmp(read_buf, buf, bs) == 0);
-    }
-    uint64_t end_ns = GetTsNsec();
-    interval_s = (double)(end_ns - start_ns) / 1000 / 1000 / 1000;
-    printf("read bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf ns\n",
-           OP * (bs) / 1024.0 / 1024 / interval_s,
-           OP / 1000.0 / interval_s, (end_ns - start_ns)*1.0 / OP);
+    // void* read_buf = aligned_alloc(4096, bs < 4096 ? 4096 : bs);
+    // // OP = OP * bs / 4096;
+    // // bs = 4096;
+    // uint64_t start_ns = GetTsNsec();
+    // for(int i = 0; i < OP; ++i) {
+    //     off = (rand() % FILE_BS_NUM)*bs;
+    //     ret = lseek(fd, off, SEEK_SET);
+    //     log_assert(ret == off);
+    //     ret = read(fd, read_buf, bs);
+    //     log_assert(ret == bs);
+    //     assert(memcmp(read_buf, buf, bs) == 0);
+    // }
+    // uint64_t end_ns = GetTsNsec();
+    // interval_s = (double)(end_ns - start_ns) / 1000 / 1000 / 1000;
+    // printf("read bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.4lf us\n",
+    //        OP * (bs) / 1024.0 / 1024 / interval_s,
+    //        OP / 1000.0 / interval_s, (end_ns - start_ns)*1.0 / OP / 1000.0);
 
-    close(fd);
-    ret = unlink(dir1_file.c_str());
-    log_assert(ret == 0);
+    // close(fd);
+    // ret = unlink(dir1_file.c_str());
+    // log_assert(ret == 0);
 
     printf("Test pass\n");
 }

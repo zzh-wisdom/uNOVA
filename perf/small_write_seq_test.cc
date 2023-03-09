@@ -110,12 +110,14 @@ int main(int argc, char* argv[]) {
     printf("write bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
            OP * (bs) / 1024.0 / 1024 / interval_s,
            OP / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
+    sleep(2);
+    printf("write over...\n");
 
     // seq read
     void* read_buf = aligned_alloc(4096, bs < 4096 ? 4096 : bs);
     // OP = OP * bs / 4096;
     // bs = 4096;
-    uint64_t start_ns = GetTsNsec();
+    start_us = GetTsUsec();
     for(int i = 0; i < OP; ++i) {
         if(i % bs_num == 0) {
             ret = lseek(fd, 0, SEEK_SET);
@@ -125,11 +127,11 @@ int main(int argc, char* argv[]) {
         log_assert(ret == bs);
         assert(memcmp(read_buf, buf, bs) == 0);
     }
-    uint64_t end_ns = GetTsNsec();
-    interval_s = (double)(end_ns - start_ns) / 1000 / 1000 / 1000;
-    printf("read bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf ns\n",
+    end_us = GetTsUsec();
+    interval_s = (double)(end_us - start_us) / 1000 / 1000;
+    printf("read bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.4lf us\n",
            OP * (bs) / 1024.0 / 1024 / interval_s,
-           OP / 1000.0 / interval_s, (end_ns - start_ns)*1.0 / OP);
+           OP / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
 
     close(fd);
     ret = unlink(dir1_file.c_str());

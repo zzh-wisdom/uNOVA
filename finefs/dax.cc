@@ -17,6 +17,7 @@
 #include "finefs/wprotect.h"
 
 #include "util/cpu.h"
+#include "util/statistics.h"
 
 static force_inline size_t finefs_page_write_entry_read(super_block* sb,
 	finefs_inode_info_header *sih,
@@ -430,17 +431,21 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 	void* kmem;
 	u64 curr_entry;
 	finefs_entry_type entry_type;
+	uint64_t pm_io_start, log_io_start;
 
 	dlog_assert(bytes);
 	entry_size = sizeof(finefs_file_small_write_entry);
 
+	STATISTICS_START_TIMING(pm_io_time, pm_io_start);
 	u64 slab_off = finefs_less_page_alloc(sb, pi, bytes, &size_bits, pos, 0, 1);
 	dlog_assert((1 << size_bits) >= bytes &&
 		((1 << (size_bits - 1)) < bytes || bytes <= (SLAB_MIN_SIZE >> 1)));
 
 	kmem = finefs_get_block(sb, slab_off);
 	finefs_copy_to_nvm(sb, kmem, buf, bytes, false);
+	STATISTICS_END_TIMING(pm_io_time, pm_io_start);
 
+	STATISTICS_START_TIMING(log_io_time, log_io_start);
 	curr_entry = finefs_get_append_head(sb, pi, sih, tail, entry_size, &extended, false);
     if (curr_entry == 0) {
 		finefs_less_page_free(sb, pi, slab_off, 1 << size_bits);
@@ -480,6 +485,7 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 	barrier();
 	small_entry->entry_version = finefs_log_page_version(sb, curr_entry);
     finefs_flush_buffer(small_entry, sizeof(struct finefs_file_small_write_entry), 0);
+	STATISTICS_END_TIMING(log_io_time, log_io_start);
 
 	rdv_proc(
         "file %lu entry @ 0x%lx: entry_type %u, slab_bits %u, bytes: %u, "
@@ -523,6 +529,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 	struct timespec cur_time;
 	enum finefs_entry_type entry_type;
 	int num_entry = 0;
+	uint64_t file_write_start, pm_io_start, log_io_start;
 
 	if (len == 0)
 		return 0;
@@ -566,6 +573,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 	temp_tail = sih->h_log_tail;
 	begin_tail = sih->h_log_tail;
 
+	STATISTICS_START_TIMING(file_write_time, file_write_start);
 	// 块内偏移
 	offset = pos & (sb->s_blocksize - 1);
 	// 处理头部不对齐的数据
@@ -597,6 +605,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 	while (num_blocks > 0) {
 		start_blk = pos >> sb->s_blocksize_bits;
 
+		STATISTICS_START_TIMING(pm_io_time, pm_io_start);
 		/* don't zero-out the allocated blocks */
 		allocated = finefs_new_data_blocks(sb, pi, &blocknr, num_blocks,
 						start_blk, 0, 1);
@@ -622,7 +631,10 @@ ssize_t finefs_cow_file_write(struct file *filp,
 		// 写入更改的数据区间
 		finefs_copy_to_nvm(sb, kmem, buf, bytes, false);
 		FINEFS_END_TIMING(memcpy_w_nvmm_t, memcpy_time);
+		// clwb_extent((char*)kmem, bytes);
+		STATISTICS_END_TIMING(pm_io_time, pm_io_start);
 
+		STATISTICS_START_TIMING(log_io_time, log_io_start);
 		page_entry_data.is_old = 0;
 		page_entry_data.pgoff = cpu_to_le64(start_blk);
 		page_entry_data.num_pages = cpu_to_le32(allocated);
@@ -652,6 +664,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 			ret = -ENOSPC;
 			goto out;
 		}
+		STATISTICS_END_TIMING(log_io_time, log_io_start);
 
 		if (begin_tail == 0)
 			begin_tail = curr_entry;
@@ -701,6 +714,7 @@ ssize_t finefs_cow_file_write(struct file *filp,
 	// finefs_update_tail(pi, temp_tail);
 	finefs_update_volatile_tail(sih, temp_tail);
 
+	STATISTICS_END_TIMING(file_write_time, file_write_start);
 	// 注意： 在写log时已经更新sih中的统计信息
 	inode->i_blocks = sih->h_blocks;
 

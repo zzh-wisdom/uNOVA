@@ -1926,10 +1926,10 @@ static int nova_inode_log_fast_gc(struct super_block *sb, struct nova_inode *pi,
 
     // 有效率低于50%，开启彻底gc
     if (need_thorough_gc(sb, sih, blocks, checked_pages)) {
-        r_info(
-            "Thorough GC for inode %lu: checked pages %lu, "
-            "valid pages %lu",
-            sih->ino, checked_pages, blocks);
+        // r_info(
+        //     "Thorough GC for inode %lu: checked pages %lu, "
+        //     "valid pages %lu",
+        //     sih->ino, checked_pages, blocks);
         nova_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
     }
 

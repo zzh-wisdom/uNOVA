@@ -6,6 +6,7 @@
 #include "hooks.h"
 #include "util/common.h"
 #include "util/log.h"
+#include "util/statistics.h"
 
 static pthread_once_t init_ctx_thread = PTHREAD_ONCE_INIT;
 
@@ -67,7 +68,7 @@ ATTR_CONSTRUCTOR void preload(int argc, char **argv) {
     hook_op = &hook_op_native;
 #endif
 
-	static const std::string dev_name = "/dev/dax3.0";
+	static const std::string dev_name = "/dev/dax1.0";
     printf("HOOK [%s], dev_name:[%s] root_path:[%s]\n", hook_op->label.c_str(), dev_name.c_str(),
            hook_op->root_name.c_str());
     // 创建fs
@@ -88,4 +89,5 @@ ATTR_CONSTRUCTOR void preload(int argc, char **argv) {
 ATTR_DESTRUCTOR void destroy() {
     int ret = hook_op->fs_unmount(&hook_op->sb, hook_op->root_name);
     log_assert(ret == 0);
+    statistics_print();
 }

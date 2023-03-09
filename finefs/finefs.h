@@ -35,6 +35,7 @@
 #include "util/rbtree.h"
 #include "util/util.h"
 #include "util/ticket_lock.h"
+#include "util/statistics.h"
 #include "vfs/vfs.h"
 
 #define PAGE_SHIFT_2M 21
@@ -172,7 +173,7 @@ static inline void finefs_free_slab_page(struct slab_page *node) {
 #define SLAB_MAX_BITS (FINEFS_BLOCK_SHIFT - 1)
 #define SLAB_MAX_SIZE (1 << SLAB_MAX_BITS)
 #define SLAB_LEVELS (SLAB_MAX_BITS - SLAB_MIN_BITS + 1)
-const int a = SLAB_LEVELS;
+// const int a = SLAB_LEVELS;
 
 struct slab_page {
     unsigned long block_off;  // page 不能跨线程
@@ -1584,6 +1585,8 @@ static force_inline bool log_entry_is_set_valid(void *entry) {
 static force_inline void log_entry_set_invalid(struct super_block *sb,
                                                struct finefs_inode_info_header *sih, void *entry,
                                                bool is_write_entry) {
+    uint64_t log_io_start;
+    STATISTICS_START_TIMING(log_io_time, log_io_start);
     finefs_inode_page_tail *page_tail = (finefs_inode_page_tail *)FINEFS_LOG_TAIL((uintptr_t)entry);
     int entry_nr = FINEFS_LOG_ENTRY_NR(entry);
     dlog_assert((page_tail->bitmap >> (entry_nr)) & 1);
@@ -1642,6 +1645,7 @@ static force_inline void log_entry_set_invalid(struct super_block *sb,
             finefs_sih_bitmap_cache_flush(sih, false);
         }
     }
+    STATISTICS_END_TIMING(log_io_time, log_io_start);
 }
 
 static force_inline void finefs_file_small_entry_set(super_block *sb,

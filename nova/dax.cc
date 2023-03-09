@@ -17,6 +17,7 @@
 #include "nova/wprotect.h"
 
 #include "util/cpu.h"
+#include "util/statistics.h"
 
 // ppos带回实际拷贝到的偏移
 // 返回实际读取的字节数
@@ -204,6 +205,7 @@ static void nova_handle_head_tail_blocks(struct super_block *sb,
 	unsigned long start_blk, end_blk, num_blocks;
 	struct nova_file_write_entry *entry;
 	timing_t partial_time;
+	uint64_t pm_io_start;
 
 	NOVA_START_TIMING(partial_block_t, partial_time);
 	offset = pos & (sb->s_blocksize - 1);
@@ -220,6 +222,7 @@ static void nova_handle_head_tail_blocks(struct super_block *sb,
 				offset, start_blk, kmem);
 	if (offset != 0) {
 		entry = nova_get_write_entry(sb, si, start_blk);
+		STATISTICS_START_TIMING(pm_io_time, pm_io_start);
 		if (entry == NULL) {
 			/* Fill zero */
 		    	memset(kmem, 0, offset);
@@ -230,6 +233,7 @@ static void nova_handle_head_tail_blocks(struct super_block *sb,
 					offset, kmem, false);
 		}
 		nova_flush_buffer(kmem, offset, 0);
+		STATISTICS_END_TIMING(pm_io_time, pm_io_start);
 	}
 
 	kmem = (void *)((char *)kmem +
@@ -240,6 +244,7 @@ static void nova_handle_head_tail_blocks(struct super_block *sb,
 				eblk_offset, end_blk, kmem);
 	if (eblk_offset != 0) {
 		entry = nova_get_write_entry(sb, si, end_blk);
+		STATISTICS_START_TIMING(pm_io_time, pm_io_start);
 		if (entry == NULL) {
 			/* Fill zero */
 		    	memset(kmem + eblk_offset, 0,
@@ -251,6 +256,7 @@ static void nova_handle_head_tail_blocks(struct super_block *sb,
 		}
 		nova_flush_buffer(kmem + eblk_offset,
 					sb->s_blocksize - eblk_offset, 0);
+		STATISTICS_END_TIMING(pm_io_time, pm_io_start);
 	}
 
 	NOVA_END_TIMING(partial_block_t, partial_time);
@@ -373,6 +379,7 @@ ssize_t nova_cow_file_write(struct file *filp,
 	// 	return -EACCES;
 
 	NOVA_START_TIMING(cow_write_t, cow_write_time);
+	uint64_t file_write_start, pm_io_start, log_io_start;
 
 	// 一些加锁同步的操作
 	// sb_start_write(inode->i_sb);
@@ -410,6 +417,8 @@ ssize_t nova_cow_file_write(struct file *filp,
 			__func__, inode->i_ino,	pos, count);
 
 	temp_tail = pi->log_tail;
+	// log_assert(num_blocks == 1);
+	STATISTICS_START_TIMING(file_write_time, file_write_start);
 	while (num_blocks > 0) {
 		offset = pos & (nova_inode_blk_size(pi) - 1);
 		start_blk = pos >> sb->s_blocksize_bits;
@@ -442,11 +451,15 @@ ssize_t nova_cow_file_write(struct file *filp,
 
 		/* Now copy from user buf */
 //		nova_dbg("Write: %p", kmem);
+		STATISTICS_START_TIMING(pm_io_time, pm_io_start);
 		NOVA_START_TIMING(memcpy_w_nvmm_t, memcpy_time);
 		copied = bytes - memcpy_to_pmem_nocache(kmem + offset,
 						buf, bytes);
 		NOVA_END_TIMING(memcpy_w_nvmm_t, memcpy_time);
 
+		STATISTICS_END_TIMING(pm_io_time, pm_io_start);
+
+		STATISTICS_START_TIMING(log_io_time, log_io_start);
 		entry_data.pgoff = cpu_to_le64(start_blk);
 		entry_data.num_pages = cpu_to_le32(allocated);
 		entry_data.invalid_pages = 0;
@@ -468,6 +481,7 @@ ssize_t nova_cow_file_write(struct file *filp,
 			ret = -ENOSPC;
 			goto out;
 		}
+		STATISTICS_END_TIMING(log_io_time, log_io_start);
 
 		rd_info("Write: %p, %lu", kmem, copied);
 		if (copied > 0) {
@@ -498,12 +512,15 @@ ssize_t nova_cow_file_write(struct file *filp,
 			(total_blocks << (data_bits - sb->s_blocksize_bits)));
 	nova_memlock_inode(sb, pi);
 
+	STATISTICS_START_TIMING(log_io_time, log_io_start);
 	// 提交写操作
 	nova_update_tail(pi, temp_tail);
+	STATISTICS_END_TIMING(log_io_time, log_io_start);
 
 	/* Free the overlap blocks after the write is committed */
 	// 更改内存中的索引
 	ret = nova_reassign_file_tree(sb, pi, sih, begin_tail);
+	STATISTICS_END_TIMING(file_write_time, file_write_start);
 	if (ret)
 		goto out;
 

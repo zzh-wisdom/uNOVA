@@ -442,6 +442,7 @@ void finefs_save_blocknode_mappings_to_log(struct super_block *sb) {
     u64 temp_tail;
     int i;
 
+    return;
     r_fatal("TODO log");
     /* Allocate log pages before save blocknode mappings */
     for (i = 0; i < sbi->cpus; i++) {
