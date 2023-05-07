@@ -8,6 +8,8 @@
 #define _TICKET_LOCK_H_
 
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,9 +23,11 @@ extern "C" {
     typedef unsigned char __tickets;
 #else
 #define MAX_THREADS (65535)
-    typedef unsigned int __ticketpair;
-    typedef unsigned short __tickets;
+    typedef unsigned long __ticketpair;
+    typedef unsigned int __tickets;
 #endif
+
+const int __a = sizeof(unsigned int);
 
 #define __TICKET_SHIFT ( sizeof(__tickets) * 8)
 
@@ -209,20 +213,28 @@ static __inline__ void ticket_semaphore_init(struct ticket_lock_t *lock)
  */
 static __inline__ void ticket_semaphore_wait(struct ticket_lock_t *lock, __tickets threshold)
 {
-    register struct _tickets inc = { .tail = 1 };
+    register struct _tickets inc = {.head=0, .tail = 1 };
     inc = __XADD(inc, &lock->tickets);
     // __tickets tail, head;
     // tail = __atomic_fetch_add(&lock->tickets.tail, 1, __ATOMIC_SEQ_CST);
     // __atomic_fetch_add(&lock->tickets, inc, __ATOMIC_SEQ_CST);
+    // printf("head=%u, tail=%u\n", inc.head, inc.tail);
+    // if((inc.tail - inc.head) > 32) {
+    //     printf("error\n");
+    //     exit(-1);
+    // }
+    register __tickets head1 = inc.head;
     do
     {
         // head = __atomic_load_n(&lock->tickets.head, __ATOMIC_SEQ_CST);
         // break;
-        if((inc.tail - inc.head) < threshold) break;
+        if(inc.tail - head1 < threshold) break;
+        if(inc.tail > inc.head && (head1 > inc.tail || head1 < inc.head)) break;
+        if(inc.tail < inc.head && (head1 > inc.tail && head1 < inc.head)) break;
         // if((tail - head) < threshold) break;
         //loop
         __RELAX();
-        inc.head = __ACCESS_ONCE(lock->tickets.head);
+        head1 = __ACCESS_ONCE(lock->tickets.head);
     } while(1);
 
 #ifdef DEBUG

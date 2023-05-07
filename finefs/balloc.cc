@@ -502,7 +502,7 @@ int finefs_free_data_blocks(struct super_block *sb, struct finefs_inode *pi,
 	FINEFS_START_TIMING(free_data_t, free_time);
 	ret = finefs_free_blocks(sb, blocknr, num, pi->i_blk_type, 0);
 	if (ret)
-		r_error("Inode %lu: free %d data block from %lu to %lu "
+		rd_error("Inode %lu: free %d data block from %lu to %lu "
 				"failed!", pi->finefs_ino, num, blocknr,
 				blocknr + num - 1);
 	FINEFS_END_TIMING(free_data_t, free_time);
@@ -525,7 +525,7 @@ int finefs_free_log_blocks(struct super_block *sb, struct finefs_inode *pi,
 	FINEFS_START_TIMING(free_log_t, free_time);
 	ret = finefs_free_blocks(sb, blocknr, num, pi->i_blk_type, 1);
 	if (ret)
-		r_fatal("Inode %lu: free %d log block from %lu to %lu "
+		rd_fatal("Inode %lu: free %d log block from %lu to %lu "
 				"failed!", pi->finefs_ino, num, blocknr,
 				blocknr + num - 1);
 	FINEFS_END_TIMING(free_log_t, free_time);

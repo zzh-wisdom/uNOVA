@@ -435,8 +435,9 @@ static u64 finefs_file_small_write(super_block* sb, struct finefs_inode *pi,
 	entry_size = sizeof(finefs_file_small_write_entry);
 
 	u64 slab_off = finefs_less_page_alloc(sb, pi, bytes, &size_bits, pos, 0, 1);
-	dlog_assert((1 << size_bits) >= bytes &&
+	log_assert((1 << size_bits) >= bytes &&
 		((1 << (size_bits - 1)) < bytes || bytes <= (SLAB_MIN_SIZE >> 1)));
+	log_assert(size_bits >= SLAB_MIN_BITS);
 
 	kmem = finefs_get_block(sb, slab_off);
 	finefs_copy_to_nvm(sb, kmem, buf, bytes, false);

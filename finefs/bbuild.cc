@@ -380,7 +380,7 @@ static u64 finefs_save_range_nodes_to_log(struct super_block *sb, struct rb_root
 static u64 finefs_save_free_list_blocknodes(struct super_block *sb, int cpu, u64 temp_tail) {
     struct free_list *free_list;
 
-    r_fatal("TODO");
+    rd_fatal("TODO");
     // free_list = finefs_get_free_list(sb, cpu);
     // temp_tail = finefs_save_range_nodes_to_log(sb, &free_list->block_free_tree, temp_tail, 0);
     return temp_tail;
@@ -442,7 +442,7 @@ void finefs_save_blocknode_mappings_to_log(struct super_block *sb) {
     u64 temp_tail;
     int i;
 
-    r_fatal("TODO log");
+    rd_fatal("TODO log");
     /* Allocate log pages before save blocknode mappings */
     for (i = 0; i < sbi->cpus; i++) {
         free_list = finefs_get_data_free_list(sb, i);

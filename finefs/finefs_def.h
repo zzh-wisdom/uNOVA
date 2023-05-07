@@ -342,9 +342,9 @@ static inline void finefs_flush_buffer(void *buf, uint32_t len, bool fence)
 #define FINEFS_INODE_META_FLUSH_BATCH 64
 #define FINEFS_BITMAP_CACHELINE_FLUSH_BATCH 4096
 
-#define FINEFS_NVM_READ_MAX_THREADS 6
-#define FINEFS_NVM_WRITE_MAX_THREADS 4
-#define FINEFS_LIMIT_NVM_THREAD_SIZE 4096
+extern const int FINEFS_NVM_READ_MAX_THREADS;
+extern const int FINEFS_NVM_WRITE_MAX_THREADS;
+extern const int FINEFS_LIMIT_NVM_THREAD_SIZE;
 
 // log page gc
 #define FINEFS_LOG_PAGE_MIN_EFFECTIVE_RATIO_FOR_GC (0.3)

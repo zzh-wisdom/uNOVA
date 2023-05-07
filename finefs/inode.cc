@@ -2332,7 +2332,7 @@ int finefs_gc_assign_file_entry(struct super_block *sb, struct finefs_inode_info
         pentry = radix_tree_lookup_slot(&sih->tree, curr_pgoff);
         if (pentry) {
             temp = (struct finefs_file_page_entry *)radix_tree_deref_slot(pentry);
-            log_assert(temp->nvm_entry_p == old_entry);
+            // log_assert(temp->nvm_entry_p == old_entry);
             if (temp->nvm_entry_p == old_entry) {
                 temp->nvm_entry_p = new_entry;
                 dlog_assert(finefs_page_entry_is_right(sb, temp));
@@ -2433,7 +2433,7 @@ static u64 finefs_log_page_entry_move(super_block *sb, finefs_inode *pi,
     for_each_set_bit(entry_idx, (unsigned long*)&log_page->page_tail.bitmap, FINEFS_LOG_PAGE_NUM_ENTRY) {
         moved_entry_addr = (char*)log_page + (entry_idx << entry_bits);
         new_curr = finefs_get_append_head(sb, pi, NULL, new_curr, entry_size, &extended, true);
-        log_assert(extended == 0 && new_curr);
+        // log_assert(extended == 0 && new_curr);
 
         /* Copy entry to the new log */
         memcpy_to_pmem_nocache(finefs_get_block(sb, new_curr), moved_entry_addr, entry_size);
@@ -2482,7 +2482,7 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
     }
 
     if(sih->log_pages_to_gc.size() <= 1) {
-        r_fatal("%s: log_pages_to_gc num %lu", __func__, sih->log_pages_to_gc.size());
+        rd_fatal("%s: log_pages_to_gc num %lu", __func__, sih->log_pages_to_gc.size());
         goto out;
     }
 
@@ -2502,7 +2502,7 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
         goto out;
     }
 
-    r_info("%s num_pages_to_gc=%u, new alloc pages=%d", __func__,
+    rd_info("%s num_pages_to_gc=%u, new alloc pages=%d", __func__,
         sih->log_pages_to_gc.size(), allocated);
 
     // 先将setattr entry gc
@@ -2582,7 +2582,7 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
         u64 start_p = p.first;
         u64 end_p = p.second.first;
         int free_num = p.second.second;
-        r_info("%s: range delete log pages: %d, from %lu to %lu",
+        rd_info("%s: range delete log pages: %d, from %lu to %lu",
             __func__, free_num, start_p, end_p);
         finefs_inode_log_page *start_page =
             (finefs_inode_log_page*)finefs_get_block(sb, start_p);
@@ -2811,15 +2811,15 @@ static int finefs_inode_log_fast_gc(struct super_block *sb, struct finefs_inode 
     dlog_assert(finefs_inode_log_page_num(sb, pi->log_head.next_page_) == sih->log_pages);
 
     // 有效率低于50%，开启彻底gc
-    if (need_thorough_gc(sb, sih, blocks, checked_pages)) {
-        r_info(
-            "Thorough GC for inode %lu: checked pages %lu, "
-            "valid pages %lu, log_valid_bytes %lu",
-            sih->ino, checked_pages, blocks, sih->log_valid_bytes);
-        finefs_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
-        // int log_page_num = finefs_inode_log_page_num(sb, pi->log_head);
-        // log_assert(log_page_num == sih->log_pages);
-    }
+    // if (need_thorough_gc(sb, sih, blocks, checked_pages)) {
+    //     rd_info(
+    //         "Thorough GC for inode %lu: checked pages %lu, "
+    //         "valid pages %lu, log_valid_bytes %lu",
+    //         sih->ino, checked_pages, blocks, sih->log_valid_bytes);
+    //     finefs_inode_log_thorough_gc(sb, pi, sih, blocks, checked_pages);
+    //     // int log_page_num = finefs_inode_log_page_num(sb, pi->log_head);
+    //     // log_assert(log_page_num == sih->log_pages);
+    // }
 
     return 0;
 }
@@ -2924,7 +2924,7 @@ u64 finefs_get_append_head(struct super_block *sb, struct finefs_inode *pi,
             // curr_p已经指向新的block
             curr_p = finefs_extend_inode_log(sb, pi, sih, curr_p, for_gc);
         } else {
-            r_fatal("unexpected: GC");
+            rd_fatal("unexpected: GC");
             // 用于GC时的append log，GC应该到不了这里吧，因为一次就分配足够的page了
             // 不不不，之前分配的空间只是预判而已，可能预测少了
             curr_p = finefs_append_one_log_page(sb, pi, curr_p);

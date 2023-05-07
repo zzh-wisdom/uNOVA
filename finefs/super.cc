@@ -765,6 +765,11 @@ static int finefs_fill_super(struct super_block *sb, struct vfs_cfg *cfg) {
     int i;
     timing_t mount_time;
 
+    printf("limit_nvm_rw_threads=%d\n", cfg->limit_nvm_rw_threads);
+    printf("FINEFS_NVM_READ_MAX_THREADS=%d\n", FINEFS_NVM_READ_MAX_THREADS);
+    printf("FINEFS_NVM_WRITE_MAX_THREADS=%d\n", FINEFS_NVM_WRITE_MAX_THREADS);
+    printf("FINEFS_LIMIT_NVM_THREAD_SIZE=%d\n", FINEFS_LIMIT_NVM_THREAD_SIZE);
+
     FINEFS_START_TIMING(mount_t, mount_time);
 
     sbi = (struct finefs_sb_info *)ZALLOC(sizeof(struct finefs_sb_info));

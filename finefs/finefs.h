@@ -172,7 +172,6 @@ static inline void finefs_free_slab_page(struct slab_page *node) {
 #define SLAB_MAX_BITS (FINEFS_BLOCK_SHIFT - 1)
 #define SLAB_MAX_SIZE (1 << SLAB_MAX_BITS)
 #define SLAB_LEVELS (SLAB_MAX_BITS - SLAB_MIN_BITS + 1)
-const int a = SLAB_LEVELS;
 
 struct slab_page {
     unsigned long block_off;  // page 不能跨线程

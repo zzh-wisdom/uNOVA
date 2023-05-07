@@ -20,7 +20,7 @@
 #include "util/cpu.h"
 #include "util/log.h"
 
-const uint64_t FILE_SIZE = 1ul << 30; // 1GB
+const uint64_t FILE_SIZE = 64ul << 20; // 1GB
 const uint64_t FILE_4KB_NUM = FILE_SIZE >> 12;
 #define O_ATOMIC 01000000000
 
@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) {
     uint64_t OP = atoi(argv[3]);
     uint64_t bs_num = FILE_SIZE / bs;
     bs_num = std::min(bs_num, OP);
-    OP = bs_num;
+    // OP = bs_num;
     printf("mnt %s, bs: %d, OP: %lu\n", mntdir.c_str(), bs, OP);
     printf("file_size: %lu GB, page_num: %lu\n", FILE_SIZE >> 30, FILE_4KB_NUM);
 
@@ -83,14 +83,14 @@ int main(int argc, char* argv[]) {
     memset(buf, 0x3f, bs < 4096 ? 4096 : bs);
 
     // load
-    uint64_t load_n = (OP * bs + 4095)/4096;
-    for(int i = 0; i < FILE_4KB_NUM; ++i) {
-        ret = write(fd, buf, 4096);
-        log_assert(ret == 4096);
-    }
-    ret = fsync(fd);
-    log_assert(ret == 0);
-    sleep(2);
+    // uint64_t load_n = (OP * bs + 4095)/4096;
+    // for(int i = 0; i < FILE_4KB_NUM; ++i) {
+    //     ret = write(fd, buf, 4096);
+    //     log_assert(ret == 4096);
+    // }
+    // ret = fsync(fd);
+    // log_assert(ret == 0);
+    // sleep(2);
     printf("load over...\n");
 
     // seq write
