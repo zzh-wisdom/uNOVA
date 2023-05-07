@@ -101,14 +101,14 @@ static void finefs_destroy_inode(struct inode *inode) {
 unsigned int finefs_dbgmask = 0;
 
 int finefs_init_rangenode_cache(void) {
-    r_warning("TODO: 优化 kmem_cache");
+    rd_warning("TODO: 优化 kmem_cache");
     finefs_range_node_cachep =
         kmem_cache_create(sizeof(struct finefs_range_node), sizeof(struct finefs_range_node));
     if (finefs_range_node_cachep == NULL) return -ENOMEM;
     return 0;
 }
 void finefs_destroy_rangenode_cache(void) {
-    r_warning("TODO: 优化 kmem_cache");
+    rd_warning("TODO: 优化 kmem_cache");
     kmem_cache_destroy(&finefs_range_node_cachep);
 }
 static inline struct finefs_range_node *finefs_alloc_range_node(struct super_block *sb) {

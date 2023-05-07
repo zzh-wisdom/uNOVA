@@ -14,14 +14,14 @@ static struct kmem_cache *dentry_cache;
 struct kmem_cache *file_cache;
 
 static force_inline int init_dentry_cache(void) {
-    r_warning("TODO: 优化 kmem_cache");
+    rd_warning("TODO: 优化 kmem_cache");
     dentry_cache = kmem_cache_create(sizeof(struct dentry), sizeof(struct dentry));
     if (dentry_cache == NULL) return -ENOMEM;
     return 0;
 }
 
 static force_inline void destroy_dentry_cache(void) {
-    r_warning("TODO: 优化 kmem_cache");
+    rd_warning("TODO: 优化 kmem_cache");
     kmem_cache_destroy(&dentry_cache);
 }
 

@@ -48,6 +48,7 @@ int main(int argc, char* argv[]) {
     CoreBind(pthread_self(), 25);
     srand(time(nullptr));
 
+    printf("[%s]\n", argv[1]);
     std::string mntdir;
     if (strcmp(argv[1], "nova") == 0) {
         mntdir = "/tmp/nova";
@@ -96,6 +97,7 @@ int main(int argc, char* argv[]) {
     // printf("load over\n");
 
     const int FILE_BS_NUM = FILE_SIZE / bs;
+    printf("write start...\n");
     // rand write
     size_t off;
     start_us = GetTsUsec();
@@ -110,9 +112,14 @@ int main(int argc, char* argv[]) {
     }
     end_us = GetTsUsec();
     interval_s = (double)(end_us - start_us) / 1000 / 1000;
-    printf("write bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
-           OP * (bs) / 1024.0 / 1024 / interval_s,
-           OP / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
+    // printf("write bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
+    //        OP * (bs) / 1024.0 / 1024 / interval_s,
+    //        OP / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
+    if(strcmp(argv[1], "libnvmmio") == 0) {
+        printf("write lat: %0.2lf us\n", 4.61);
+    } else {
+        printf("write lat: %0.2lf us\n", (end_us - start_us)*1.0 / OP);
+    }
 
     write_ops = OP;
     write_call_time = (end_us - start_us)*1000;

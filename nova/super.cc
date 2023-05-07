@@ -53,7 +53,7 @@ int init_rangenode_cache(void) {
 }
 
 void destroy_rangenode_cache(void) {
-    r_warning("TODO: 优化 kmem_cache");
+    rd_warning("TODO: 优化 kmem_cache");
     kmem_cache_destroy(&nova_range_node_cachep);
 }
 
