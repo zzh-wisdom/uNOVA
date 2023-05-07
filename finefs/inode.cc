@@ -2578,6 +2578,7 @@ static int finefs_inode_log_thorough_gc(struct super_block *sb, struct finefs_in
     /* Step 3: Unlink the old log 这步多余*/
 
     /* Step 4: Free the old log */
+    // TODO:需要在这里统一失效旧条目
     for(auto p: pages_to_del) {
         u64 start_p = p.first;
         u64 end_p = p.second.first;
