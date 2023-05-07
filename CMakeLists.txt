@@ -182,7 +182,9 @@ target_link_libraries(small_write_seq
 add_executable(small_write_rand
     perf/small_write_rand_test.cc
     util/log.cc
-    util/cpu.cc)
+    util/cpu.cc
+    util/statistics.cc
+)
 target_link_libraries(small_write_rand
     pthread syscall_intercept dl glog
     numa

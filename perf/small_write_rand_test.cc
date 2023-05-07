@@ -19,6 +19,7 @@
 
 #include "util/cpu.h"
 #include "util/log.h"
+#include "util/statistics.h"
 
 const uint64_t FILE_SIZE = 1ul << 30; // 1GB
 const uint64_t FILE_4KB_NUM = FILE_SIZE >> 12;
@@ -92,7 +93,7 @@ int main(int argc, char* argv[]) {
     // sleep(2);
     ret = ftruncate(fd, FILE_SIZE);
     log_assert(ret == 0);
-    printf("load over\n");
+    // printf("load over\n");
 
     const int FILE_BS_NUM = FILE_SIZE / bs;
     // rand write
@@ -112,6 +113,9 @@ int main(int argc, char* argv[]) {
     printf("write bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
            OP * (bs) / 1024.0 / 1024 / interval_s,
            OP / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
+
+    write_ops = OP;
+    write_call_time = (end_us - start_us)*1000;
     // sleep(2);
     // printf("write over\n");
 

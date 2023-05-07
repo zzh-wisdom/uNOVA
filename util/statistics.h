@@ -7,6 +7,9 @@
 
 #define MEASURE_TIMING 1
 
+extern uint64_t write_call_time;
+extern uint64_t write_ops;
+
 extern uint64_t file_write_time;
 extern uint64_t pm_io_time;
 extern uint64_t log_io_time;
