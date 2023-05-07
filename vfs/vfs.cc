@@ -14,14 +14,14 @@ static struct kmem_cache *dentry_cache;
 struct kmem_cache *file_cache;
 
 static force_inline int init_dentry_cache(void) {
-    r_warning("TODO: 优化 kmem_cache");
+    rd_warning("TODO: 优化 kmem_cache");
     dentry_cache = kmem_cache_create(sizeof(struct dentry), sizeof(struct dentry));
     if (dentry_cache == NULL) return -ENOMEM;
     return 0;
 }
 
 static force_inline void destroy_dentry_cache(void) {
-    r_warning("TODO: 优化 kmem_cache");
+    rd_warning("TODO: 优化 kmem_cache");
     kmem_cache_destroy(&dentry_cache);
 }
 
@@ -177,7 +177,7 @@ void destroy_super(struct super_block *sb) {
 
     d_put_recursive(sb->s_root);
     int ret = dentry_unref(sb->s_root);
-    printf("ret: %d\n", ret);
+    // printf("ret: %d\n", ret);
     dlog_assert(ret == 0);
     FREE(sb);
 }

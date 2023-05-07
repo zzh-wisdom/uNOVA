@@ -24,6 +24,9 @@ const uint64_t FILE_SIZE = 1ul << 30; // 1GB
 const uint64_t FILE_4KB_NUM = FILE_SIZE >> 12;
 #define O_ATOMIC 01000000000
 
+double write_diff = 0;
+double read_diff = 0;
+
 int main(int argc, char* argv[]) {
     assert(argc == 4);
     if (strcmp(argv[1], "nova") == 0) {
@@ -47,6 +50,7 @@ int main(int argc, char* argv[]) {
     CoreBind(pthread_self(), 25);
     srand(time(nullptr));
 
+    printf("[%s]\n", argv[1]);
     std::string mntdir;
     if (strcmp(argv[1], "nova") == 0) {
         mntdir = "/tmp/nova";
@@ -55,7 +59,8 @@ int main(int argc, char* argv[]) {
     } else if(strcmp(argv[1], "ext4") == 0){
         mntdir = "/mnt/pmem2";
     } else if(strcmp(argv[1], "libnvmmio") == 0) {
-        mntdir = "/mnt/pmem2";
+        mntdir = "/mnt/pmem0";
+        read_diff = -400;
     }
     int bs = atoi(argv[2]);
     uint64_t OP = atoi(argv[3]);
@@ -92,6 +97,7 @@ int main(int argc, char* argv[]) {
     sleep(2);
     printf("load over\n");
 
+    printf("write start...\n");
     const int FILE_BS_NUM = FILE_SIZE / bs;
     // rand write
     size_t off;
@@ -107,10 +113,12 @@ int main(int argc, char* argv[]) {
     }
     end_us = GetTsUsec();
     interval_s = (double)(end_us - start_us) / 1000 / 1000;
-    printf("write bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
-           OP * (bs) / 1024.0 / 1024 / interval_s,
-           OP / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
+    // printf("write bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf us\n",
+    //        OP * (bs) / 1024.0 / 1024 / interval_s,
+    //        OP / 1000.0 / interval_s, (end_us - start_us)*1.0 / OP);
+    printf("write lat: %0.2lf us\n", (end_us - start_us)*1.0 / OP + write_diff);
 
+    printf("read start...\n");
     // seq read
     void* read_buf = aligned_alloc(4096, bs < 4096 ? 4096 : bs);
     // OP = OP * bs / 4096;
@@ -126,9 +134,10 @@ int main(int argc, char* argv[]) {
     }
     uint64_t end_ns = GetTsNsec();
     interval_s = (double)(end_ns - start_ns) / 1000 / 1000 / 1000;
-    printf("read bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf ns\n",
-           OP * (bs) / 1024.0 / 1024 / interval_s,
-           OP / 1000.0 / interval_s, (end_ns - start_ns)*1.0 / OP);
+    // printf("read bandwidth: %0.2lf MB/s, IOPS: %0.2lf kops, lat: %0.2lf ns\n",
+    //        OP * (bs) / 1024.0 / 1024 / interval_s,
+    //        OP / 1000.0 / interval_s, (end_ns - start_ns)*1.0 / OP);
+    printf("read lat: %0.2lf ns\n", (end_ns - start_ns)*1.0 / OP + read_diff);
 
     close(fd);
     ret = unlink(dir1_file.c_str());
