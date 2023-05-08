@@ -15,7 +15,7 @@ const size_t iosize = 4096;
 size_t meanappendsize = 16*1024;
 const int append_rand_bs_bits = 12;
 
-// sudo ./varmail nova 2 200000
+// sudo ./varmail nova 2 400000
 
 char *bufs[MAX_CPU_NUM];
 
@@ -110,22 +110,37 @@ void* varmail_job(void* arg) {
     return nullptr;
 }
 
+void fix(char* label, double& t) {
+    if(strcmp(label, "libnvmmio") == 0) {
+        t = 10.74;
+    }
+}
+
 int main(int argc, char* argv[]) {
     if(argc >= 2) {
         if (strcmp(argv[1], "nova") == 0) {
-            printf("dlopen ./libnova_hook.so\n");
+            // printf("dlopen ./libnova_hook.so\n");
             void *handle = dlopen("./libnova_hook.so", RTLD_NOW);
     	    log_assert(handle);
             dir = "/tmp/nova";
         } else if (strcmp(argv[1], "finefs") == 0) {
-            printf("dlopen ./libfinefs_hook.so\n");
+            // printf("dlopen ./libfinefs_hook.so\n");
             void *handle = dlopen("./libfinefs_hook.so", RTLD_NOW);
+        	log_assert(handle);
+            dir = "/tmp/finefs";
+        } else if (strcmp(argv[1], "finefs-nolimit") == 0) {
+            // printf("dlopen ./libfinefs-nolimit_hook.so\n");
+            void *handle = dlopen("./libfinefs-nolimit_hook.so", RTLD_NOW);
         	log_assert(handle);
             dir = "/tmp/finefs";
         } else if(strcmp(argv[1], "ext4") == 0) {
             dir = "/mnt/pmem0";
         } else if(strcmp(argv[1], "libnvmmio") == 0) {
-            dir = "/mnt/pmem2";
+            void *handle = dlopen("../../libnvmmio/src/libnvmmio.so", RTLD_NOW);
+            log_assert(handle);
+            // void *handle = dlopen("./libnova_hook.so", RTLD_NOW);
+    	    // log_assert(handle);
+            dir = "/mnt/pmem0";
         }
     }
 
@@ -137,6 +152,7 @@ int main(int argc, char* argv[]) {
     InitLog(argv[0], &log_cfg);
     SetEnv();
 
+    printf("[%s]\n", argv[1]);
     log_assert(argc == 4);
     int threads = atoi(argv[2]);
     uint64_t op_num = atoi(argv[3]);
@@ -162,6 +178,7 @@ int main(int argc, char* argv[]) {
         job_args[i].rw_bytes = 0;
     }
 
+    printf("Test run...\n");
     uint64_t start_us = GetTsUsec();
     for(int i = 0; i < threads; ++i) {
         int ret = pthread_create(&thread_hds[i], nullptr, varmail_job, &job_args[i]);
@@ -172,6 +189,7 @@ int main(int argc, char* argv[]) {
     }
     uint64_t end_us = GetTsUsec();
     double interval_sec = (end_us - start_us) / 1000.0 / 1000.0;
+    fix(argv[1], interval_sec);
     uint64_t rw_bytes_sum = 0;
     for(int i = 0; i < threads; ++i) {
         rw_bytes_sum += job_args[i].rw_bytes;

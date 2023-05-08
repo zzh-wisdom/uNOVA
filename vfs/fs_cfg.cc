@@ -46,7 +46,7 @@ void fs_cfg_init(pmem2_map* pmap, struct vfs_cfg* cfg) {
 int fs_register_thread(int* proc_id) {
     log_assert(fs_cfg_inited);
     if(atomic_load(&register_thread_num) >= fs_cpu_num) {
-        r_error("register_thread_num %d >= fs_cpu_num %d", register_thread_num, fs_cpu_num);
+        rd_error("register_thread_num %d >= fs_cpu_num %d", register_thread_num, fs_cpu_num);
     }
     if(processor_id != -1) {
         rd_warning("has been fs_register_thread: %d", processor_id);

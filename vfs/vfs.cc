@@ -720,7 +720,7 @@ void d_delete(struct dentry *dentry) {
     // 内存中删除dentry
     int ret = dentry_unref(dentry);
     if (ret != 0) {
-        r_warning("unlink %s ino %d, but still has %d openers.", dentry->d_name.name, inode->i_ino,
+        rd_warning("unlink %s ino %d, but still has %d openers.", dentry->d_name.name, inode->i_ino,
                   ret);
     }
 }
